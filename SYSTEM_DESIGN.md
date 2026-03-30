@@ -1,445 +1,747 @@
-# Secret Manager — System Design Plan (v1)
+# Secret Manager System Design (v1)
 
-## 1. Product Goal
+## 1. Overview
 
-Build a **zero-knowledge secret manager** for personal/family use that:
+This document defines the v1 architecture for a zero-knowledge secret manager for personal and family use.
 
-- Stores secrets securely
-- Works across desktop, mobile, browser, CLI
-- Supports simple encrypted sharing
-- Is fast and offline-friendly
-- Uses **S3-compatible object storage as backend**
-- Avoids a traditional database (v1)
+The product goal is:
 
----
+- Store secrets securely with client-side encryption only
+- Work across desktop, mobile, browser extension, and CLI
+- Support simple encrypted sharing between a small number of trusted users
+- Remain fast, offline-capable, and operational on unreliable networks
+- Use S3-compatible object storage as the durable data plane
+- Avoid a traditional application database in v1
 
-## 2. Core Principles
+The intended outcome is a system that is cheap to operate, portable across cloud providers, and resistant to control-plane compromise because the server never has the material required to decrypt vault data.
+
+## 2. Non-Goals
+
+Out of scope for v1:
+
+- Enterprise RBAC, SCIM, or SSO administration
+- Real-time collaborative editing
+- Server-side search or analytics over secret contents
+- Fine-grained sharing below the collection level
+- Password reset flows that can recover data without a recovery secret
+- HSM- or KMS-dependent decryption paths
+
+## 3. Design Principles
 
 ### Security
-- Client-side encryption only
-- Server never sees plaintext or raw keys
-- End-to-end encrypted sharing
-- No dependency on cloud KMS for decryption
+
+- All secret material is encrypted on the client before upload
+- The control plane can authenticate users and authorize object access, but cannot decrypt vault data
+- Key compromise should be scoped as narrowly as practical
+- Device addition and sharing flows must be explicit and auditable
 
 ### Simplicity
-- No backend DB
-- Immutable object model
-- Minimal concepts:
-  - account, device, collection, item, invite
+
+- Object storage is the system of record
+- Writes are immutable wherever possible
+- A small number of durable object types should model the whole system
+- v1 prefers correctness over aggressive optimization
 
 ### Performance
-- Decrypt only what’s needed
-- Local cache + search index
-- Incremental sync (events + snapshots)
+
+- Clients sync incrementally from an append-only log
+- Clients cache ciphertext and maintain a local decrypted search index
+- Decryption is on demand for full records, not bulk by default
 
 ### Resilience
-- Object storage = source of truth
-- Immutable writes + versioning
-- Offline-first clients
 
----
+- Clients are usable offline against local state
+- Recovery does not depend on vendor-managed infrastructure
+- Storage versioning protects against accidental overwrite and partial corruption
 
-## 3. Scope (v1)
+## 4. High-Level Architecture
 
-### Included
-- Personal vault
-- Shared collections (family)
-- Passwords, notes, API keys, SSH keys
-- Browser extension (save/fill)
-- Desktop app + CLI
-- Local search
-- OAuth (Google, Apple, Microsoft)
-- Master password unlock
-- Device registration
-- Export/import
-- S3 / R2 / GCS support
+The system has three parts.
 
-### Excluded
-- SaaS multi-tenant features
-- Server-side search
-- Enterprise RBAC / SSO
-- Real-time collaboration
-- Azure support
+### Client Applications
 
----
+Clients include desktop, mobile, browser extension, and CLI. They are responsible for:
 
-## 4. Architecture
+- User unlock with master password
+- Key derivation and cryptographic operations
+- Local encrypted storage
+- Local indexing and search
+- Sync, conflict handling, and snapshot generation
+- Invite acceptance and key unwrap flows
 
-### Backend
-Thin control plane:
-- Auth
-- Device registration
-- Invite handling
-- Signed URL issuance
-- Policy enforcement
+### Control Plane
 
-### Storage
-- S3 / R2 / GCS only
-- Encrypted blobs
+The control plane is intentionally thin. It is responsible for:
 
-### Client
-- Local encrypted DB (SQLite / IndexedDB)
-- Local search index
-- Sync cursor
-- Device key storage
+- OAuth-based identity
+- Device registration and policy checks
+- Invite coordination
+- Authorization decisions
+- Issuing short-lived scoped upload/download credentials or signed URLs
+- Rate limiting and abuse protection
 
-### Truth Model
-- Immutable objects
-- Append-only event log
-- Periodic snapshots
-- Small mutable pointers
+The control plane is not responsible for:
 
----
+- Storing plaintext secrets
+- Performing decryption
+- Maintaining the primary vault state in a database
+- Indexing secret content
 
-## 5. Authentication Model
+### Object Storage
 
-### Identity
-- OAuth (Google, Apple, Microsoft)
+S3-compatible object storage holds:
 
-### Vault Unlock
-- Master password required
+- Immutable encrypted objects
+- Append-only event logs
+- Periodic encrypted snapshots
+- Small mutable head pointers
+- Invite payloads and device records
 
-### Principle
-OAuth = identity  
-Password = cryptographic root
+The object store is the durable source of truth.
 
----
+## 5. Trust Model and Threat Model
 
-## 6. Threat Model
+### Trust Assumptions
 
-Defend against:
-- Server compromise → ciphertext only
-- Object store breach → ciphertext only
-- Device theft → encrypted cache + lock
-- Network replay → signed + short-lived requests
-- Malicious browser pages → strict extension isolation
-- Sharing misuse → clear ownership + revocation
+Trusted:
 
----
+- The client binary and runtime on a healthy user device
+- The cryptographic primitives and their implementations
+- The user to protect their master password and recovery secret
 
-## 7. Cryptography
+Not trusted:
 
-### Pattern
-Per-item envelope encryption
+- The control plane with respect to vault confidentiality
+- The object storage provider with respect to vault confidentiality
+- The network between client and backend
+
+### Threats Addressed
+
+- Control-plane compromise resulting in access to ciphertext only
+- Object store breach resulting in access to ciphertext only
+- Passive network monitoring
+- Replay of stale signed requests
+- Loss or theft of a locked device
+- Malicious web pages attempting to abuse the browser extension
+- Unauthorized continued access after a member is removed from a shared collection
+
+### Threats Not Fully Addressed
+
+- A fully compromised, unlocked endpoint
+- Malware with access to the user session
+- Phishing of the user’s OAuth account and master password
+- Side-channel leakage from the host OS or browser
+
+These limits should be stated plainly. "Zero knowledge" here means the service cannot decrypt user vault contents under the normal design; it does not mean compromise of an unlocked client is harmless.
+
+## 6. Identity, Authentication, and Unlock
+
+Identity and cryptographic authority are intentionally separate.
+
+- OAuth establishes who the user is for account access and device registration
+- The master password establishes access to vault keys
+
+This split gives acceptable UX while preserving the property that the service cannot derive vault keys from OAuth alone.
+
+### Login Flow
+
+1. User authenticates to the control plane with OAuth.
+2. Control plane returns account metadata and device enrollment state.
+3. Client prompts for master password.
+4. Client derives the root key locally and attempts to unwrap the account key material.
+5. On success, the client unlocks the local vault and starts sync.
+
+If OAuth succeeds but the master password is wrong, the user is authenticated to the service but cannot decrypt data.
+
+## 7. Cryptographic Design
+
+### Cryptographic Goals
+
+- Strong resistance to offline password guessing
+- Isolation between collections and items
+- Efficient item updates without broad re-encryption
+- A practical device enrollment and sharing model
 
 ### Key Hierarchy
-Master Password → Argon2id → Master Key
-Master Key → Account Key
-Account Key → Collection Keys
-Collection Key → Item Keys
-Item Key → Item Content
 
-### Properties
-- Per-item isolation
-- Efficient updates
-- Clean sharing/revocation
+The v1 hierarchy should be:
 
----
+1. Master password
+2. Password-derived root key via Argon2id with per-account salt
+3. Account key-encryption key (KEK) derived from the root key
+4. Random account master key (AMK), wrapped by the KEK
+5. Random collection keys, wrapped by the AMK or by recipient-specific share records
+6. Random item data keys, wrapped by the collection key
 
-## 8. Metadata Model
+This is preferable to deriving every level from the password directly. The password-derived key should protect a random account master key, not serve as the vault data key itself. That enables password rotation without re-encrypting all vault contents.
 
-### Encrypted
-- Title, username, URL, tags, notes
-- Item content
+### Recommended Primitive Set
 
-### Minimal cleartext
-- Object ID
-- Version
-- Timestamp (if needed)
-- Hash
+- KDF: Argon2id
+- Symmetric encryption: AES-256-GCM or XChaCha20-Poly1305
+- Key wrapping: AEAD-based wrapping using random nonces
+- Hashing: SHA-256 or BLAKE2/BLAKE3 for integrity metadata
+- Public-key crypto for invites and device bootstrap: X25519 for key agreement, Ed25519 for signatures if signatures are needed
 
----
+The implementation should standardize on one primitive set across all clients. Mixing algorithms by platform creates migration and audit risk.
 
-## 9. Data Model
+### Password Rotation
 
-- Account config
-- Device
-- Collection
-- Membership
-- Item
-- Item index
-- Event
-- Snapshot
-- Invite
+Password rotation should only re-wrap the AMK under a newly derived KEK. It should not trigger full vault re-encryption.
 
----
+### Device Keys
+
+Each device should have a device key pair generated locally during enrollment. Device public keys are stored in account metadata. Device private keys remain local in OS-protected secure storage where available.
+
+Device keys support:
+
+- Secure device provisioning
+- Invite acceptance flows
+- Optional future peer-assisted recovery or approval workflows
+
+## 8. Metadata Exposure
+
+The current design must be explicit about what leaks and why.
+
+### Encrypted Metadata
+
+Encrypt:
+
+- Item title
+- Username
+- URLs
+- Tags
+- Notes
+- Secret payloads
+- Collection names
+- Membership notes or labels
+
+### Cleartext Metadata
+
+Keep cleartext limited to what is operationally required:
+
+- Stable object IDs
+- Object type
+- Schema version
+- Creation/update timestamps
+- Parent references needed for sync and storage layout
+- Content hash or checksum of ciphertext blobs
+- Event sequence identifiers
+
+### Important Caveat
+
+Timestamps, object counts, object sizes, collection membership cardinality, and traffic patterns are metadata. They may leak useful information even when content is encrypted. The system should minimize but not pretend to eliminate this leakage.
+
+## 9. Durable Object Model
+
+v1 should define a small set of object types with explicit semantics.
+
+### Account Config
+
+Mutable, small, and frequently read.
+
+Contains:
+
+- Account ID
+- Schema version
+- KDF parameters and salt
+- Wrapped AMK
+- Current snapshot pointer
+- Current event-log head pointer
+- Region and storage configuration
+
+### Device Record
+
+One record per enrolled device.
+
+Contains:
+
+- Device ID
+- Public keys
+- Creation and last-seen timestamps
+- Device type and friendly label
+- Status: active, revoked
+
+### Collection Record
+
+Immutable logical record describing a collection.
+
+Contains:
+
+- Collection ID
+- Encrypted metadata blob
+- Owner account ID
+- Current collection key version
+
+### Collection Membership Record
+
+Represents access to a collection for a user or device.
+
+Contains:
+
+- Membership ID
+- Collection ID
+- Recipient account or device ID
+- Role
+- Wrapped collection key for that recipient and key version
+- Status: active, revoked
+
+### Item Record
+
+Immutable encrypted item object.
+
+Contains:
+
+- Item ID
+- Collection ID
+- Item version
+- Encrypted metadata blob
+- Encrypted content blob
+- Wrapped item data key
+- Author device ID
+- Logical timestamp
+
+### Event Record
+
+Append-only sync log entry.
+
+Contains:
+
+- Event ID
+- Monotonic sequence number or sortable logical cursor
+- Event type
+- References to affected objects
+- Integrity hash
+- Author device ID
+- Event creation timestamp
+
+### Snapshot Record
+
+Periodic materialized state for fast sync bootstrap.
+
+Contains:
+
+- Snapshot ID
+- Base event cursor
+- Encrypted state bundle or manifest of current object heads
+- Snapshot creation timestamp
+
+### Invite Record
+
+Used for out-of-band collection sharing and onboarding.
+
+Contains:
+
+- Invite ID
+- Issuer account/device ID
+- Target collection ID
+- Expiry time
+- Encrypted payload for recipient acceptance
+- Status: pending, accepted, revoked, expired
 
 ## 10. Storage Layout
-/accounts/{id}/config.json
-/accounts/{id}/heads/latest.json
-/accounts/{id}/devices/{device_id}.json
-/accounts/{id}/snapshots/{snapshot_id}.json
-/accounts/{id}/events/YYYY/MM/{event}.json
-/accounts/{id}/collections/{collection_id}/…
-/accounts/{id}/invites/{invite_id}.json
 
-- Immutable writes preferred
-- Versioning enabled
+One acceptable layout is:
 
----
+```text
+/accounts/{account_id}/config.json
+/accounts/{account_id}/heads/latest.json
+/accounts/{account_id}/devices/{device_id}.json
+/accounts/{account_id}/events/{sequence}.json
+/accounts/{account_id}/snapshots/{snapshot_id}.json
+/accounts/{account_id}/collections/{collection_id}/meta.json
+/accounts/{account_id}/collections/{collection_id}/memberships/{membership_id}.json
+/accounts/{account_id}/collections/{collection_id}/items/{item_id}/{version}.json
+/accounts/{account_id}/invites/{invite_id}.json
+```
+
+Guidelines:
+
+- Event keys should be lexicographically sortable without listing deep directory trees
+- Immutable objects should never be updated in place
+- Only small pointer objects such as `heads/latest.json` and `config.json` should be mutable
+- Bucket versioning should be enabled
 
 ## 11. Sync Model
 
+The sync design needs stronger invariants than "events + snapshots".
+
+### Source of Truth
+
+- Immutable item, membership, and invite objects are the authoritative records
+- The event log is the authoritative ordering mechanism for state transitions
+- Snapshots are accelerators, not the primary source of truth
+
 ### Initial Sync
-1. Fetch config
-2. Load snapshot
-3. Replay events
-4. Build local state
 
-### Incremental
-1. Fetch head
-2. Pull new events
-3. Apply locally
+1. Fetch `config.json`
+2. Read the latest snapshot pointer
+3. Download and decrypt the snapshot
+4. Replay all events after the snapshot cursor
+5. Materialize local state
+6. Persist the new local sync cursor
 
-### Snapshots
-- Periodic state checkpoints
-- Prevent infinite replay
+### Incremental Sync
 
----
+1. Fetch the latest head pointer
+2. If the local cursor is behind, download events after the current cursor
+3. Validate event continuity and integrity
+4. Apply events deterministically
+5. Fetch any referenced immutable objects not already cached
+6. Advance the local cursor only after durable local commit
 
-## 12. Concurrency
+### Sync Invariants
 
-- Optimistic concurrency
-- Version-based conflict detection
+- Events must be idempotent
+- Applying the same event twice must be safe
+- A client must not advance its cursor before all referenced objects are locally committed
+- Snapshots must be reproducible from prior state plus events
 
-v1 strategy:
-- Manual conflict resolution if needed
+### Snapshot Policy
 
----
+Create a new snapshot:
 
-## 13. Client Design
+- After N events
+- After a configurable size threshold
+- After expensive operations such as key rotation
 
-### Local Storage
-- Encrypted SQLite / IndexedDB
+Snapshots prevent unbounded replay cost but must be disposable and regenerable.
 
-### Stores
-- Ciphertext cache
-- Decrypted index
-- Search index
-- Sync state
+## 12. Concurrency and Conflict Resolution
 
-### Benefits
-- Fast
-- Offline
-- Low latency
+Object stores do not provide database-style transactions, so v1 must keep the concurrency model conservative.
 
----
+### Write Model
+
+- New item versions are append-only
+- Mutations emit a new immutable object and a corresponding event
+- Head updates use optimistic concurrency based on the last observed head version or ETag
+
+### Conflict Strategy
+
+For v1:
+
+- Treat item edits as last-writer-wins at the record level
+- Surface conflicts when two writers update from the same base version
+- Preserve prior immutable versions for manual recovery
+
+This is intentionally simple. Rich field-level merges can be added later if they are justified by real usage.
+
+## 13. Local Client Storage
+
+Each client maintains:
+
+- Encrypted local object cache
+- Local materialized state database
+- Local search index over decrypted metadata
+- Sync cursor and integrity markers
+- Device key material in platform-secure storage when available
+
+Recommended local stores:
+
+- Desktop and CLI: SQLite with page-level encryption or encrypted blobs
+- Browser extension: IndexedDB for cached ciphertext and a minimal decrypted index
+- Mobile: SQLite or platform-native secure storage plus database
+
+The local database should be treated as a cache plus usability layer, not the primary durable source of truth.
 
 ## 14. Search
 
-- Fully local
-- No server-side search
+Search is fully local in v1.
 
-Search fields:
+Indexed fields:
+
 - Title
 - Username
 - URL
 - Tags
 - Notes
 
----
+Design notes:
 
-## 15. Sharing
+- Search index contents are sensitive because they are decrypted derivatives
+- The index must be deleted on sign-out and protected at rest
+- Browser extension search should avoid preloading full secret values unless the user explicitly opens the item
 
-### Unit
-- Collection-based
+## 15. Sharing Model
 
-### Roles (v1)
-- Owner
-- Member
+v1 sharing is collection-based.
 
-### Flow
-1. Create invite
-2. Wrap collection key
-3. Accept invite
-4. Sync data
+### Roles
+
+- Owner: can rotate keys, invite members, revoke members
+- Member: can read and write items within the collection
+
+If a read-only role is needed, add it explicitly. Do not imply it exists.
+
+### Share Flow
+
+1. Owner creates an invite for a target user identity.
+2. Recipient authenticates and presents a device public key.
+3. Owner or issuing client wraps the current collection key for the recipient.
+4. Recipient accepts the invite and stores the wrapped collection key in a membership record.
+5. Recipient syncs collection metadata and items normally.
 
 ### Revocation
-- Update membership
-- Rotate collection key if needed
 
----
+Revocation has two separate concerns:
 
-## 16. Agent-Native Secrets (future)
+- Stop future authorization to fetch new objects
+- Prevent access to future data using old keys
 
-- Special collections for agents
-- Scoped, short-lived access
-- CLI/API usage
-- Least privilege model
+For v1, revocation should mean:
 
----
+1. Mark membership revoked in control-plane-visible metadata
+2. Generate a new collection key version
+3. Re-wrap that new key for remaining active members
+4. Re-encrypt item keys or new item versions going forward under the new collection key version
 
-## 17. Browser Extension
+Important limitation:
 
-### Security
-- Crypto isolated from page
-- Origin-bound autofill
-- No plaintext exposure to DOM
+Revocation cannot make a previously authorized client forget plaintext or delete already-downloaded ciphertext. It only prevents access to future protected state. The document should be explicit about this.
 
-### Performance
-- Local lookup first
-- Decrypt on demand
+## 16. Browser Extension Security
 
----
+The extension is one of the highest-risk surfaces.
 
-## 18. Recovery
+Requirements:
 
-### v1 Model
+- Cryptographic operations occur in extension-controlled context, never in page JS
+- Content scripts should request secrets from a background/service worker process through a narrow API
+- Autofill must be origin-bound and require strict URL matching rules
+- Plaintext should only enter DOM fields at fill time
+- Clipboard use should be explicit and time-limited
+- Sensitive logs must be disabled in production builds
+
+The extension should default to conservative behavior. A false negative on autofill is preferable to a credential leak.
+
+## 17. Recovery Model
+
+Recovery needs more precision than "master password + recovery key".
+
+### v1 Recovery Artifacts
+
 - Master password
-- Recovery key
+- Recovery key generated at account creation
 
-No reset if both lost.
+The recovery key should be a high-entropy random secret encoded for human backup, not a user-chosen secondary password.
 
----
+### Recommended Recovery Design
 
-## 19. Backend Responsibilities
+- The AMK is wrapped once by the password-derived KEK
+- The same AMK is wrapped again by a recovery KEK derived from the recovery key
 
-- OAuth handling
-- Device registration
-- Signed URL generation
-- Invite coordination
-- Rate limiting
+Recovery flow:
 
-Not responsible for:
-- decrypting secrets
-- indexing data
+1. User proves identity with OAuth
+2. User enters recovery key
+3. Client derives recovery KEK locally
+4. Client unwraps the AMK
+5. Client prompts the user to set a new master password
+6. Client re-wraps the AMK with a new password-derived KEK
 
----
+If both the master password and recovery key are lost, data is unrecoverable by design.
 
-## 20. Infrastructure
+## 18. Backend Responsibilities
 
-### Providers
+The backend must remain narrow even as features are added.
+
+Required responsibilities:
+
+- OAuth handling and session validation
+- Issuing short-lived object-store access scoped to account paths
+- Device registration and revocation
+- Invite lookup and acceptance coordination
+- Basic rate limiting, auditing, and abuse prevention
+- Region routing
+
+Explicitly excluded responsibilities:
+
+- Decryption
+- Search indexing
+- Secret content processing
+- Recovery escrow
+
+## 19. Infrastructure
+
+### Cloud Providers
+
+Primary supported backends:
+
 - AWS S3
 - Cloudflare R2
-- GCS
+- Google Cloud Storage
 
-### Terraform
+### Infrastructure as Code
+
+Provision with Terraform:
+
 - Buckets
-- IAM
-- Functions
-- DNS
+- IAM or equivalent access policies
+- Control-plane compute
+- CDN or DNS as needed
+- Logging and monitoring
 
-### Bucket Settings
-- Versioning ON
-- Lifecycle rules
-- Encryption at rest
+### Bucket and Object Settings
 
----
+- Versioning enabled
+- Lifecycle rules for abandoned multipart uploads and stale superseded objects where safe
+- Server-side encryption at rest enabled for baseline cloud hygiene
 
-## 21. Regional / GDPR
+Server-side encryption at rest is not a substitute for client-side encryption. It is still worth enabling for operational defense in depth.
 
-### Rule
-- Account = single region
+## 20. Regionality and Privacy
 
-### Per-region stack
-- Storage
-- Backend
-- Logs
+The cleanest v1 rule is:
 
-### Avoid
-- Global shared state
+- One account belongs to one region
 
----
+Each region should have:
 
-## 22. Cost Model
+- Its own control-plane deployment
+- Its own object storage bucket or namespace
+- Region-local logs and monitoring where practical
 
-### Costs
-- Storage
-- Requests
-- Egress
-- Logs
+Avoid global mutable state where possible. If a global identity service exists, it should store only the minimum needed to route users to the correct region.
 
-### Risks
-- Too many small writes
-- Excess listing
-- Version sprawl
+## 21. Cost Model
 
-### Mitigation
-- Snapshots
-- Efficient prefixes
-- Log limits
+Primary cost drivers:
 
----
+- Stored ciphertext volume
+- PUT and GET request volume
+- Cross-region or internet egress
+- Control-plane authentication and logging
 
-## 23. Risks
+Known risks:
 
-### Product
-- Recovery failure
-- Sharing complexity
-- Sync bugs
+- Too many small objects
+- Expensive list operations
+- Excessive snapshot churn
+- Unbounded object version sprawl
 
-### Security
-- Local compromise
-- Metadata leakage
-- OAuth linking issues
+Mitigations:
 
-### Architecture
-- Client complexity
-- Object-store limitations
+- Use predictable key layouts
+- Prefer direct GET by known object key over list-heavy discovery
+- Snapshot on thresholds, not on every write
+- Compress large encrypted payloads before encryption where appropriate
 
----
+## 22. Main Risks
 
-## 24. Differentiation
+### Security Risks
 
-- Agent-native secrets
-- User-owned storage
-- Simple sharing
-- Unified human + machine model
+- Weak browser-extension boundaries
+- Accidental metadata leakage through logs, metrics, or object naming
+- Incorrect key rotation or invite acceptance logic
 
----
+### Correctness Risks
 
-## 25. Implementation Plan
+- Sync divergence between clients
+- Lost updates due to optimistic concurrency bugs
+- Corrupt or incomplete snapshots
+
+### Product Risks
+
+- Recovery UX that users do not complete
+- Sharing semantics that users misunderstand
+- Excessive complexity in first-time device enrollment
+
+These should drive test planning and staged rollout.
+
+## 23. Testing Strategy
+
+The original document omitted validation strategy. v1 should include it.
+
+### Crypto Tests
+
+- Test vectors for all key derivation and wrapping paths
+- Cross-platform interoperability tests
+- Negative tests for wrong password, wrong recovery key, corrupted ciphertext
+
+### Sync Tests
+
+- Replay correctness from empty state and from snapshot
+- Idempotent event application
+- Concurrent writers on multiple devices
+- Partial upload and partial download failure recovery
+
+### Sharing Tests
+
+- Invite accept and reject flows
+- Membership revocation and collection key rotation
+- Access denial after revocation for future objects
+
+### Client Security Tests
+
+- Extension origin-binding tests
+- Local cache lock/unlock behavior
+- Secret redaction in logs and crash reports
+
+## 24. Implementation Plan
 
 ### Phase 1
+
 - Single-user vault
-- Sync engine
-- Desktop + CLI
+- Account unlock and local cache
+- Basic event log and snapshot sync
+- Desktop app and CLI
 
 ### Phase 2
+
 - Browser extension
+- Origin-bound lookup and autofill
 
 ### Phase 3
-- Sharing
+
+- Collection-based sharing
+- Invite acceptance
+- Member revocation and collection key rotation
 
 ### Phase 4
-- Recovery + export
+
+- Recovery key flow
+- Export and import
+- Mobile clients
 
 ### Phase 5
-- Agent access
 
----
+- Agent-native access patterns
+- Short-lived scoped machine credentials
 
-## 26. Final Decisions
+## 25. Future Direction: Agent-Native Secrets
 
-- OAuth + master password
-- No DB
-- Object storage only
-- Local-first clients
-- Collection-based sharing
-- Recovery key required
+This should remain explicitly future work.
 
----
+Likely model:
+
+- Dedicated machine or agent collections
+- Narrow-scoped credentials with short TTLs
+- Auditable issuance from a user-controlled client
+- Separation between human vaults and automated runtime access
+
+This should not distort the v1 human-centric data model.
+
+## 26. Final Decisions for v1
+
+- OAuth is for identity; the master password is for cryptographic unlock
+- Object storage is the durable data plane
+- No traditional backend database for primary vault state
+- Clients are local-first and maintain encrypted local state
+- Sharing is collection-based
+- Password rotation re-wraps the AMK rather than re-encrypting the full vault
+- Recovery requires a separately stored high-entropy recovery key
+- Revocation protects future access, not already-exported plaintext
 
 ## 27. Summary
 
-A **client-side encrypted, local-first secret manager** using:
+The v1 system is a client-side encrypted secret manager built on a thin control plane plus S3-compatible object storage. The design keeps decryption on the client, uses immutable objects and an append-only event log for synchronization, and relies on snapshots for fast bootstrap.
 
-- Per-item encryption
-- Collection-based sharing
-- Append-only sync
-- Snapshots
-- S3-compatible storage
+The critical implementation areas are:
 
-This yields:
+- Correct key wrapping and recovery flows
+- Deterministic sync and conflict handling
+- Safe collection sharing and revocation
+- Browser extension isolation
 
-- Strong security
-- Low cost
-- High portability
-- Simple infrastructure
-
-The hardest parts are:
-
-- Sync correctness
-- Sharing correctness
-- Extension security
-- Recovery UX
+If those areas are implemented rigorously, the architecture is viable. If they are hand-waved, the product will look simple on paper and fail in production.
