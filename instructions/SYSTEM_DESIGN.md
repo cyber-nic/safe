@@ -185,6 +185,8 @@ This is preferable to deriving every level from the password directly. The passw
 
 The implementation should standardize on one primitive set across all clients. Mixing algorithms by platform creates migration and audit risk.
 
+For v1, the primitive set should be frozen in Phase 0 and used consistently across all clients and services.
+
 ### Password Rotation
 
 Password rotation should only re-wrap the AMK under a newly derived KEK. It should not trigger full vault re-encryption.
@@ -332,7 +334,7 @@ Contains:
 - Event creation timestamp
 - Idempotency key
 - Base head or base cursor observed by the writer
-- Optional author signature over canonical event bytes
+- Mandatory author signature over canonical event bytes
 
 ### Snapshot Record
 
@@ -409,7 +411,7 @@ The sync design needs stronger invariants than "events + snapshots".
 
 1. Fetch the latest head pointer
 2. If the local cursor is behind, download events after the current cursor
-3. Validate event continuity and integrity
+3. Validate event continuity, signatures, and rollback markers
 4. Apply events deterministically
 5. Fetch any referenced immutable objects not already cached
 6. Advance the local cursor only after durable local commit
@@ -423,9 +425,10 @@ Recommended v1 protocol:
 1. Writer reads the current head pointer and records its ETag and cursor.
 2. Writer creates immutable objects for any new item, membership, or invite versions.
 3. Writer creates a canonical event object containing an idempotency key, the base cursor, references to immutable objects, and the author device ID.
-4. Writer attempts a compare-and-swap update of `heads/latest.json` using the last observed ETag. The new head points to the new event cursor and event object.
-5. If the compare-and-swap succeeds, the write is committed.
-6. If the compare-and-swap fails, the writer re-reads head state, checks whether its idempotency key already committed, and otherwise rebuilds against the new base state.
+4. Writer signs the canonical event bytes with the device signing key.
+5. Writer attempts a compare-and-swap update of `heads/latest.json` using the last observed ETag. The new head points to the new event cursor and event object and includes an authenticated rollback marker.
+6. If the compare-and-swap succeeds, the write is committed.
+7. If the compare-and-swap fails, the writer re-reads head state, checks whether its idempotency key already committed, and otherwise rebuilds against the new base state.
 
 This means the mutable head pointer is the commit point. Immutable objects may exist without being committed; clients must ignore unreachable objects during normal replay and garbage collection can clean them up later.
 
@@ -437,6 +440,8 @@ This means the mutable head pointer is the commit point. Immutable objects may e
 - Snapshots must be reproducible from prior state plus events
 - A committed event must reference only immutable objects that already exist
 - Writers must be able to detect whether a retried mutation already committed by matching on idempotency key
+- Clients must reject unsigned or stale mutable metadata
+- Head pointers, account config, membership state, and snapshot pointers must be rollback-detectable
 
 ### Snapshot Policy
 
@@ -577,7 +582,18 @@ Requirements:
 
 The extension should default to conservative behavior. A false negative on autofill is preferable to a credential leak.
 
-## 17. Recovery Model
+## 17. Implementation Alignment
+
+The implementation stack for v1 should be:
+
+- Go for the control plane, storage-facing backend components, and CLI
+- TypeScript for desktop UI, browser extension, and web-facing client code
+- Material UI for the primary application UI layer
+- Containers for local development and deployment consistency
+- AWS as the primary cloud target, with S3 as the initial object store
+
+Shared protocol schemas, canonical serialization rules, and test vectors must be defined independent of implementation language so Go and TypeScript implementations remain interoperable.
+## 18. Recovery Model
 
 Recovery needs more precision than "master password + recovery key".
 
@@ -606,7 +622,7 @@ If both the master password and recovery key are lost, data is unrecoverable by 
 
 Recovery should be validated as part of the initial account model, not deferred until release hardening. The first implementation milestone should prove that account creation, recovery-key storage guidance, AMK recovery, and password reset all work against real serialized account data.
 
-## 18. Backend Responsibilities
+## 19. Backend Responsibilities
 
 The backend must remain narrow even as features are added.
 
@@ -627,7 +643,7 @@ Explicitly excluded responsibilities:
 - Secret content processing
 - Recovery escrow
 
-## 19. Infrastructure
+## 20. Infrastructure
 
 ### Cloud Providers
 
@@ -655,7 +671,7 @@ Provision with Terraform:
 
 Server-side encryption at rest is not a substitute for client-side encryption. It is still worth enabling for operational defense in depth.
 
-## 20. Regionality and Privacy
+## 21. Regionality and Privacy
 
 The cleanest v1 rule is:
 
@@ -669,7 +685,7 @@ Each region should have:
 
 Avoid global mutable state where possible. If a global identity service exists, it should store only the minimum needed to route users to the correct region.
 
-## 21. Cost Model
+## 22. Cost Model
 
 Primary cost drivers:
 
@@ -692,7 +708,7 @@ Mitigations:
 - Snapshot on thresholds, not on every write
 - Compress large encrypted payloads before encryption where appropriate
 
-## 22. Main Risks
+## 23. Main Risks
 
 ### Security Risks
 
@@ -714,7 +730,7 @@ Mitigations:
 
 These should drive test planning and staged rollout.
 
-## 23. Testing Strategy
+## 24. Testing Strategy
 
 The original document omitted validation strategy. v1 should include it.
 
@@ -748,7 +764,7 @@ The original document omitted validation strategy. v1 should include it.
 - Secret redaction in logs and crash reports
 - Local rollback-detection behavior when older signed heads or snapshots are replayed
 
-## 24. Implementation Plan
+## 25. Implementation Plan
 
 ### Phase 1
 

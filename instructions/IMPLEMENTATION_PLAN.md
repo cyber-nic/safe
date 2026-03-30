@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document turns [SYSTEM_DESIGN.md](/Users/ndelorme/cipher/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
+This document turns [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
 
 It is intended to answer:
 
@@ -79,32 +79,37 @@ Suggested structure:
 /apps
   /desktop
   /extension
-  /cli
+  /web
+/cmd
+  /cipher
   /control-plane
 /packages
-  /crypto
-  /data-model
-  /sync-engine
-  /storage-adapter
-  /auth-client
-  /vault-core
-  /search
+  /ts-sdk
   /ui-kit
   /test-vectors
+/internal
+  /auth
+  /crypto
+  /domain
+  /storage
+  /sync
 /infra
   /terraform
 /docs
   SYSTEM_DESIGN.md
   IMPLEMENTATION_PLAN.md
+  PROTOCOL.md
+  ARCHITECTURE.md
 ```
 
 Principles:
 
-- All cryptographic logic lives in one shared package
-- All object schemas and serialization logic live in one shared package
-- Sync behavior is implemented once and reused across desktop, CLI, and extension where practical
+- Shared protocol schemas and canonical serialization rules must be language-neutral
+- Go owns backend, CLI, and core systems packages
+- TypeScript owns desktop, extension, and web-facing client packages
+- Sync behavior and crypto rules must be implemented once per language boundary and verified with shared test vectors
 - The backend should depend on shared schemas but not on client-side secret-handling code
-- The shared schemas package should include canonical bytes for signing and rollback detection, not just validation types
+- Test vectors must include canonical bytes for signing and rollback detection, not just validation types
 
 ## 5. Technology Choices
 
@@ -112,38 +117,42 @@ These choices should be fixed early to reduce rework.
 
 ### Core Language
 
-- TypeScript across clients and control plane
+- Go for backend and systems components
+- TypeScript for frontend, extension, desktop UI, and shared web-facing client logic
 
 Reason:
 
-- Shared logic across desktop, extension, CLI, and backend
-- Faster iteration for a small team
-- Easier schema and test-vector reuse
+- Go is a better fit for the control plane, storage adapters, and operational services
+- TypeScript is a better fit for desktop UI, browser extension UX, and shared client experiences
+- Shared schemas and test vectors preserve interoperability without forcing one runtime everywhere
 
 ### Desktop
 
-- Electron or Tauri
+- Electron with a TypeScript UI and Material UI component layer
 
 Recommendation:
 
-- Choose Electron if team speed and extension-like web UI reuse matter more than binary size
-- Choose Tauri if the team is comfortable with Rust ownership for shell/native boundaries
-
-For v1, consistency of the shared vault core matters more than theoretical footprint gains.
+- Keep the desktop shell boring in v1
+- Reuse as much TypeScript UI code as practical across desktop and web-facing surfaces
 
 ### CLI
 
-- Node.js-based CLI using the same core packages as desktop
+- Go-based CLI with script-friendly output and a narrow command surface
 
 ### Browser Extension
 
 - Manifest V3 extension
-- Shared core logic plus extension-specific secure boundary code
+- TypeScript extension using shared protocol code and extension-specific secure boundary code
+
+### Web
+
+- SSR web application for onboarding, account management, and future authenticated web flows
+- Material UI as the default component system for the web surface
 
 ### Control Plane
 
-- TypeScript service deployed as serverless functions or a small container service
-- Posture should remain stateless except for minimal identity/session coordination if absolutely required
+- Go service deployed in containers
+- Posture should remain lean, with only the minimum durable authorization and identity state required for safe operation
 
 ### Local Storage
 
@@ -173,7 +182,7 @@ Scope:
 
 Outputs:
 
-- Stable crypto package
+- Stable Go and TypeScript crypto implementations validated against shared vectors
 - Versioned key schema
 - Deterministic test vectors
 
@@ -189,7 +198,7 @@ Scope:
 
 Outputs:
 
-- Shared model package
+- Shared protocol model and canonical serialization fixtures
 - Validation library
 - Golden fixtures
 
@@ -208,7 +217,7 @@ Scope:
 
 Outputs:
 
-- Reusable sync engine package
+- Reusable sync engine implementations with shared conformance tests
 - End-to-end sync tests
 - Fault-injection test coverage
 
@@ -224,7 +233,7 @@ Scope:
 
 Outputs:
 
-- Shared vault runtime package
+- Shared vault runtime contracts and local persistence adapters
 - Local persistence adapters
 
 ### Workstream E: Control Plane
@@ -241,7 +250,7 @@ Scope:
 
 Outputs:
 
-- Minimal backend service
+- Minimal Go backend service
 - Auth and policy middleware
 - Integration tests against object storage
 
@@ -287,6 +296,20 @@ Outputs:
 
 - Operational CLI for power users and future automation
 
+### Workstream I: Web and Shared UI
+
+Scope:
+
+- SSR account onboarding surface
+- Authenticated account management views
+- Shared Material UI design system
+- Shared frontend shell patterns
+
+Outputs:
+
+- Web app for onboarding and account management
+- Shared UI primitives for desktop and web
+
 ## 7. Phase Plan
 
 ### Phase 0: Foundations
@@ -313,14 +336,17 @@ Decisions to lock:
 - Snapshot encoding
 - Local database strategy
 - Signed event/head format
+- Canonical serialization format
+- Rollback marker format
 - Device enrollment ceremony
 - Shared-object authorization model
+- Backend/frontend split and repository boundaries
 
 Exit criteria:
 
 - Repository structure exists
 - CI runs tests and typecheck
-- One package can publish shared model types to all apps
+- Shared protocol fixtures are consumable from Go and TypeScript
 - Terraform can provision a non-production bucket and control-plane skeleton
 
 ### Phase 1: Crypto and Data Model Core
@@ -339,6 +365,7 @@ Build:
 - Device key pair generation
 - Device-enrollment protocol for existing-device approval and recovery-key bootstrap
 - Canonical schemas for account config, device, collection, membership, item, event, snapshot, invite
+- Canonical serialization and signature fixtures shared across Go and TypeScript
 
 Tests:
 
@@ -351,6 +378,7 @@ Tests:
 Exit criteria:
 
 - The crypto package is versioned and consumed by at least one app package
+- Go and TypeScript implementations pass the same fixture set
 - All object types serialize and validate deterministically
 - Password rotation can re-wrap the AMK without rewriting item data
 - Recovery and device enrollment work end to end against real account fixtures
