@@ -30,6 +30,7 @@ The critical path is not UI. The critical path is:
 - Local encrypted storage
 - Deterministic sync
 - Correct object-store semantics
+- Rollback detection and integrity protection for mutable metadata
 - Safe device and sharing flows
 
 ## 3. v1 Scope
@@ -39,6 +40,7 @@ The critical path is not UI. The critical path is:
 - OAuth identity
 - Master-password unlock
 - Account key wrapping and recovery key support
+- Explicit device enrollment via existing-device approval or recovery-key bootstrap
 - Desktop app
 - CLI
 - Local encrypted cache
@@ -102,6 +104,7 @@ Principles:
 - All object schemas and serialization logic live in one shared package
 - Sync behavior is implemented once and reused across desktop, CLI, and extension where practical
 - The backend should depend on shared schemas but not on client-side secret-handling code
+- The shared schemas package should include canonical bytes for signing and rollback detection, not just validation types
 
 ## 5. Technology Choices
 
@@ -198,6 +201,8 @@ Scope:
 - Snapshot creation and restore
 - Cursor management
 - Optimistic concurrency
+- Compare-and-swap head commit protocol
+- Rollback detection for mutable pointers and snapshots
 - Idempotent replay
 - Recovery from partial failure
 
@@ -229,6 +234,7 @@ Scope:
 - OAuth integration
 - Device registration
 - Signed URL issuance or scoped object credentials
+- Shared collection path authorization
 - Invite coordination
 - Region routing
 - Rate limiting and audit events
@@ -306,6 +312,9 @@ Decisions to lock:
 - Event cursor format
 - Snapshot encoding
 - Local database strategy
+- Signed event/head format
+- Device enrollment ceremony
+- Shared-object authorization model
 
 Exit criteria:
 
@@ -325,14 +334,18 @@ Build:
 - Argon2id-based password derivation
 - AMK wrapping and unwrap flow
 - Recovery key generation and wrap path
+- End-to-end recovery using serialized account config
 - Collection key and item data key wrapping
 - Device key pair generation
+- Device-enrollment protocol for existing-device approval and recovery-key bootstrap
 - Canonical schemas for account config, device, collection, membership, item, event, snapshot, invite
 
 Tests:
 
 - Unit tests for all wrap/unwrap paths
 - Wrong-password and corrupted-ciphertext negative tests
+- Recovery-key success/failure tests against persisted account state
+- Device-enrollment tests for both enrollment paths
 - Stable fixtures for each object type
 
 Exit criteria:
@@ -340,6 +353,7 @@ Exit criteria:
 - The crypto package is versioned and consumed by at least one app package
 - All object types serialize and validate deterministically
 - Password rotation can re-wrap the AMK without rewriting item data
+- Recovery and device enrollment work end to end against real account fixtures
 
 ### Phase 2: Local Vault Runtime
 
@@ -382,6 +396,8 @@ Build:
 - Event append flow
 - Snapshot generation and restore
 - Head pointer updates with optimistic concurrency
+- Idempotent write protocol with explicit commit point and retry rules
+- Rollback detection for stale heads and snapshots
 - Cursor persistence and replay
 
 Tests:
@@ -391,12 +407,15 @@ Tests:
 - Duplicate event application
 - Mid-sync interruption and recovery
 - Concurrent writes from two devices
+- Compare-and-swap contention and safe retry
+- Replayed stale head or snapshot rejection
 
 Exit criteria:
 
 - Two devices can converge on the same state through object storage
 - Replay is idempotent
 - Partial failure does not corrupt local state or advance the cursor incorrectly
+- Clients detect and reject stale mutable metadata instead of silently rolling back
 
 ### Phase 4: Control Plane and Identity
 
@@ -410,6 +429,7 @@ Build:
 - Account creation flow
 - Device registration
 - Signed URL issuance or scoped storage credentials
+- Collection-scoped authorization for shared data
 - Basic audit events
 - Rate limiting
 
@@ -418,11 +438,13 @@ Tests:
 - OAuth success/failure flows
 - Device registration and revocation flows
 - Path scoping for object access
+- Shared collection access without owner-account overreach
 
 Exit criteria:
 
 - A user can sign in with OAuth, unlock locally, and sync only their own account path
 - Revoked devices lose future object access through the control plane
+- Shared collection members can fetch only the collection paths they are authorized to read
 
 ### Phase 5: Desktop Product MVP
 
@@ -440,11 +462,13 @@ Build:
 - Manual sync controls
 - Export/import UX
 - Recovery-key presentation and backup confirmation flow
+- Existing-device approval flow for new desktop enrollment
 
 Tests:
 
 - End-to-end desktop smoke tests
 - Regression tests for lock state, sync, and export
+- Recovery-key acknowledgement and restore drill tests
 
 Exit criteria:
 
@@ -489,6 +513,7 @@ Build:
 - Per-recipient collection-key wrapping
 - Membership revocation
 - Collection key rotation
+- Shared-object namespace or equivalent collection-scoped access path
 
 Tests:
 
@@ -496,6 +521,7 @@ Tests:
 - Shared collection sync across users
 - Revocation tests for future object access
 - Re-key behavior tests after member removal
+- Authorization boundary tests for collection-scoped credentials
 
 Exit criteria:
 
@@ -510,8 +536,7 @@ Goal:
 - Close the highest-risk gaps before public release.
 
 Build:
-
-- Recovery flow UX
+- Recovery flow UX refinements
 - Password change flow
 - Device management UI
 - Audit/log redaction review
@@ -542,6 +567,7 @@ Definition:
 - Shared crypto package is stable
 - Test vectors exist
 - Recovery and rotation paths work
+- Device-enrollment paths work
 
 ### Milestone B: Single-Device Vault Ready
 
@@ -557,6 +583,7 @@ Definition:
 
 - Sync converges reliably across devices
 - Snapshot and replay behavior is validated
+- Rollback detection is validated
 
 ### Milestone D: Desktop MVP Ready
 
@@ -594,6 +621,7 @@ Done when:
 - The client generates key material locally
 - The AMK is wrapped for password and recovery use
 - Initial account config is written successfully
+- The recovery flow can unwrap that same AMK from persisted account data
 
 ### Unlock
 
@@ -616,6 +644,7 @@ Done when:
 - Clients converge deterministically
 - Repeated replay is safe
 - Interrupted sync can resume without corruption
+- Stale mutable pointers are detected and not accepted silently
 
 ### Sharing
 
@@ -624,6 +653,7 @@ Done when:
 - A collection can be shared to another account
 - The recipient can decrypt data only after invite acceptance
 - Revocation plus key rotation prevents future access
+- Shared object access is scoped to authorized collection paths only
 
 ### Recovery
 
@@ -641,12 +671,14 @@ The following must block release if incomplete.
 - Key hierarchy documented
 - Serialization format frozen
 - Wrap/unwrap test vectors complete
+- Device-enrollment ceremony documented and tested
 
 ### Gate 2: Sync Review
 
 - Event application proven idempotent
 - Cursor advancement rules tested
 - Snapshot consistency verified
+- Mutable head commit protocol and rollback detection verified
 
 ### Gate 3: Extension Review
 
@@ -679,6 +711,7 @@ Testing should be layered.
 - Local database plus vault runtime
 - Control plane plus object-store access
 - Sync between multiple clients
+- Shared collection authorization boundary enforcement
 
 ### End-to-End Tests
 
@@ -695,6 +728,7 @@ Testing should be layered.
 - Replay of expired signed URLs
 - Interrupted uploads
 - Locked-device local disk inspection
+- Replay of stale heads, stale snapshots, or revoked shared-path credentials
 
 ## 12. Operational Plan
 
@@ -716,6 +750,8 @@ Even v1 needs operational discipline.
 - Object-store error rates
 - OAuth error rates
 - Invite acceptance success/failure
+- Compare-and-swap write contention rate
+- Rollback-detection failures
 
 Telemetry must be structured to avoid plaintext leakage.
 
@@ -753,7 +789,17 @@ Mitigation:
 
 - Enforce a written API boundary and review every new backend field for zero-knowledge impact.
 
-### Risk 3: Extension Security Shortcuts
+### Risk 3: Ambiguous Commit Semantics
+
+Failure mode:
+
+- Concurrent writers commit unreachable objects, duplicate mutations, or divergent heads because the write protocol is under-specified.
+
+Mitigation:
+
+- Freeze an explicit compare-and-swap commit protocol with idempotency keys before sync implementation starts.
+
+### Risk 4: Extension Security Shortcuts
 
 Failure mode:
 
@@ -763,7 +809,7 @@ Mitigation:
 
 - Conservative defaults and explicit extension security review.
 
-### Risk 4: Revocation Ambiguity
+### Risk 5: Revocation Ambiguity
 
 Failure mode:
 
@@ -771,9 +817,9 @@ Failure mode:
 
 Mitigation:
 
-- Align UX, docs, and tests with actual forward-secrecy limits.
+- Align UX, docs, authorization model, and tests with actual forward-secrecy limits.
 
-### Risk 5: Recovery UX Failure
+### Risk 6: Recovery UX Failure
 
 Failure mode:
 
@@ -782,6 +828,16 @@ Failure mode:
 Mitigation:
 
 - Force clear recovery-key acknowledgement during onboarding and test the flow early.
+
+### Risk 7: Shared-Path Authorization Drift
+
+Failure mode:
+
+- Cross-account sharing is implemented by broadening storage credentials until they cover more than the intended collection scope.
+
+Mitigation:
+
+- Define a collection-scoped authorization model and verify it with boundary tests before shipping sharing.
 
 ## 15. Definition of v1 Done
 
@@ -795,6 +851,8 @@ v1 is done when all of the following are true:
 - Shared collections work across two accounts
 - Revocation plus collection key rotation protects future shared data
 - Recovery works without backend escrow
+- New devices can be added without weakening the zero-knowledge model
+- Clients detect stale mutable metadata and fail safely
 - Security gates have been passed
 - Operational runbooks and telemetry are in place
 
@@ -804,9 +862,10 @@ If implementation starts now, the first concrete steps should be:
 
 1. Create the monorepo and package boundaries.
 2. Freeze the crypto primitive set and object schemas.
-3. Build test vectors before UI.
-4. Implement local vault runtime and offline item flows.
-5. Implement S3 storage adapter and sync engine.
-6. Add the control plane only to the extent needed for identity and access mediation.
+3. Freeze the device-enrollment ceremony, signed metadata format, and shared-object authorization model.
+4. Build test vectors before UI.
+5. Implement local vault runtime and offline item flows.
+6. Implement S3 storage adapter and sync engine.
+7. Add the control plane only to the extent needed for identity and access mediation.
 
 That sequence keeps the hardest engineering risks on the critical path and avoids building product surface on unstable foundations.

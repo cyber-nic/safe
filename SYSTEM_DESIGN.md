@@ -199,6 +199,22 @@ Device keys support:
 - Invite acceptance flows
 - Optional future peer-assisted recovery or approval workflows
 
+### Device Enrollment Model
+
+v1 should make device addition explicit rather than implicit.
+
+Supported enrollment paths:
+
+- Existing-device approval: a currently unlocked device approves a new device and transfers the AMK or a device-unlock bundle encrypted to the new device public key
+- Recovery-key bootstrap: if no trusted device is available, the user authenticates with OAuth and uses the recovery key to unwrap the AMK locally on the new device
+
+Not supported in v1:
+
+- Silent device enrollment based on OAuth alone
+- Server-mediated escrow of device private keys or plaintext account keys
+
+This keeps device addition consistent with the zero-knowledge model and avoids inventing a weaker fallback later.
+
 ## 8. Metadata Exposure
 
 The current design must be explicit about what leaks and why.
@@ -314,6 +330,9 @@ Contains:
 - Integrity hash
 - Author device ID
 - Event creation timestamp
+- Idempotency key
+- Base head or base cursor observed by the writer
+- Optional author signature over canonical event bytes
 
 ### Snapshot Record
 
@@ -348,11 +367,14 @@ One acceptable layout is:
 /accounts/{account_id}/heads/latest.json
 /accounts/{account_id}/devices/{device_id}.json
 /accounts/{account_id}/events/{sequence}.json
+/accounts/{account_id}/events/by-device/{device_id}/{device_sequence}.json
 /accounts/{account_id}/snapshots/{snapshot_id}.json
 /accounts/{account_id}/collections/{collection_id}/meta.json
 /accounts/{account_id}/collections/{collection_id}/memberships/{membership_id}.json
 /accounts/{account_id}/collections/{collection_id}/items/{item_id}/{version}.json
 /accounts/{account_id}/invites/{invite_id}.json
+/shared/{collection_id}/manifest.json
+/shared/{collection_id}/items/{item_id}/{version}.json
 ```
 
 Guidelines:
@@ -361,6 +383,8 @@ Guidelines:
 - Immutable objects should never be updated in place
 - Only small pointer objects such as `heads/latest.json` and `config.json` should be mutable
 - Bucket versioning should be enabled
+
+Shared collections should not rely on broad cross-account bucket access. Shared objects should either live in an explicit shared namespace or be reachable through control-plane-issued capabilities scoped to specific collection paths.
 
 ## 11. Sync Model
 
@@ -390,12 +414,29 @@ The sync design needs stronger invariants than "events + snapshots".
 5. Fetch any referenced immutable objects not already cached
 6. Advance the local cursor only after durable local commit
 
+### Write Protocol
+
+The write path must be specified tightly because object storage is not a database.
+
+Recommended v1 protocol:
+
+1. Writer reads the current head pointer and records its ETag and cursor.
+2. Writer creates immutable objects for any new item, membership, or invite versions.
+3. Writer creates a canonical event object containing an idempotency key, the base cursor, references to immutable objects, and the author device ID.
+4. Writer attempts a compare-and-swap update of `heads/latest.json` using the last observed ETag. The new head points to the new event cursor and event object.
+5. If the compare-and-swap succeeds, the write is committed.
+6. If the compare-and-swap fails, the writer re-reads head state, checks whether its idempotency key already committed, and otherwise rebuilds against the new base state.
+
+This means the mutable head pointer is the commit point. Immutable objects may exist without being committed; clients must ignore unreachable objects during normal replay and garbage collection can clean them up later.
+
 ### Sync Invariants
 
 - Events must be idempotent
 - Applying the same event twice must be safe
 - A client must not advance its cursor before all referenced objects are locally committed
 - Snapshots must be reproducible from prior state plus events
+- A committed event must reference only immutable objects that already exist
+- Writers must be able to detect whether a retried mutation already committed by matching on idempotency key
 
 ### Snapshot Policy
 
@@ -426,6 +467,8 @@ For v1:
 - Preserve prior immutable versions for manual recovery
 
 This is intentionally simple. Rich field-level merges can be added later if they are justified by real usage.
+
+The implementation should also preserve an explicit "base version" on mutation requests so conflicts can be surfaced deterministically instead of inferred from timestamps alone.
 
 ## 13. Local Client Storage
 
@@ -482,6 +525,18 @@ If a read-only role is needed, add it explicitly. Do not imply it exists.
 4. Recipient accepts the invite and stores the wrapped collection key in a membership record.
 5. Recipient syncs collection metadata and items normally.
 
+### Shared-Data Authorization
+
+The authorization model must match the crypto model.
+
+For v1:
+
+- Shared collection objects should live in a collection-scoped namespace rather than only under the owner account path
+- The control plane should authorize a member to fetch only the collection paths for collections where an active membership exists
+- A recipient should not receive broad access to the owner's account prefix in order to read a shared collection
+
+This keeps the access boundary narrow and makes revocation enforceable at the storage-authorization layer.
+
 ### Revocation
 
 Revocation has two separate concerns:
@@ -499,6 +554,13 @@ For v1, revocation should mean:
 Important limitation:
 
 Revocation cannot make a previously authorized client forget plaintext or delete already-downloaded ciphertext. It only prevents access to future protected state. The document should be explicit about this.
+
+The system should distinguish clearly between:
+
+- Authorization revocation: stop fetching future protected objects
+- Cryptographic forward revocation: rotate to a new collection key version for future writes
+
+It does not provide retroactive deletion of prior plaintext exposure.
 
 ## 16. Browser Extension Security
 
@@ -542,6 +604,8 @@ Recovery flow:
 
 If both the master password and recovery key are lost, data is unrecoverable by design.
 
+Recovery should be validated as part of the initial account model, not deferred until release hardening. The first implementation milestone should prove that account creation, recovery-key storage guidance, AMK recovery, and password reset all work against real serialized account data.
+
 ## 18. Backend Responsibilities
 
 The backend must remain narrow even as features are added.
@@ -550,6 +614,7 @@ Required responsibilities:
 
 - OAuth handling and session validation
 - Issuing short-lived object-store access scoped to account paths
+- Issuing short-lived object-store access scoped to shared collection paths for active members
 - Device registration and revocation
 - Invite lookup and acceptance coordination
 - Basic rate limiting, auditing, and abuse prevention
@@ -658,6 +723,7 @@ The original document omitted validation strategy. v1 should include it.
 - Test vectors for all key derivation and wrapping paths
 - Cross-platform interoperability tests
 - Negative tests for wrong password, wrong recovery key, corrupted ciphertext
+- Device-enrollment tests for both existing-device approval and recovery-key bootstrap
 
 ### Sync Tests
 
@@ -665,18 +731,22 @@ The original document omitted validation strategy. v1 should include it.
 - Idempotent event application
 - Concurrent writers on multiple devices
 - Partial upload and partial download failure recovery
+- Compare-and-swap head-update contention and retry behavior
+- Rollback detection for stale mutable heads or snapshots
 
 ### Sharing Tests
 
 - Invite accept and reject flows
 - Membership revocation and collection key rotation
 - Access denial after revocation for future objects
+- Authorization scoping for shared collection paths without owner-prefix overreach
 
 ### Client Security Tests
 
 - Extension origin-binding tests
 - Local cache lock/unlock behavior
 - Secret redaction in logs and crash reports
+- Local rollback-detection behavior when older signed heads or snapshots are replayed
 
 ## 24. Implementation Plan
 
