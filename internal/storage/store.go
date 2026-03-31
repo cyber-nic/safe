@@ -57,6 +57,16 @@ func StoreItemRecord(store ObjectStore, accountID, collectionID string, record d
 	return key, nil
 }
 
+func LoadItemRecord(store ObjectStore, accountID, collectionID, itemID string) (domain.VaultItemRecord, error) {
+	key := ItemObjectKey(accountID, collectionID, itemID)
+	payload, err := store.Get(key)
+	if err != nil {
+		return domain.VaultItemRecord{}, err
+	}
+
+	return domain.ParseVaultItemRecordJSON(payload)
+}
+
 func StoreEventRecord(store ObjectStore, record domain.VaultEventRecord) (string, error) {
 	payload, err := record.CanonicalJSON()
 	if err != nil {
@@ -69,6 +79,16 @@ func StoreEventRecord(store ObjectStore, record domain.VaultEventRecord) (string
 	}
 
 	return key, nil
+}
+
+func LoadEventRecord(store ObjectStore, accountID, collectionID, eventID string) (domain.VaultEventRecord, error) {
+	key := EventObjectKey(accountID, collectionID, eventID)
+	payload, err := store.Get(key)
+	if err != nil {
+		return domain.VaultEventRecord{}, err
+	}
+
+	return domain.ParseVaultEventRecordJSON(payload)
 }
 
 type objectNotFoundError string

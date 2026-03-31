@@ -95,17 +95,26 @@ func printControlPlaneBootstrap() error {
 			return err
 		}
 	}
+
+	storedEvents := make([]domain.VaultEventRecord, 0, len(domain.StarterVaultEventRecords()))
 	for _, record := range domain.StarterVaultEventRecords() {
 		if _, err := storage.StoreEventRecord(objectStore, record); err != nil {
 			return err
 		}
+
+		loaded, err := storage.LoadEventRecord(objectStore, record.AccountID, record.CollectionID, record.EventID)
+		if err != nil {
+			return err
+		}
+
+		storedEvents = append(storedEvents, loaded)
 	}
 
 	fmt.Println("storage dry run:")
 	fmt.Printf("- staged %d item records\n", len(domain.StarterVaultItemRecords()))
 	fmt.Printf("- staged %d event records\n", len(domain.StarterVaultEventRecords()))
 
-	projection, err := safesync.ReplayCollection(domain.StarterVaultEventRecords())
+	projection, err := safesync.ReplayCollection(storedEvents)
 	if err != nil {
 		return err
 	}

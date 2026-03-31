@@ -53,6 +53,15 @@ func TestStoreItemRecord(t *testing.T) {
 	if string(got) != string(want) {
 		t.Fatalf("unexpected stored item record\nwant: %s\ngot:  %s", string(want), string(got))
 	}
+
+	loaded, err := LoadItemRecord(store, "acct-dev-001", "vault-personal", record.Item.ID)
+	if err != nil {
+		t.Fatalf("load item record: %v", err)
+	}
+
+	if loaded.Item.ID != record.Item.ID {
+		t.Fatalf("unexpected loaded item record: %+v", loaded)
+	}
 }
 
 func TestStoreEventRecord(t *testing.T) {
@@ -76,5 +85,14 @@ func TestStoreEventRecord(t *testing.T) {
 
 	if string(got) != string(want) {
 		t.Fatalf("unexpected stored event record\nwant: %s\ngot:  %s", string(want), string(got))
+	}
+
+	loaded, err := LoadEventRecord(store, record.AccountID, record.CollectionID, record.EventID)
+	if err != nil {
+		t.Fatalf("load event record: %v", err)
+	}
+
+	if loaded.EventID != record.EventID {
+		t.Fatalf("unexpected loaded event record: %+v", loaded)
 	}
 }
