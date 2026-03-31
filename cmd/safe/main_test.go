@@ -132,6 +132,54 @@ func TestRunSecretAdd(t *testing.T) {
 	})
 }
 
+func TestRunSecretUpdate(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "update", "login-gmail-primary", "Gmail Work", "alice@work.example"}, &buffer); err != nil {
+			t.Fatalf("run secret update: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret update:") {
+			t.Fatalf("expected secret update output, got %s", output)
+		}
+		if !strings.Contains(output, "id=login-gmail-primary title=Gmail Work username=alice@work.example") {
+			t.Fatalf("expected updated login output, got %s", output)
+		}
+		if !strings.Contains(output, "latestSeq=3") {
+			t.Fatalf("expected latestSeq=3 after update, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretUpdateMissingItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		err := run([]string{"secret", "update", "missing-item", "Title", "alice"}, &buffer)
+		if err == nil {
+			t.Fatal("expected missing item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret not found: missing-item") {
+			t.Fatalf("expected missing item error, got %v", err)
+		}
+	})
+}
+
+func TestRunSecretUpdateRejectsNonLoginItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		err := run([]string{"secret", "update", "totp-gmail-primary", "Gmail 2FA", "alice@example.com"}, &buffer)
+		if err == nil {
+			t.Fatal("expected non-login item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret update only supports login items: totp-gmail-primary") {
+			t.Fatalf("expected non-login item error, got %v", err)
+		}
+	})
+}
+
 func TestRunSecretSearchByTitle(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer

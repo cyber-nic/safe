@@ -143,6 +143,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "update":
+		if len(args) < 4 {
+			return fmt.Errorf("usage: safe secret update <item-id> <title> <username>")
+		}
+		return secretUpdate(out, state, args[1], args[2], args[3])
 	case "search":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret search <query>")
@@ -255,32 +260,41 @@ func secretAdd(out io.Writer, state cliState, title, username string) error {
 		},
 	}
 
-	newEvent, newHead, err := safesync.BuildPutItemMutation(state.head, state.session.DeviceID, itemRecord, "2026-03-31T10:02:00Z")
-	if err != nil {
-		return err
-	}
-
-	if _, err := storage.StoreItemRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, itemRecord); err != nil {
-		return err
-	}
-	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
-		return err
-	}
-	if _, err := storage.StoreCollectionHeadRecord(state.store, newHead); err != nil {
-		return err
-	}
-
-	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
-	if err != nil {
-		return err
-	}
-	projection, err := safesync.ReplayCollection(storedEvents)
+	projection, newEvent, err := persistItemMutation(state, itemRecord, "2026-03-31T10:02:00Z")
 	if err != nil {
 		return err
 	}
 
 	fmt.Fprintln(out, "secret add:")
 	fmt.Fprintf(out, "- added=%s username=%s event=%s latestSeq=%d items=%d\n", title, username, newEvent.EventID, projection.LatestSeq, len(projection.Items))
+	return nil
+}
+
+func secretUpdate(out io.Writer, state cliState, itemID, title, username string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	record, ok := projection.Items[itemID]
+	if !ok {
+		return fmt.Errorf("secret not found: %s", itemID)
+	}
+	if record.Item.Kind != domain.VaultItemKindLogin {
+		return fmt.Errorf("secret update only supports login items: %s", itemID)
+	}
+
+	updated := record
+	updated.Item.Title = title
+	updated.Item.Username = username
+
+	projection, newEvent, err := persistItemMutation(state, updated, "2026-03-31T10:03:00Z")
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "secret update:")
+	fmt.Fprintf(out, "- id=%s title=%s username=%s event=%s latestSeq=%d\n", itemID, title, username, newEvent.EventID, projection.LatestSeq)
 	return nil
 }
 
@@ -291,6 +305,30 @@ func loadProjection(state cliState) (safesync.Projection, error) {
 	}
 
 	return safesync.ReplayCollection(storedEvents)
+}
+
+func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
+	newEvent, newHead, err := safesync.BuildPutItemMutation(state.head, state.session.DeviceID, itemRecord, occurredAt)
+	if err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
+	if _, err := storage.StoreItemRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, itemRecord); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+	if _, err := storage.StoreCollectionHeadRecord(state.store, newHead); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
+	projection, err := loadProjection(state)
+	if err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
+	return projection, newEvent, nil
 }
 
 func matchesSecretQuery(item domain.VaultItem, query string) bool {
