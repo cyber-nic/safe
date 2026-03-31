@@ -88,6 +88,22 @@ func printControlPlaneBootstrap() error {
 		fmt.Printf("- item  %s\n", storage.ItemObjectKey(session.AccountID, event.CollectionID, event.ItemRecord.Item.ID))
 	}
 
+	objectStore := storage.NewMemoryObjectStore()
+	for _, record := range domain.StarterVaultItemRecords() {
+		if _, err := storage.StoreItemRecord(objectStore, session.AccountID, "vault-personal", record); err != nil {
+			return err
+		}
+	}
+	for _, record := range domain.StarterVaultEventRecords() {
+		if _, err := storage.StoreEventRecord(objectStore, record); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("storage dry run:")
+	fmt.Printf("- staged %d item records\n", len(domain.StarterVaultItemRecords()))
+	fmt.Printf("- staged %d event records\n", len(domain.StarterVaultEventRecords()))
+
 	return nil
 }
 
