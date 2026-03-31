@@ -2,6 +2,8 @@ package storage
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/ndelorme/safe/internal/domain"
@@ -10,6 +12,7 @@ import (
 type ObjectStore interface {
 	Put(key string, value []byte) error
 	Get(key string) ([]byte, error)
+	List(prefix string) ([]string, error)
 }
 
 type MemoryObjectStore struct {
@@ -41,6 +44,21 @@ func (store *MemoryObjectStore) Get(key string) ([]byte, error) {
 	}
 
 	return append([]byte(nil), value...), nil
+}
+
+func (store *MemoryObjectStore) List(prefix string) ([]string, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+
+	keys := make([]string, 0)
+	for key := range store.objects {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+
+	sort.Strings(keys)
+	return keys, nil
 }
 
 func StoreItemRecord(store ObjectStore, accountID, collectionID string, record domain.VaultItemRecord) (string, error) {
@@ -89,6 +107,30 @@ func LoadEventRecord(store ObjectStore, accountID, collectionID, eventID string)
 	}
 
 	return domain.ParseVaultEventRecordJSON(payload)
+}
+
+func LoadCollectionEventRecords(store ObjectStore, accountID, collectionID string) ([]domain.VaultEventRecord, error) {
+	keys, err := store.List(EventPrefix(accountID, collectionID))
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]domain.VaultEventRecord, 0, len(keys))
+	for _, key := range keys {
+		payload, err := store.Get(key)
+		if err != nil {
+			return nil, err
+		}
+
+		record, err := domain.ParseVaultEventRecordJSON(payload)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, record)
+	}
+
+	return records, nil
 }
 
 type objectNotFoundError string
