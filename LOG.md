@@ -29,3 +29,9 @@
 - Added `safe secret history <item-id>` so the CLI can inspect append-only event history for a specific secret instead of only mutating current state.
 - Refactored CLI event loading so history and replayed projection reads share the same collection event source.
 - Added tests for starter history output, delete-then-restore history, missing-history handling, and item targeting across put and delete events.
+
+## 2026-03-31T12:18:32Z
+
+- Added `safe secret export [item-id]` so the CLI can emit deterministic JSON for the full active vault projection or a single targeted secret.
+- Sorted exported records by item ID to keep automation-friendly output stable across runs.
+- Added CLI tests covering full export payloads, single-item export, and missing-item failures.

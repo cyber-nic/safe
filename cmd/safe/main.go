@@ -143,6 +143,15 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "export":
+		if len(args) > 2 {
+			return fmt.Errorf("usage: safe secret export [item-id]")
+		}
+		itemID := ""
+		if len(args) == 2 {
+			itemID = args[1]
+		}
+		return secretExport(out, state, itemID)
 	case "history":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret history <item-id>")
@@ -259,6 +268,62 @@ func secretShow(out io.Writer, state cliState, itemID string) error {
 	}
 
 	return nil
+}
+
+func secretExport(out io.Writer, state cliState, itemID string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+
+	if itemID != "" {
+		record, ok := projection.Items[itemID]
+		if !ok {
+			return fmt.Errorf("secret not found: %s", itemID)
+		}
+
+		payload := struct {
+			AccountID    string                 `json:"accountId"`
+			CollectionID string                 `json:"collectionId"`
+			LatestSeq    int                    `json:"latestSeq"`
+			Item         domain.VaultItemRecord `json:"item"`
+		}{
+			AccountID:    projection.AccountID,
+			CollectionID: projection.CollectionID,
+			LatestSeq:    projection.LatestSeq,
+			Item:         record,
+		}
+
+		return encoder.Encode(payload)
+	}
+
+	ids := make([]string, 0, len(projection.Items))
+	for id := range projection.Items {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	items := make([]domain.VaultItemRecord, 0, len(ids))
+	for _, id := range ids {
+		items = append(items, projection.Items[id])
+	}
+
+	payload := struct {
+		AccountID    string                   `json:"accountId"`
+		CollectionID string                   `json:"collectionId"`
+		LatestSeq    int                      `json:"latestSeq"`
+		Items        []domain.VaultItemRecord `json:"items"`
+	}{
+		AccountID:    projection.AccountID,
+		CollectionID: projection.CollectionID,
+		LatestSeq:    projection.LatestSeq,
+		Items:        items,
+	}
+
+	return encoder.Encode(payload)
 }
 
 func secretHistory(out io.Writer, state cliState, itemID string) error {

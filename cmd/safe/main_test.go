@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -434,6 +435,99 @@ func TestRunSecretShowMissingItem(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
 		err := run([]string{"secret", "show", "missing-item"}, &buffer)
+		if err == nil {
+			t.Fatal("expected missing item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret not found: missing-item") {
+			t.Fatalf("expected missing item error, got %v", err)
+		}
+	})
+}
+
+func TestSecretExport(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		if err := secretExport(&buffer, state, ""); err != nil {
+			t.Fatalf("export secrets: %v", err)
+		}
+
+		var payload struct {
+			AccountID    string                   `json:"accountId"`
+			CollectionID string                   `json:"collectionId"`
+			LatestSeq    int                      `json:"latestSeq"`
+			Items        []domain.VaultItemRecord `json:"items"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode export payload: %v", err)
+		}
+
+		if payload.AccountID != "acct-dev-001" {
+			t.Fatalf("expected account export, got %+v", payload)
+		}
+		if payload.CollectionID != "vault-personal" {
+			t.Fatalf("expected default collection export, got %+v", payload)
+		}
+		if payload.LatestSeq != 2 {
+			t.Fatalf("expected latestSeq=2, got %+v", payload)
+		}
+		if len(payload.Items) != 2 {
+			t.Fatalf("expected two active items, got %+v", payload)
+		}
+		if payload.Items[0].Item.ID != "login-gmail-primary" {
+			t.Fatalf("expected sorted first item, got %+v", payload.Items)
+		}
+		if payload.Items[1].Item.ID != "totp-gmail-primary" {
+			t.Fatalf("expected sorted second item, got %+v", payload.Items)
+		}
+	})
+}
+
+func TestSecretExportSingleItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		if err := secretExport(&buffer, state, "totp-gmail-primary"); err != nil {
+			t.Fatalf("export single secret: %v", err)
+		}
+
+		var payload struct {
+			AccountID    string                 `json:"accountId"`
+			CollectionID string                 `json:"collectionId"`
+			LatestSeq    int                    `json:"latestSeq"`
+			Item         domain.VaultItemRecord `json:"item"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode single export payload: %v", err)
+		}
+
+		if payload.Item.Item.ID != "totp-gmail-primary" {
+			t.Fatalf("expected targeted item export, got %+v", payload)
+		}
+		if payload.Item.Item.Kind != domain.VaultItemKindTOTP {
+			t.Fatalf("expected totp item export, got %+v", payload)
+		}
+	})
+}
+
+func TestSecretExportMissingItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretExport(&buffer, state, "missing-item")
 		if err == nil {
 			t.Fatal("expected missing item error")
 		}
