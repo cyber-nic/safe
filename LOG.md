@@ -17,3 +17,9 @@
 - Added first-class `delete_item` vault events plus replay and mutation support so item removal is modeled in the domain instead of being faked in the CLI.
 - Added `safe secret delete <item-id>` to the CLI and reused the same replay-driven state model to report the remaining item count after deletion.
 - Added domain, sync, and CLI tests covering delete event serialization, replay behavior, mutation construction, and missing-item handling.
+
+## 2026-03-31T12:12:29Z
+
+- Added `safe secret restore <item-id>` so deleted items can be replayed back into the active vault state from their stored item record.
+- Fixed CLI mutation helpers to load the latest collection head from storage before writing, which makes chained operations like delete-then-restore sequence correctly.
+- Added tests for successful restore after delete, active-item rejection, and missing-version rejection.

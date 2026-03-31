@@ -217,6 +217,77 @@ func TestRunSecretDeleteMissingItem(t *testing.T) {
 	})
 }
 
+func TestSecretRestore(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var deleteBuffer bytes.Buffer
+		if err := secretDelete(&deleteBuffer, state, "login-gmail-primary"); err != nil {
+			t.Fatalf("delete secret before restore: %v", err)
+		}
+
+		var restoreBuffer bytes.Buffer
+		if err := secretRestore(&restoreBuffer, state, "login-gmail-primary"); err != nil {
+			t.Fatalf("restore secret: %v", err)
+		}
+
+		output := restoreBuffer.String()
+		if !strings.Contains(output, "secret restore:") {
+			t.Fatalf("expected secret restore output, got %s", output)
+		}
+		if !strings.Contains(output, "id=login-gmail-primary") {
+			t.Fatalf("expected restored item ID, got %s", output)
+		}
+		if !strings.Contains(output, "latestSeq=4") {
+			t.Fatalf("expected latestSeq=4 after delete and restore, got %s", output)
+		}
+		if !strings.Contains(output, "items=2") {
+			t.Fatalf("expected two items after restore, got %s", output)
+		}
+	})
+}
+
+func TestSecretRestoreRejectsActiveItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretRestore(&buffer, state, "login-gmail-primary")
+		if err == nil {
+			t.Fatal("expected active item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret already active: login-gmail-primary") {
+			t.Fatalf("expected active item error, got %v", err)
+		}
+	})
+}
+
+func TestSecretRestoreMissingVersion(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretRestore(&buffer, state, "missing-item")
+		if err == nil {
+			t.Fatal("expected missing version error")
+		}
+
+		if !strings.Contains(err.Error(), "secret version not found: missing-item") {
+			t.Fatalf("expected missing version error, got %v", err)
+		}
+	})
+}
+
 func TestRunSecretSearchByTitle(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
