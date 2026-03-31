@@ -102,6 +102,9 @@ func printControlPlaneBootstrap() error {
 		}
 	}
 
+	if _, err := storage.StoreAccountConfigRecord(objectStore, domain.StarterAccountConfigRecord()); err != nil {
+		return err
+	}
 	if _, err := storage.StoreCollectionHeadRecord(objectStore, domain.StarterCollectionHeadRecord()); err != nil {
 		return err
 	}
@@ -110,12 +113,17 @@ func printControlPlaneBootstrap() error {
 	fmt.Printf("- staged %d item records\n", len(domain.StarterVaultItemRecords()))
 	fmt.Printf("- staged %d event records\n", len(domain.StarterVaultEventRecords()))
 
-	head, err := storage.LoadCollectionHeadRecord(objectStore, session.AccountID, "vault-personal")
+	accountConfig, err := storage.LoadAccountConfigRecord(objectStore, session.AccountID)
 	if err != nil {
 		return err
 	}
 
-	storedEvents, err := storage.LoadCollectionEventRecords(objectStore, session.AccountID, "vault-personal")
+	head, err := storage.LoadCollectionHeadRecord(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
+	if err != nil {
+		return err
+	}
+
+	storedEvents, err := storage.LoadCollectionEventRecords(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
 	if err != nil {
 		return err
 	}
@@ -126,7 +134,7 @@ func printControlPlaneBootstrap() error {
 	}
 
 	fmt.Println("sync replay:")
-	fmt.Printf("- collection=%s latestSeq=%d items=%d headEvent=%s\n", projection.CollectionID, projection.LatestSeq, len(projection.Items), head.LatestEventID)
+	fmt.Printf("- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", accountConfig.AccountID, accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), head.LatestEventID)
 
 	return nil
 }

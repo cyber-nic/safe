@@ -66,6 +66,14 @@ type CollectionHeadRecord struct {
 	LatestSeq     int    `json:"latestSeq"`
 }
 
+type AccountConfigRecord struct {
+	SchemaVersion       int      `json:"schemaVersion"`
+	AccountID           string   `json:"accountId"`
+	DefaultCollectionID string   `json:"defaultCollectionId"`
+	CollectionIDs       []string `json:"collectionIds"`
+	DeviceIDs           []string `json:"deviceIds"`
+}
+
 func (item VaultItem) Summary() VaultItemSummary {
 	switch item.Kind {
 	case VaultItemKindLogin:
@@ -362,6 +370,61 @@ func ParseCollectionHeadRecordJSON(data []byte) (CollectionHeadRecord, error) {
 	return record, nil
 }
 
+func (record AccountConfigRecord) Validate() error {
+	if record.SchemaVersion != 1 {
+		return ErrInvalidAccountConfigRecord("schemaVersion")
+	}
+	if record.AccountID == "" {
+		return ErrInvalidAccountConfigRecord("accountId")
+	}
+	if record.DefaultCollectionID == "" {
+		return ErrInvalidAccountConfigRecord("defaultCollectionId")
+	}
+	if len(record.CollectionIDs) == 0 {
+		return ErrInvalidAccountConfigRecord("collectionIds")
+	}
+	if len(record.DeviceIDs) == 0 {
+		return ErrInvalidAccountConfigRecord("deviceIds")
+	}
+
+	return nil
+}
+
+func (record AccountConfigRecord) CanonicalJSON() ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+
+	type canonicalAccountConfigRecord struct {
+		SchemaVersion       int      `json:"schemaVersion"`
+		AccountID           string   `json:"accountId"`
+		DefaultCollectionID string   `json:"defaultCollectionId"`
+		CollectionIDs       []string `json:"collectionIds"`
+		DeviceIDs           []string `json:"deviceIds"`
+	}
+
+	return json.Marshal(canonicalAccountConfigRecord{
+		SchemaVersion:       record.SchemaVersion,
+		AccountID:           record.AccountID,
+		DefaultCollectionID: record.DefaultCollectionID,
+		CollectionIDs:       record.CollectionIDs,
+		DeviceIDs:           record.DeviceIDs,
+	})
+}
+
+func ParseAccountConfigRecordJSON(data []byte) (AccountConfigRecord, error) {
+	var record AccountConfigRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return AccountConfigRecord{}, err
+	}
+
+	if err := record.Validate(); err != nil {
+		return AccountConfigRecord{}, err
+	}
+
+	return record, nil
+}
+
 type invalidVaultItemRecordError string
 
 func (field invalidVaultItemRecordError) Error() string {
@@ -390,6 +453,16 @@ func (field invalidCollectionHeadRecordError) Error() string {
 
 func ErrInvalidCollectionHeadRecord(field string) error {
 	return invalidCollectionHeadRecordError(field)
+}
+
+type invalidAccountConfigRecordError string
+
+func (field invalidAccountConfigRecordError) Error() string {
+	return "invalid account config record field: " + string(field)
+}
+
+func ErrInvalidAccountConfigRecord(field string) error {
+	return invalidAccountConfigRecordError(field)
 }
 
 func StarterVaultItems() []VaultItemSummary {
@@ -473,5 +546,17 @@ func StarterCollectionHeadRecord() CollectionHeadRecord {
 		CollectionID:  latest.CollectionID,
 		LatestEventID: latest.EventID,
 		LatestSeq:     latest.Sequence,
+	}
+}
+
+func StarterAccountConfigRecord() AccountConfigRecord {
+	head := StarterCollectionHeadRecord()
+
+	return AccountConfigRecord{
+		SchemaVersion:       1,
+		AccountID:           head.AccountID,
+		DefaultCollectionID: head.CollectionID,
+		CollectionIDs:       []string{head.CollectionID},
+		DeviceIDs:           []string{"dev-web-001"},
 	}
 }

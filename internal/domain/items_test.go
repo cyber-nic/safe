@@ -161,3 +161,26 @@ func TestCollectionHeadRecordCanonicalSerialization(t *testing.T) {
 		t.Fatalf("unexpected parsed collection head: %+v", parsed)
 	}
 }
+
+func TestAccountConfigRecordCanonicalSerialization(t *testing.T) {
+	record := StarterAccountConfigRecord()
+
+	canonical, err := record.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonicalize account config: %v", err)
+	}
+
+	expected := `{"schemaVersion":1,"accountId":"acct-dev-001","defaultCollectionId":"vault-personal","collectionIds":["vault-personal"],"deviceIds":["dev-web-001"]}`
+	if string(canonical) != expected {
+		t.Fatalf("account config canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	}
+
+	parsed, err := ParseAccountConfigRecordJSON(canonical)
+	if err != nil {
+		t.Fatalf("parse account config: %v", err)
+	}
+
+	if parsed.DefaultCollectionID != "vault-personal" || len(parsed.CollectionIDs) != 1 {
+		t.Fatalf("unexpected parsed account config: %+v", parsed)
+	}
+}

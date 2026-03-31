@@ -21,3 +21,7 @@ func ItemPrefix(accountID, collectionID string) string {
 func CollectionHeadKey(accountID, collectionID string) string {
 	return fmt.Sprintf("accounts/%s/collections/%s/head.json", accountID, collectionID)
 }
+
+func AccountConfigKey(accountID string) string {
+	return fmt.Sprintf("accounts/%s/account.json", accountID)
+}

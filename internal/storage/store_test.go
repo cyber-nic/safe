@@ -170,3 +170,26 @@ func TestStoreAndLoadCollectionHeadRecord(t *testing.T) {
 		t.Fatalf("unexpected loaded collection head: %+v", loaded)
 	}
 }
+
+func TestStoreAndLoadAccountConfigRecord(t *testing.T) {
+	store := NewMemoryObjectStore()
+	record := domain.StarterAccountConfigRecord()
+
+	key, err := StoreAccountConfigRecord(store, record)
+	if err != nil {
+		t.Fatalf("store account config record: %v", err)
+	}
+
+	if key != "accounts/acct-dev-001/account.json" {
+		t.Fatalf("unexpected account config key: %s", key)
+	}
+
+	loaded, err := LoadAccountConfigRecord(store, "acct-dev-001")
+	if err != nil {
+		t.Fatalf("load account config record: %v", err)
+	}
+
+	if loaded.DefaultCollectionID != record.DefaultCollectionID || len(loaded.DeviceIDs) != len(record.DeviceIDs) {
+		t.Fatalf("unexpected loaded account config: %+v", loaded)
+	}
+}

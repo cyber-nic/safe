@@ -156,6 +156,29 @@ func LoadCollectionHeadRecord(store ObjectStore, accountID, collectionID string)
 	return domain.ParseCollectionHeadRecordJSON(payload)
 }
 
+func StoreAccountConfigRecord(store ObjectStore, record domain.AccountConfigRecord) (string, error) {
+	payload, err := record.CanonicalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	key := AccountConfigKey(record.AccountID)
+	if err := store.Put(key, payload); err != nil {
+		return "", err
+	}
+
+	return key, nil
+}
+
+func LoadAccountConfigRecord(store ObjectStore, accountID string) (domain.AccountConfigRecord, error) {
+	payload, err := store.Get(AccountConfigKey(accountID))
+	if err != nil {
+		return domain.AccountConfigRecord{}, err
+	}
+
+	return domain.ParseAccountConfigRecordJSON(payload)
+}
+
 type objectNotFoundError string
 
 func (key objectNotFoundError) Error() string {
