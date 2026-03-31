@@ -133,6 +133,29 @@ func LoadCollectionEventRecords(store ObjectStore, accountID, collectionID strin
 	return records, nil
 }
 
+func StoreCollectionHeadRecord(store ObjectStore, record domain.CollectionHeadRecord) (string, error) {
+	payload, err := record.CanonicalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	key := CollectionHeadKey(record.AccountID, record.CollectionID)
+	if err := store.Put(key, payload); err != nil {
+		return "", err
+	}
+
+	return key, nil
+}
+
+func LoadCollectionHeadRecord(store ObjectStore, accountID, collectionID string) (domain.CollectionHeadRecord, error) {
+	payload, err := store.Get(CollectionHeadKey(accountID, collectionID))
+	if err != nil {
+		return domain.CollectionHeadRecord{}, err
+	}
+
+	return domain.ParseCollectionHeadRecordJSON(payload)
+}
+
 type objectNotFoundError string
 
 func (key objectNotFoundError) Error() string {

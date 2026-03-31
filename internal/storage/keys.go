@@ -17,3 +17,7 @@ func EventPrefix(accountID, collectionID string) string {
 func ItemPrefix(accountID, collectionID string) string {
 	return fmt.Sprintf("accounts/%s/collections/%s/items/", accountID, collectionID)
 }
+
+func CollectionHeadKey(accountID, collectionID string) string {
+	return fmt.Sprintf("accounts/%s/collections/%s/head.json", accountID, collectionID)
+}

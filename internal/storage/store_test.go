@@ -147,3 +147,26 @@ func TestLoadCollectionEventRecords(t *testing.T) {
 		t.Fatalf("unexpected loaded records: %+v", loaded)
 	}
 }
+
+func TestStoreAndLoadCollectionHeadRecord(t *testing.T) {
+	store := NewMemoryObjectStore()
+	record := domain.StarterCollectionHeadRecord()
+
+	key, err := StoreCollectionHeadRecord(store, record)
+	if err != nil {
+		t.Fatalf("store collection head record: %v", err)
+	}
+
+	if key != "accounts/acct-dev-001/collections/vault-personal/head.json" {
+		t.Fatalf("unexpected collection head key: %s", key)
+	}
+
+	loaded, err := LoadCollectionHeadRecord(store, "acct-dev-001", "vault-personal")
+	if err != nil {
+		t.Fatalf("load collection head record: %v", err)
+	}
+
+	if loaded.LatestEventID != record.LatestEventID || loaded.LatestSeq != record.LatestSeq {
+		t.Fatalf("unexpected loaded collection head: %+v", loaded)
+	}
+}

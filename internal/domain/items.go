@@ -58,6 +58,14 @@ type VaultEventRecord struct {
 	ItemRecord    VaultItemRecord  `json:"itemRecord"`
 }
 
+type CollectionHeadRecord struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	AccountID     string `json:"accountId"`
+	CollectionID  string `json:"collectionId"`
+	LatestEventID string `json:"latestEventId"`
+	LatestSeq     int    `json:"latestSeq"`
+}
+
 func (item VaultItem) Summary() VaultItemSummary {
 	switch item.Kind {
 	case VaultItemKindLogin:
@@ -299,6 +307,61 @@ func ParseVaultEventRecordJSON(data []byte) (VaultEventRecord, error) {
 	return record, nil
 }
 
+func (record CollectionHeadRecord) Validate() error {
+	if record.SchemaVersion != 1 {
+		return ErrInvalidCollectionHeadRecord("schemaVersion")
+	}
+	if record.AccountID == "" {
+		return ErrInvalidCollectionHeadRecord("accountId")
+	}
+	if record.CollectionID == "" {
+		return ErrInvalidCollectionHeadRecord("collectionId")
+	}
+	if record.LatestEventID == "" {
+		return ErrInvalidCollectionHeadRecord("latestEventId")
+	}
+	if record.LatestSeq < 1 {
+		return ErrInvalidCollectionHeadRecord("latestSeq")
+	}
+
+	return nil
+}
+
+func (record CollectionHeadRecord) CanonicalJSON() ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+
+	type canonicalCollectionHeadRecord struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		AccountID     string `json:"accountId"`
+		CollectionID  string `json:"collectionId"`
+		LatestEventID string `json:"latestEventId"`
+		LatestSeq     int    `json:"latestSeq"`
+	}
+
+	return json.Marshal(canonicalCollectionHeadRecord{
+		SchemaVersion: record.SchemaVersion,
+		AccountID:     record.AccountID,
+		CollectionID:  record.CollectionID,
+		LatestEventID: record.LatestEventID,
+		LatestSeq:     record.LatestSeq,
+	})
+}
+
+func ParseCollectionHeadRecordJSON(data []byte) (CollectionHeadRecord, error) {
+	var record CollectionHeadRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return CollectionHeadRecord{}, err
+	}
+
+	if err := record.Validate(); err != nil {
+		return CollectionHeadRecord{}, err
+	}
+
+	return record, nil
+}
+
 type invalidVaultItemRecordError string
 
 func (field invalidVaultItemRecordError) Error() string {
@@ -317,6 +380,16 @@ func (field invalidVaultEventRecordError) Error() string {
 
 func ErrInvalidVaultEventRecord(field string) error {
 	return invalidVaultEventRecordError(field)
+}
+
+type invalidCollectionHeadRecordError string
+
+func (field invalidCollectionHeadRecordError) Error() string {
+	return "invalid collection head record field: " + string(field)
+}
+
+func ErrInvalidCollectionHeadRecord(field string) error {
+	return invalidCollectionHeadRecordError(field)
 }
 
 func StarterVaultItems() []VaultItemSummary {
@@ -387,5 +460,18 @@ func StarterVaultEventRecords() []VaultEventRecord {
 			Action:        VaultEventActionPutItem,
 			ItemRecord:    itemRecords[1],
 		},
+	}
+}
+
+func StarterCollectionHeadRecord() CollectionHeadRecord {
+	events := StarterVaultEventRecords()
+	latest := events[len(events)-1]
+
+	return CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     latest.AccountID,
+		CollectionID:  latest.CollectionID,
+		LatestEventID: latest.EventID,
+		LatestSeq:     latest.Sequence,
 	}
 }

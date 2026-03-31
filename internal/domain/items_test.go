@@ -138,3 +138,26 @@ func TestVaultEventRecordFixtureCanonicalSerialization(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectionHeadRecordCanonicalSerialization(t *testing.T) {
+	record := StarterCollectionHeadRecord()
+
+	canonical, err := record.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonicalize collection head: %v", err)
+	}
+
+	expected := `{"schemaVersion":1,"accountId":"acct-dev-001","collectionId":"vault-personal","latestEventId":"evt-totp-gmail-primary-v1","latestSeq":2}`
+	if string(canonical) != expected {
+		t.Fatalf("collection head canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	}
+
+	parsed, err := ParseCollectionHeadRecordJSON(canonical)
+	if err != nil {
+		t.Fatalf("parse collection head: %v", err)
+	}
+
+	if parsed.LatestSeq != 2 || parsed.LatestEventID != "evt-totp-gmail-primary-v1" {
+		t.Fatalf("unexpected parsed collection head: %+v", parsed)
+	}
+}
