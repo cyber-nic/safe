@@ -42,6 +42,22 @@ type VaultItemRecord struct {
 	Item          VaultItem `json:"item"`
 }
 
+type VaultEventAction string
+
+const VaultEventActionPutItem VaultEventAction = "put_item"
+
+type VaultEventRecord struct {
+	SchemaVersion int              `json:"schemaVersion"`
+	EventID       string           `json:"eventId"`
+	AccountID     string           `json:"accountId"`
+	DeviceID      string           `json:"deviceId"`
+	CollectionID  string           `json:"collectionId"`
+	Sequence      int              `json:"sequence"`
+	OccurredAt    string           `json:"occurredAt"`
+	Action        VaultEventAction `json:"action"`
+	ItemRecord    VaultItemRecord  `json:"itemRecord"`
+}
+
 func (item VaultItem) Summary() VaultItemSummary {
 	switch item.Kind {
 	case VaultItemKindLogin:
@@ -203,6 +219,86 @@ func ParseVaultItemRecordJSON(data []byte) (VaultItemRecord, error) {
 	return record, nil
 }
 
+func (record VaultEventRecord) Validate() error {
+	if record.SchemaVersion != 1 {
+		return ErrInvalidVaultEventRecord("schemaVersion")
+	}
+	if record.EventID == "" {
+		return ErrInvalidVaultEventRecord("eventId")
+	}
+	if record.AccountID == "" {
+		return ErrInvalidVaultEventRecord("accountId")
+	}
+	if record.DeviceID == "" {
+		return ErrInvalidVaultEventRecord("deviceId")
+	}
+	if record.CollectionID == "" {
+		return ErrInvalidVaultEventRecord("collectionId")
+	}
+	if record.Sequence < 1 {
+		return ErrInvalidVaultEventRecord("sequence")
+	}
+	if record.OccurredAt == "" {
+		return ErrInvalidVaultEventRecord("occurredAt")
+	}
+	if record.Action != VaultEventActionPutItem {
+		return ErrInvalidVaultEventRecord("action")
+	}
+	if err := record.ItemRecord.Validate(); err != nil {
+		return ErrInvalidVaultEventRecord("itemRecord")
+	}
+
+	return nil
+}
+
+func (record VaultEventRecord) CanonicalJSON() ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+
+	itemRecordJSON, err := record.ItemRecord.CanonicalJSON()
+	if err != nil {
+		return nil, err
+	}
+
+	type canonicalEventRecord struct {
+		SchemaVersion int              `json:"schemaVersion"`
+		EventID       string           `json:"eventId"`
+		AccountID     string           `json:"accountId"`
+		DeviceID      string           `json:"deviceId"`
+		CollectionID  string           `json:"collectionId"`
+		Sequence      int              `json:"sequence"`
+		OccurredAt    string           `json:"occurredAt"`
+		Action        VaultEventAction `json:"action"`
+		ItemRecord    json.RawMessage  `json:"itemRecord"`
+	}
+
+	return json.Marshal(canonicalEventRecord{
+		SchemaVersion: record.SchemaVersion,
+		EventID:       record.EventID,
+		AccountID:     record.AccountID,
+		DeviceID:      record.DeviceID,
+		CollectionID:  record.CollectionID,
+		Sequence:      record.Sequence,
+		OccurredAt:    record.OccurredAt,
+		Action:        record.Action,
+		ItemRecord:    itemRecordJSON,
+	})
+}
+
+func ParseVaultEventRecordJSON(data []byte) (VaultEventRecord, error) {
+	var record VaultEventRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return VaultEventRecord{}, err
+	}
+
+	if err := record.Validate(); err != nil {
+		return VaultEventRecord{}, err
+	}
+
+	return record, nil
+}
+
 type invalidVaultItemRecordError string
 
 func (field invalidVaultItemRecordError) Error() string {
@@ -211,6 +307,16 @@ func (field invalidVaultItemRecordError) Error() string {
 
 func ErrInvalidVaultItemRecord(field string) error {
 	return invalidVaultItemRecordError(field)
+}
+
+type invalidVaultEventRecordError string
+
+func (field invalidVaultEventRecordError) Error() string {
+	return "invalid vault event record field: " + string(field)
+}
+
+func ErrInvalidVaultEventRecord(field string) error {
+	return invalidVaultEventRecordError(field)
 }
 
 func StarterVaultItems() []VaultItemSummary {
@@ -251,6 +357,35 @@ func StarterVaultItemRecords() []VaultItemRecord {
 				Algorithm:     "SHA1",
 				SecretRef:     "vault-secret://totp/gmail-primary",
 			},
+		},
+	}
+}
+
+func StarterVaultEventRecords() []VaultEventRecord {
+	itemRecords := StarterVaultItemRecords()
+
+	return []VaultEventRecord{
+		{
+			SchemaVersion: 1,
+			EventID:       "evt-login-gmail-primary-v1",
+			AccountID:     "acct-dev-001",
+			DeviceID:      "dev-web-001",
+			CollectionID:  "vault-personal",
+			Sequence:      1,
+			OccurredAt:    "2026-03-31T10:00:00Z",
+			Action:        VaultEventActionPutItem,
+			ItemRecord:    itemRecords[0],
+		},
+		{
+			SchemaVersion: 1,
+			EventID:       "evt-totp-gmail-primary-v1",
+			AccountID:     "acct-dev-001",
+			DeviceID:      "dev-web-001",
+			CollectionID:  "vault-personal",
+			Sequence:      2,
+			OccurredAt:    "2026-03-31T10:01:00Z",
+			Action:        VaultEventActionPutItem,
+			ItemRecord:    itemRecords[1],
 		},
 	}
 }

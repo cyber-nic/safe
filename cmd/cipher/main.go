@@ -24,4 +24,15 @@ func main() {
 
 		fmt.Printf("- %s\n", canonical)
 	}
+
+	fmt.Println("canonical starter events:")
+
+	for _, record := range domain.StarterVaultEventRecords() {
+		canonical, err := record.CanonicalJSON()
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("- %s\n", canonical)
+	}
 }

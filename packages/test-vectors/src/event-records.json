@@ -1,0 +1,48 @@
+[
+  {
+    "schemaVersion": 1,
+    "eventId": "evt-login-gmail-primary-v1",
+    "accountId": "acct-dev-001",
+    "deviceId": "dev-web-001",
+    "collectionId": "vault-personal",
+    "sequence": 1,
+    "occurredAt": "2026-03-31T10:00:00Z",
+    "action": "put_item",
+    "itemRecord": {
+      "schemaVersion": 1,
+      "item": {
+        "id": "login-gmail-primary",
+        "kind": "login",
+        "title": "Gmail",
+        "tags": ["email", "personal"],
+        "username": "alice@example.com",
+        "urls": ["https://accounts.google.com"]
+      }
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "eventId": "evt-totp-gmail-primary-v1",
+    "accountId": "acct-dev-001",
+    "deviceId": "dev-web-001",
+    "collectionId": "vault-personal",
+    "sequence": 2,
+    "occurredAt": "2026-03-31T10:01:00Z",
+    "action": "put_item",
+    "itemRecord": {
+      "schemaVersion": 1,
+      "item": {
+        "id": "totp-gmail-primary",
+        "kind": "totp",
+        "title": "Gmail 2FA",
+        "tags": ["2fa", "authenticator"],
+        "issuer": "Google",
+        "accountName": "alice@example.com",
+        "digits": 6,
+        "periodSeconds": 30,
+        "algorithm": "SHA1",
+        "secretRef": "vault-secret://totp/gmail-primary"
+      }
+    }
+  }
+]

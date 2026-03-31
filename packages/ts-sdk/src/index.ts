@@ -59,6 +59,20 @@ export type VaultItemRecord = {
   item: VaultItem;
 };
 
+export type VaultEventAction = "put_item";
+
+export type VaultEventRecord = {
+  schemaVersion: 1;
+  eventId: string;
+  accountId: string;
+  deviceId: string;
+  collectionId: string;
+  sequence: number;
+  occurredAt: string;
+  action: VaultEventAction;
+  itemRecord: VaultItemRecord;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -109,6 +123,28 @@ export function createVaultItemRecord(item: VaultItem): VaultItemRecord {
   return {
     schemaVersion: 1,
     item,
+  };
+}
+
+export function createPutItemEventRecord(input: {
+  eventId: string;
+  accountId: string;
+  deviceId: string;
+  collectionId: string;
+  sequence: number;
+  occurredAt: string;
+  itemRecord: VaultItemRecord;
+}): VaultEventRecord {
+  return {
+    schemaVersion: 1,
+    eventId: input.eventId,
+    accountId: input.accountId,
+    deviceId: input.deviceId,
+    collectionId: input.collectionId,
+    sequence: input.sequence,
+    occurredAt: input.occurredAt,
+    action: "put_item",
+    itemRecord: input.itemRecord,
   };
 }
 
@@ -218,6 +254,50 @@ export function parseVaultItemRecords(values: unknown): VaultItemRecord[] {
   return values.map(parseVaultItemRecord);
 }
 
+export function parseVaultEventRecord(value: unknown): VaultEventRecord {
+  if (!isRecord(value)) {
+    throw new Error("invalid vault event record");
+  }
+
+  if (value.schemaVersion !== 1) {
+    throw new Error("invalid vault event record field: schemaVersion");
+  }
+
+  const eventId = expectString(value.eventId, "eventId");
+  const accountId = expectString(value.accountId, "accountId");
+  const deviceId = expectString(value.deviceId, "deviceId");
+  const collectionId = expectString(value.collectionId, "collectionId");
+  const occurredAt = expectString(value.occurredAt, "occurredAt");
+
+  if (typeof value.sequence !== "number" || !Number.isInteger(value.sequence) || value.sequence < 1) {
+    throw new Error("invalid vault event record field: sequence");
+  }
+
+  if (value.action !== "put_item") {
+    throw new Error("invalid vault event record field: action");
+  }
+
+  return {
+    schemaVersion: 1,
+    eventId,
+    accountId,
+    deviceId,
+    collectionId,
+    sequence: value.sequence,
+    occurredAt,
+    action: "put_item",
+    itemRecord: parseVaultItemRecord(value.itemRecord),
+  };
+}
+
+export function parseVaultEventRecords(values: unknown): VaultEventRecord[] {
+  if (!Array.isArray(values)) {
+    throw new Error("invalid vault event record list");
+  }
+
+  return values.map(parseVaultEventRecord);
+}
+
 function canonicalVaultItemShape(item: VaultItem): Record<string, unknown> {
   switch (item.kind) {
     case "login":
@@ -278,6 +358,23 @@ export function serializeCanonicalVaultItemRecord(record: VaultItemRecord): stri
   return JSON.stringify({
     schemaVersion: record.schemaVersion,
     item: canonicalVaultItemShape(record.item),
+  });
+}
+
+export function serializeCanonicalVaultEventRecord(record: VaultEventRecord): string {
+  return JSON.stringify({
+    schemaVersion: record.schemaVersion,
+    eventId: record.eventId,
+    accountId: record.accountId,
+    deviceId: record.deviceId,
+    collectionId: record.collectionId,
+    sequence: record.sequence,
+    occurredAt: record.occurredAt,
+    action: record.action,
+    itemRecord: {
+      schemaVersion: record.itemRecord.schemaVersion,
+      item: canonicalVaultItemShape(record.itemRecord.item),
+    },
   });
 }
 

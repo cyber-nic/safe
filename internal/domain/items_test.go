@@ -99,3 +99,42 @@ func TestVaultItemRecordFixtureCanonicalSerialization(t *testing.T) {
 		}
 	}
 }
+
+func TestVaultEventRecordFixtureCanonicalSerialization(t *testing.T) {
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", "event-records.json")
+
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read event fixture: %v", err)
+	}
+
+	var rawRecords []json.RawMessage
+	if err := json.Unmarshal(payload, &rawRecords); err != nil {
+		t.Fatalf("unmarshal event fixture: %v", err)
+	}
+
+	if len(rawRecords) != len(StarterVaultEventRecords()) {
+		t.Fatalf("expected %d starter events, got %d", len(StarterVaultEventRecords()), len(rawRecords))
+	}
+
+	for index, rawRecord := range rawRecords {
+		record, err := ParseVaultEventRecordJSON(rawRecord)
+		if err != nil {
+			t.Fatalf("parse event %d: %v", index, err)
+		}
+
+		canonical, err := record.CanonicalJSON()
+		if err != nil {
+			t.Fatalf("canonicalize event %d: %v", index, err)
+		}
+
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, rawRecord); err != nil {
+			t.Fatalf("compact event %d: %v", index, err)
+		}
+
+		if compact.String() != string(canonical) {
+			t.Fatalf("event %d canonical mismatch\nexpected: %s\ngot: %s", index, compact.String(), string(canonical))
+		}
+	}
+}
