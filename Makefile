@@ -3,13 +3,16 @@ COMPOSE_FILE ?= compose.yaml
 LOCALSTACK ?= localstack
 CONTROL_PLANE ?= control-plane
 
-.PHONY: up down restart build watch logs ps shell-control-plane shell-localstack s3-ls s3-mb s3-rb test-go clean
+.PHONY: up down restart build watch logs ps cli shell-control-plane shell-localstack s3-ls s3-mb s3-rb test-go clean
 
 up:
 	$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
 
 down:
 	$(COMPOSE) -f $(COMPOSE_FILE) down --remove-orphans
+
+cli:
+	GOCACHE=$(CURDIR)/.cache/go-build go run ./cmd/safe $(ARGS)
 
 restart:
 	$(COMPOSE) -f $(COMPOSE_FILE) restart
