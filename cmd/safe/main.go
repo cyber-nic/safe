@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/ndelorme/safe/internal/domain"
@@ -27,42 +29,43 @@ type storageConfigResponse struct {
 	DeviceID  string `json:"deviceId"`
 }
 
+type cliState struct {
+	session       devSessionResponse
+	storageConfig storageConfigResponse
+	accountConfig domain.AccountConfigRecord
+	head          domain.CollectionHeadRecord
+	store         *storage.MemoryObjectStore
+}
+
 func main() {
-	fmt.Println("safe CLI bootstrap")
-	if err := printControlPlaneBootstrap(); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		panic(err)
-	}
-
-	fmt.Println("supported starter items:")
-
-	for _, item := range domain.StarterVaultItems() {
-		fmt.Printf("- [%s] %s: %s\n", item.Kind, item.Title, item.Description)
-	}
-
-	fmt.Println("canonical starter records:")
-
-	for _, record := range domain.StarterVaultItemRecords() {
-		canonical, err := record.CanonicalJSON()
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Printf("- %s\n", canonical)
-	}
-
-	fmt.Println("canonical starter events:")
-
-	for _, record := range domain.StarterVaultEventRecords() {
-		canonical, err := record.CanonicalJSON()
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Printf("- %s\n", canonical)
 	}
 }
 
-func printControlPlaneBootstrap() error {
+func run(args []string, out io.Writer) error {
+	state, err := bootstrapCLIState()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "safe CLI bootstrap")
+	fmt.Fprintf(out, "control plane bootstrap:\n- env=%s account=%s device=%s\n", state.session.Env, state.session.AccountID, state.session.DeviceID)
+	fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.storageConfig.Bucket, state.storageConfig.Region, state.storageConfig.Endpoint)
+
+	if len(args) == 0 {
+		return printOverview(out, state)
+	}
+
+	switch args[0] {
+	case "password":
+		return runPasswordCommand(out, state, args[1:])
+	default:
+		return fmt.Errorf("unknown command: %s", args[0])
+	}
+}
+
+func bootstrapCLIState() (cliState, error) {
 	baseURL := os.Getenv("SAFE_CONTROL_PLANE_URL")
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
@@ -71,59 +74,52 @@ func printControlPlaneBootstrap() error {
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	session, err := fetchDevSession(httpClient, baseURL)
 	if err != nil {
-		return err
+		return cliState{}, err
 	}
 
 	storageConfig, err := fetchStorageConfig(httpClient, baseURL)
 	if err != nil {
-		return err
+		return cliState{}, err
 	}
 
-	fmt.Println("control plane bootstrap:")
-	fmt.Printf("- env=%s account=%s device=%s\n", session.Env, session.AccountID, session.DeviceID)
-	fmt.Printf("- storage bucket=%s region=%s endpoint=%s\n", storageConfig.Bucket, storageConfig.Region, storageConfig.Endpoint)
-	fmt.Println("storage plan:")
-
-	for _, event := range domain.StarterVaultEventRecords() {
-		fmt.Printf("- event %s\n", storage.EventObjectKey(session.AccountID, event.CollectionID, event.EventID))
-		fmt.Printf("- item  %s\n", storage.ItemObjectKey(session.AccountID, event.CollectionID, event.ItemRecord.Item.ID))
-	}
-
-	objectStore := storage.NewMemoryObjectStore()
+	store := storage.NewMemoryObjectStore()
 	for _, record := range domain.StarterVaultItemRecords() {
-		if _, err := storage.StoreItemRecord(objectStore, session.AccountID, "vault-personal", record); err != nil {
-			return err
+		if _, err := storage.StoreItemRecord(store, session.AccountID, "vault-personal", record); err != nil {
+			return cliState{}, err
 		}
 	}
-
 	for _, record := range domain.StarterVaultEventRecords() {
-		if _, err := storage.StoreEventRecord(objectStore, record); err != nil {
-			return err
+		if _, err := storage.StoreEventRecord(store, record); err != nil {
+			return cliState{}, err
 		}
 	}
-
-	if _, err := storage.StoreAccountConfigRecord(objectStore, domain.StarterAccountConfigRecord()); err != nil {
-		return err
+	if _, err := storage.StoreAccountConfigRecord(store, domain.StarterAccountConfigRecord()); err != nil {
+		return cliState{}, err
 	}
-	if _, err := storage.StoreCollectionHeadRecord(objectStore, domain.StarterCollectionHeadRecord()); err != nil {
-		return err
+	if _, err := storage.StoreCollectionHeadRecord(store, domain.StarterCollectionHeadRecord()); err != nil {
+		return cliState{}, err
 	}
 
-	fmt.Println("storage dry run:")
-	fmt.Printf("- staged %d item records\n", len(domain.StarterVaultItemRecords()))
-	fmt.Printf("- staged %d event records\n", len(domain.StarterVaultEventRecords()))
-
-	accountConfig, err := storage.LoadAccountConfigRecord(objectStore, session.AccountID)
+	accountConfig, err := storage.LoadAccountConfigRecord(store, session.AccountID)
 	if err != nil {
-		return err
+		return cliState{}, err
 	}
-
-	head, err := storage.LoadCollectionHeadRecord(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
+	head, err := storage.LoadCollectionHeadRecord(store, session.AccountID, accountConfig.DefaultCollectionID)
 	if err != nil {
-		return err
+		return cliState{}, err
 	}
 
-	storedEvents, err := storage.LoadCollectionEventRecords(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
+	return cliState{
+		session:       session,
+		storageConfig: storageConfig,
+		accountConfig: accountConfig,
+		head:          head,
+		store:         store,
+	}, nil
+}
+
+func printOverview(out io.Writer, state cliState) error {
+	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
 	if err != nil {
 		return err
 	}
@@ -133,50 +129,116 @@ func printControlPlaneBootstrap() error {
 		return err
 	}
 
-	fmt.Println("sync replay:")
-	fmt.Printf("- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", accountConfig.AccountID, accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), head.LatestEventID)
+	fmt.Fprintln(out, "sync replay:")
+	fmt.Fprintf(out, "- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", state.accountConfig.AccountID, state.accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), state.head.LatestEventID)
+	return nil
+}
 
-	newPasswordRecord := domain.VaultItemRecord{
+func runPasswordCommand(out io.Writer, state cliState, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("password command requires a subcommand")
+	}
+
+	switch args[0] {
+	case "list":
+		return passwordList(out, state)
+	case "add":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: safe password add <title> <username>")
+		}
+		return passwordAdd(out, state, args[1], args[2])
+	default:
+		return fmt.Errorf("unknown password subcommand: %s", args[0])
+	}
+}
+
+func passwordList(out io.Writer, state cliState) error {
+	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	if err != nil {
+		return err
+	}
+
+	projection, err := safesync.ReplayCollection(storedEvents)
+	if err != nil {
+		return err
+	}
+
+	ids := make([]string, 0, len(projection.Items))
+	for id := range projection.Items {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	fmt.Fprintln(out, "password list:")
+	for _, id := range ids {
+		item := projection.Items[id].Item
+		fmt.Fprintf(out, "- %s (%s)\n", item.Title, item.Username)
+	}
+
+	return nil
+}
+
+func passwordAdd(out io.Writer, state cliState, title, username string) error {
+	itemID := fmt.Sprintf("login-%s-primary", slugify(title))
+	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
 		Item: domain.VaultItem{
-			ID:       "login-github-primary",
+			ID:       itemID,
 			Kind:     domain.VaultItemKindLogin,
-			Title:    "GitHub",
-			Tags:     []string{"dev", "new"},
-			Username: "alice",
-			URLs:     []string{"https://github.com/login"},
+			Title:    title,
+			Tags:     []string{"manual", "password"},
+			Username: username,
+			URLs:     []string{"https://example.invalid/login"},
 		},
 	}
 
-	newEvent, newHead, err := safesync.BuildPutItemMutation(head, session.DeviceID, newPasswordRecord, "2026-03-31T10:02:00Z")
+	newEvent, newHead, err := safesync.BuildPutItemMutation(state.head, state.session.DeviceID, itemRecord, "2026-03-31T10:02:00Z")
 	if err != nil {
 		return err
 	}
 
-	if _, err := storage.StoreItemRecord(objectStore, session.AccountID, accountConfig.DefaultCollectionID, newPasswordRecord); err != nil {
+	if _, err := storage.StoreItemRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, itemRecord); err != nil {
 		return err
 	}
-	if _, err := storage.StoreEventRecord(objectStore, newEvent); err != nil {
+	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
 		return err
 	}
-	if _, err := storage.StoreCollectionHeadRecord(objectStore, newHead); err != nil {
+	if _, err := storage.StoreCollectionHeadRecord(state.store, newHead); err != nil {
 		return err
 	}
 
-	mutatedEvents, err := storage.LoadCollectionEventRecords(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
+	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	if err != nil {
+		return err
+	}
+	projection, err := safesync.ReplayCollection(storedEvents)
 	if err != nil {
 		return err
 	}
 
-	mutatedProjection, err := safesync.ReplayCollection(mutatedEvents)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("mutation dry run:")
-	fmt.Printf("- added=%s event=%s latestSeq=%d items=%d\n", newPasswordRecord.Item.Title, newEvent.EventID, mutatedProjection.LatestSeq, len(mutatedProjection.Items))
-
+	fmt.Fprintln(out, "password add:")
+	fmt.Fprintf(out, "- added=%s username=%s event=%s latestSeq=%d items=%d\n", title, username, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
+}
+
+func slugify(value string) string {
+	buffer := make([]rune, 0, len(value))
+	for _, char := range value {
+		switch {
+		case char >= 'A' && char <= 'Z':
+			buffer = append(buffer, char+('a'-'A'))
+		case (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9'):
+			buffer = append(buffer, char)
+		case char == ' ' || char == '-' || char == '_':
+			buffer = append(buffer, '-')
+		}
+	}
+
+	if len(buffer) == 0 {
+		return "item"
+	}
+
+	return string(buffer)
 }
 
 func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {

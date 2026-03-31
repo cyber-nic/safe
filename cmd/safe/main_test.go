@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -89,4 +91,83 @@ func TestFetchStorageConfig(t *testing.T) {
 	if config.Bucket != "safe-test" || config.Endpoint != "http://localstack:4566" || config.Region != "us-east-1" {
 		t.Fatalf("unexpected storage payload: %+v", config)
 	}
+}
+
+func TestRunPasswordList(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"password", "list"}, &buffer); err != nil {
+			t.Fatalf("run password list: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "password list:") {
+			t.Fatalf("expected password list output, got %s", output)
+		}
+		if !strings.Contains(output, "Gmail (alice@example.com)") {
+			t.Fatalf("expected Gmail entry, got %s", output)
+		}
+	})
+}
+
+func TestRunPasswordAdd(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"password", "add", "GitHub", "alice"}, &buffer); err != nil {
+			t.Fatalf("run password add: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "password add:") {
+			t.Fatalf("expected password add output, got %s", output)
+		}
+		if !strings.Contains(output, "added=GitHub") {
+			t.Fatalf("expected GitHub add output, got %s", output)
+		}
+		if !strings.Contains(output, "latestSeq=3") {
+			t.Fatalf("expected latestSeq=3 after add, got %s", output)
+		}
+	})
+}
+
+func withFakeBootstrap(t *testing.T, fn func()) {
+	t.Helper()
+
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/v1/dev/session":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"accountId":"acct-dev-001","deviceId":"dev-web-001","env":"test"}`)),
+			}, nil
+		case "/v1/dev/storage-config":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","accountId":"acct-dev-001","deviceId":"dev-web-001"}`)),
+			}, nil
+		default:
+			t.Fatalf("unexpected bootstrap path: %s", r.URL.Path)
+			return nil, nil
+		}
+	})
+	defer func() {
+		http.DefaultTransport = originalTransport
+	}()
+
+	previousURL := os.Getenv("SAFE_CONTROL_PLANE_URL")
+	if err := os.Setenv("SAFE_CONTROL_PLANE_URL", "http://control-plane.test"); err != nil {
+		t.Fatalf("set env: %v", err)
+	}
+	defer func() {
+		if previousURL == "" {
+			_ = os.Unsetenv("SAFE_CONTROL_PLANE_URL")
+		} else {
+			_ = os.Setenv("SAFE_CONTROL_PLANE_URL", previousURL)
+		}
+	}()
+
+	fn()
 }
