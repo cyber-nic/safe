@@ -217,6 +217,23 @@ func TestRunSecretDeleteMissingItem(t *testing.T) {
 	})
 }
 
+func TestRunSecretHistory(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "history", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret history: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret history:") {
+			t.Fatalf("expected secret history output, got %s", output)
+		}
+		if !strings.Contains(output, "seq=1 action=put_item event=evt-login-gmail-primary-v1") {
+			t.Fatalf("expected initial Gmail history entry, got %s", output)
+		}
+	})
+}
+
 func TestSecretRestore(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		state, err := bootstrapCLIState()
@@ -246,6 +263,60 @@ func TestSecretRestore(t *testing.T) {
 		}
 		if !strings.Contains(output, "items=2") {
 			t.Fatalf("expected two items after restore, got %s", output)
+		}
+	})
+}
+
+func TestSecretHistoryAfterDeleteAndRestore(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var deleteBuffer bytes.Buffer
+		if err := secretDelete(&deleteBuffer, state, "login-gmail-primary"); err != nil {
+			t.Fatalf("delete secret before history check: %v", err)
+		}
+
+		var restoreBuffer bytes.Buffer
+		if err := secretRestore(&restoreBuffer, state, "login-gmail-primary"); err != nil {
+			t.Fatalf("restore secret before history check: %v", err)
+		}
+
+		var historyBuffer bytes.Buffer
+		if err := secretHistory(&historyBuffer, state, "login-gmail-primary"); err != nil {
+			t.Fatalf("history after restore: %v", err)
+		}
+
+		output := historyBuffer.String()
+		if !strings.Contains(output, "seq=1 action=put_item event=evt-login-gmail-primary-v1") {
+			t.Fatalf("expected initial put event, got %s", output)
+		}
+		if !strings.Contains(output, "seq=3 action=delete_item event=evt-login-gmail-primary-delete-v3") {
+			t.Fatalf("expected delete event, got %s", output)
+		}
+		if !strings.Contains(output, "seq=4 action=put_item event=evt-login-gmail-primary-v4") {
+			t.Fatalf("expected restore put event, got %s", output)
+		}
+	})
+}
+
+func TestSecretHistoryMissingItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretHistory(&buffer, state, "missing-item")
+		if err == nil {
+			t.Fatal("expected missing history error")
+		}
+
+		if !strings.Contains(err.Error(), "secret history not found: missing-item") {
+			t.Fatalf("expected missing history error, got %v", err)
 		}
 	})
 }
@@ -376,6 +447,26 @@ func TestRunSecretShowMissingItem(t *testing.T) {
 func TestMatchesSecretQueryEmptyQuery(t *testing.T) {
 	if matchesSecretQuery(domain.VaultItem{Title: "Gmail"}, "   ") {
 		t.Fatal("expected empty query to return false")
+	}
+}
+
+func TestEventTargetsItem(t *testing.T) {
+	putEvent := domain.VaultEventRecord{
+		Action: domain.VaultEventActionPutItem,
+		ItemRecord: domain.VaultItemRecord{
+			Item: domain.VaultItem{ID: "login-gmail-primary"},
+		},
+	}
+	if !eventTargetsItem(putEvent, "login-gmail-primary") {
+		t.Fatal("expected put event to match item")
+	}
+
+	deleteEvent := domain.VaultEventRecord{
+		Action: domain.VaultEventActionDeleteItem,
+		ItemID: "login-gmail-primary",
+	}
+	if !eventTargetsItem(deleteEvent, "login-gmail-primary") {
+		t.Fatal("expected delete event to match item")
 	}
 }
 

@@ -23,3 +23,9 @@
 - Added `safe secret restore <item-id>` so deleted items can be replayed back into the active vault state from their stored item record.
 - Fixed CLI mutation helpers to load the latest collection head from storage before writing, which makes chained operations like delete-then-restore sequence correctly.
 - Added tests for successful restore after delete, active-item rejection, and missing-version rejection.
+
+## 2026-03-31T12:14:40Z
+
+- Added `safe secret history <item-id>` so the CLI can inspect append-only event history for a specific secret instead of only mutating current state.
+- Refactored CLI event loading so history and replayed projection reads share the same collection event source.
+- Added tests for starter history output, delete-then-restore history, missing-history handling, and item targeting across put and delete events.

@@ -143,6 +143,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "history":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret history <item-id>")
+		}
+		return secretHistory(out, state, args[1])
 	case "restore":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret restore <item-id>")
@@ -256,6 +261,35 @@ func secretShow(out io.Writer, state cliState, itemID string) error {
 	return nil
 }
 
+func secretHistory(out io.Writer, state cliState, itemID string) error {
+	events, err := loadEvents(state)
+	if err != nil {
+		return err
+	}
+
+	matches := make([]domain.VaultEventRecord, 0)
+	for _, event := range events {
+		if eventTargetsItem(event, itemID) {
+			matches = append(matches, event)
+		}
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("secret history not found: %s", itemID)
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Sequence < matches[j].Sequence
+	})
+
+	fmt.Fprintln(out, "secret history:")
+	for _, event := range matches {
+		fmt.Fprintf(out, "- seq=%d action=%s event=%s at=%s\n", event.Sequence, event.Action, event.EventID, event.OccurredAt)
+	}
+
+	return nil
+}
+
 func secretAdd(out io.Writer, state cliState, title, username string) error {
 	itemID := fmt.Sprintf("login-%s-primary", slugify(title))
 	itemRecord := domain.VaultItemRecord{
@@ -354,12 +388,21 @@ func secretRestore(out io.Writer, state cliState, itemID string) error {
 }
 
 func loadProjection(state cliState) (safesync.Projection, error) {
-	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	storedEvents, err := loadEvents(state)
 	if err != nil {
 		return safesync.Projection{}, err
 	}
 
 	return safesync.ReplayCollection(storedEvents)
+}
+
+func loadEvents(state cliState) ([]domain.VaultEventRecord, error) {
+	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return storedEvents, nil
 }
 
 func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
@@ -447,6 +490,17 @@ func matchesSecretQuery(item domain.VaultItem, query string) bool {
 	}
 
 	return false
+}
+
+func eventTargetsItem(event domain.VaultEventRecord, itemID string) bool {
+	switch event.Action {
+	case domain.VaultEventActionPutItem:
+		return event.ItemRecord.Item.ID == itemID
+	case domain.VaultEventActionDeleteItem:
+		return event.ItemID == itemID
+	default:
+		return false
+	}
 }
 
 func slugify(value string) string {
