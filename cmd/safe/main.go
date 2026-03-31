@@ -39,12 +39,16 @@ type cliState struct {
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := runWithIO(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		panic(err)
 	}
 }
 
 func run(args []string, out io.Writer) error {
+	return runWithIO(args, os.Stdin, out)
+}
+
+func runWithIO(args []string, in io.Reader, out io.Writer) error {
 	state, err := bootstrapCLIState()
 	if err != nil {
 		return err
@@ -60,7 +64,7 @@ func run(args []string, out io.Writer) error {
 
 	switch args[0] {
 	case "secret":
-		return runSecretCommand(out, state, args[1:])
+		return runSecretCommand(in, out, state, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -135,7 +139,7 @@ func printOverview(out io.Writer, state cliState) error {
 	return nil
 }
 
-func runSecretCommand(out io.Writer, state cliState, args []string) error {
+func runSecretCommand(in io.Reader, out io.Writer, state cliState, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("secret command requires a subcommand")
 	}
@@ -143,6 +147,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "import":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: safe secret import")
+		}
+		return secretImport(in, out, state)
 	case "export":
 		if len(args) > 2 {
 			return fmt.Errorf("usage: safe secret export [item-id]")
@@ -270,6 +279,31 @@ func secretShow(out io.Writer, state cliState, itemID string) error {
 	return nil
 }
 
+func secretImport(in io.Reader, out io.Writer, state cliState) error {
+	payload, err := io.ReadAll(in)
+	if err != nil {
+		return err
+	}
+
+	records, err := parseSecretImportRecords(payload)
+	if err != nil {
+		return err
+	}
+
+	projection := safesync.Projection{}
+	for index, record := range records {
+		occurredAt := fmt.Sprintf("2026-03-31T10:06:%02dZ", index)
+		projection, _, err = persistItemMutation(state, record, occurredAt)
+		if err != nil {
+			return err
+		}
+	}
+
+	fmt.Fprintln(out, "secret import:")
+	fmt.Fprintf(out, "- imported=%d latestSeq=%d items=%d\n", len(records), projection.LatestSeq, len(projection.Items))
+	return nil
+}
+
 func secretExport(out io.Writer, state cliState, itemID string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
@@ -324,6 +358,49 @@ func secretExport(out io.Writer, state cliState, itemID string) error {
 	}
 
 	return encoder.Encode(payload)
+}
+
+func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, error) {
+	payload = bytes.TrimSpace(payload)
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("secret import payload is empty")
+	}
+
+	type listImportPayload struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	type singleImportPayload struct {
+		Item json.RawMessage `json:"item"`
+	}
+
+	var listPayload listImportPayload
+	if err := json.Unmarshal(payload, &listPayload); err == nil && len(listPayload.Items) > 0 {
+		records := make([]domain.VaultItemRecord, 0, len(listPayload.Items))
+		for _, rawRecord := range listPayload.Items {
+			record, err := domain.ParseVaultItemRecordJSON(rawRecord)
+			if err != nil {
+				return nil, fmt.Errorf("secret import invalid item: %w", err)
+			}
+			records = append(records, record)
+		}
+		return records, nil
+	}
+
+	var singlePayload singleImportPayload
+	if err := json.Unmarshal(payload, &singlePayload); err == nil && len(singlePayload.Item) > 0 {
+		record, err := domain.ParseVaultItemRecordJSON(singlePayload.Item)
+		if err != nil {
+			return nil, fmt.Errorf("secret import invalid item: %w", err)
+		}
+		return []domain.VaultItemRecord{record}, nil
+	}
+
+	record, err := domain.ParseVaultItemRecordJSON(payload)
+	if err == nil {
+		return []domain.VaultItemRecord{record}, nil
+	}
+
+	return nil, fmt.Errorf("secret import payload must be a vault item record or secret export JSON")
 }
 
 func secretHistory(out io.Writer, state cliState, itemID string) error {

@@ -35,3 +35,9 @@
 - Added `safe secret export [item-id]` so the CLI can emit deterministic JSON for the full active vault projection or a single targeted secret.
 - Sorted exported records by item ID to keep automation-friendly output stable across runs.
 - Added CLI tests covering full export payloads, single-item export, and missing-item failures.
+
+## 2026-03-31T12:21:32Z
+
+- Added `safe secret import` so the CLI can read exported vault JSON from stdin and replay it back into the active collection through normal put-item mutations.
+- Refactored CLI execution to accept stdin explicitly, which keeps command plumbing testable while preserving the existing terminal entrypoint.
+- Added CLI tests covering single-item import, full export/import round-trips, deleted-vault restoration, and invalid import payload handling.

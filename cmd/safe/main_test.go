@@ -538,6 +538,162 @@ func TestSecretExportMissingItem(t *testing.T) {
 	})
 }
 
+func TestSecretImportSingleItemExport(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		exportState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap export state: %v", err)
+		}
+
+		var exportBuffer bytes.Buffer
+		if err := secretExport(&exportBuffer, exportState, "login-gmail-primary"); err != nil {
+			t.Fatalf("export single secret: %v", err)
+		}
+
+		importState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap import state: %v", err)
+		}
+
+		var deleteBuffer bytes.Buffer
+		if err := secretDelete(&deleteBuffer, importState, "login-gmail-primary"); err != nil {
+			t.Fatalf("delete before import: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState); err != nil {
+			t.Fatalf("import single secret: %v", err)
+		}
+
+		output := importBuffer.String()
+		if !strings.Contains(output, "secret import:") {
+			t.Fatalf("expected import output, got %s", output)
+		}
+		if !strings.Contains(output, "imported=1 latestSeq=4 items=2") {
+			t.Fatalf("expected import summary, got %s", output)
+		}
+
+		projection, err := loadProjection(importState)
+		if err != nil {
+			t.Fatalf("load projection after import: %v", err)
+		}
+		if _, ok := projection.Items["login-gmail-primary"]; !ok {
+			t.Fatalf("expected imported login item in projection, got %+v", projection.Items)
+		}
+	})
+}
+
+func TestRunSecretImportFullExport(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		exportState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap export state: %v", err)
+		}
+
+		var exportBuffer bytes.Buffer
+		if err := secretExport(&exportBuffer, exportState, ""); err != nil {
+			t.Fatalf("export vault: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		if err := runWithIO([]string{"secret", "import"}, bytes.NewReader(exportBuffer.Bytes()), &importBuffer); err != nil {
+			t.Fatalf("run secret import: %v", err)
+		}
+
+		output := importBuffer.String()
+		if !strings.Contains(output, "secret import:") {
+			t.Fatalf("expected import output, got %s", output)
+		}
+		if !strings.Contains(output, "imported=2 latestSeq=4 items=2") {
+			t.Fatalf("expected full import summary, got %s", output)
+		}
+	})
+}
+
+func TestSecretImportFullExportRestoresDeletedVault(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		exportState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap export state: %v", err)
+		}
+
+		var exportBuffer bytes.Buffer
+		if err := secretExport(&exportBuffer, exportState, ""); err != nil {
+			t.Fatalf("export vault: %v", err)
+		}
+
+		importState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap import state: %v", err)
+		}
+
+		var deleteLogin bytes.Buffer
+		if err := secretDelete(&deleteLogin, importState, "login-gmail-primary"); err != nil {
+			t.Fatalf("delete login before import: %v", err)
+		}
+
+		var deleteTotp bytes.Buffer
+		if err := secretDelete(&deleteTotp, importState, "totp-gmail-primary"); err != nil {
+			t.Fatalf("delete totp before import: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState); err != nil {
+			t.Fatalf("import full export: %v", err)
+		}
+
+		if !strings.Contains(importBuffer.String(), "imported=2 latestSeq=6 items=2") {
+			t.Fatalf("expected restore summary, got %s", importBuffer.String())
+		}
+
+		projection, err := loadProjection(importState)
+		if err != nil {
+			t.Fatalf("load projection after full import: %v", err)
+		}
+		if len(projection.Items) != 2 {
+			t.Fatalf("expected restored projection items, got %+v", projection.Items)
+		}
+	})
+}
+
+func TestSecretImportRejectsInvalidPayload(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap import state: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		err = secretImport(strings.NewReader(`{"items":[{"schemaVersion":2}]}`), &importBuffer, state)
+		if err == nil {
+			t.Fatal("expected invalid payload error")
+		}
+
+		if !strings.Contains(err.Error(), "secret import invalid item") {
+			t.Fatalf("expected invalid payload error, got %v", err)
+		}
+	})
+}
+
+func TestSecretImportRejectsUnsupportedPayloadShape(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap import state: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		err = secretImport(strings.NewReader(`{"latestSeq":2}`), &importBuffer, state)
+		if err == nil {
+			t.Fatal("expected unsupported payload shape error")
+		}
+
+		if !strings.Contains(err.Error(), "secret import payload must be a vault item record or secret export JSON") {
+			t.Fatalf("expected unsupported payload shape error, got %v", err)
+		}
+	})
+}
+
 func TestMatchesSecretQueryEmptyQuery(t *testing.T) {
 	if matchesSecretQuery(domain.VaultItem{Title: "Gmail"}, "   ") {
 		t.Fatal("expected empty query to return false")
