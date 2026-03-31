@@ -2,7 +2,7 @@ name: safe
 
 services:
   control-plane:
-    container_name: control
+    container_name: safe-ctrl
     build:
       context: .
       dockerfile: docker/control-plane/Dockerfile.dev
@@ -39,7 +39,7 @@ services:
           target: /workspace/go.work
 
   localstack:
-    container_name: localstack
+    container_name: safe-stack
     image: localstack/localstack:4.4.0
     environment:
       SERVICES: s3,sts

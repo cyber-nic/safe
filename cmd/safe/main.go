@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ndelorme/safe/internal/domain"
+	"github.com/ndelorme/safe/internal/storage"
 )
 
 type devSessionResponse struct {
@@ -80,6 +81,12 @@ func printControlPlaneBootstrap() error {
 	fmt.Println("control plane bootstrap:")
 	fmt.Printf("- env=%s account=%s device=%s\n", session.Env, session.AccountID, session.DeviceID)
 	fmt.Printf("- storage bucket=%s region=%s endpoint=%s\n", storageConfig.Bucket, storageConfig.Region, storageConfig.Endpoint)
+	fmt.Println("storage plan:")
+
+	for _, event := range domain.StarterVaultEventRecords() {
+		fmt.Printf("- event %s\n", storage.EventObjectKey(session.AccountID, event.CollectionID, event.EventID))
+		fmt.Printf("- item  %s\n", storage.ItemObjectKey(session.AccountID, event.CollectionID, event.ItemRecord.Item.ID))
+	}
 
 	return nil
 }

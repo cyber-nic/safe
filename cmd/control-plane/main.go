@@ -27,30 +27,45 @@ type storageConfigResponse struct {
 	DeviceID  string `json:"deviceId"`
 }
 
+type serverConfig struct {
+	env       string
+	accountID string
+	deviceID  string
+	bucket    string
+	endpoint  string
+	region    string
+}
+
 func main() {
-	env := os.Getenv("SAFE_ENV")
-	if env == "" {
-		env = "development"
+	cfg := serverConfig{
+		env:       getenvDefault("SAFE_ENV", "development"),
+		accountID: getenvDefault("SAFE_DEV_ACCOUNT_ID", "acct-dev-001"),
+		deviceID:  getenvDefault("SAFE_DEV_DEVICE_ID", "dev-web-001"),
+		bucket:    getenvDefault("SAFE_S3_BUCKET", "safe-dev"),
+		endpoint:  getenvDefault("SAFE_S3_ENDPOINT", "http://localstack:4566"),
+		region:    getenvDefault("AWS_REGION", "us-east-1"),
 	}
 
-	accountID := getenvDefault("SAFE_DEV_ACCOUNT_ID", "acct-dev-001")
-	deviceID := getenvDefault("SAFE_DEV_DEVICE_ID", "dev-web-001")
-	bucket := getenvDefault("SAFE_S3_BUCKET", "safe-dev")
-	endpoint := getenvDefault("SAFE_S3_ENDPOINT", "http://localstack:4566")
-	region := getenvDefault("AWS_REGION", "us-east-1")
+	addr := ":8080"
+	log.Printf("safe control plane listening on %s", addr)
+	if err := http.ListenAndServe(addr, newServer(cfg)); err != nil {
+		log.Fatal(err)
+	}
+}
 
+func newServer(cfg serverConfig) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, statusResponse{
 			Service: "safe-control-plane",
-			Env:     env,
+			Env:     cfg.env,
 			Status:  "ok",
 		})
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, statusResponse{
 			Service: "safe-control-plane",
-			Env:     env,
+			Env:     cfg.env,
 			Status:  "healthy",
 		})
 	})
@@ -61,9 +76,9 @@ func main() {
 		}
 
 		writeJSON(w, http.StatusOK, devSessionResponse{
-			AccountID: accountID,
-			DeviceID:  deviceID,
-			Env:       env,
+			AccountID: cfg.accountID,
+			DeviceID:  cfg.deviceID,
+			Env:       cfg.env,
 		})
 	})
 	mux.HandleFunc("/v1/dev/storage-config", func(w http.ResponseWriter, r *http.Request) {
@@ -73,19 +88,15 @@ func main() {
 		}
 
 		writeJSON(w, http.StatusOK, storageConfigResponse{
-			Bucket:    bucket,
-			Endpoint:  endpoint,
-			Region:    region,
-			AccountID: accountID,
-			DeviceID:  deviceID,
+			Bucket:    cfg.bucket,
+			Endpoint:  cfg.endpoint,
+			Region:    cfg.region,
+			AccountID: cfg.accountID,
+			DeviceID:  cfg.deviceID,
 		})
 	})
 
-	addr := ":8080"
-	log.Printf("safe control plane listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(err)
-	}
+	return mux
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
