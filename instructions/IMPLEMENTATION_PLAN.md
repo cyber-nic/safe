@@ -81,7 +81,7 @@ Suggested structure:
   /extension
   /web
 /cmd
-  /cipher
+  /safe
   /control-plane
 /packages
   /ts-sdk

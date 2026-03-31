@@ -1,0 +1,9 @@
+FROM golang:1.23-alpine
+
+WORKDIR /workspace
+
+RUN apk add --no-cache git
+
+EXPOSE 8080
+
+CMD ["go", "run", "./cmd/control-plane"]

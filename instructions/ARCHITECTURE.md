@@ -1,14 +1,14 @@
-# Cipher Architecture
+# Safe Architecture
 
 ## Purpose
 
-This document is the top-level architecture map for Cipher. It explains the major runtime components, the implementation split between Go and TypeScript, the core trust boundaries, the main data flows, and where to go next for deeper detail.
+This document is the top-level architecture map for Safe. It explains the major runtime components, the implementation split between Go and TypeScript, the core trust boundaries, the main data flows, and where to go next for deeper detail.
 
 It is intentionally shorter than [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md). The system design document is the deep specification. This document is the entry point.
 
 ## System Shape
 
-Cipher is a zero-knowledge secret manager with three primary runtime parts:
+Safe is a zero-knowledge secret manager with three primary runtime parts:
 
 - client applications that perform unlock, cryptography, local storage, and sync
 - a thin control plane that handles identity, policy, and scoped storage access
@@ -20,7 +20,7 @@ The system is designed so the service can coordinate access without being able t
 
 ### Clients
 
-Cipher has four client surfaces:
+Safe has four client surfaces:
 
 - desktop app as the primary v1 user client
 - browser extension for lookup and conservative autofill

@@ -1,0 +1,63 @@
+name: safe
+
+services:
+  control-plane:
+    build:
+      context: .
+      dockerfile: docker/control-plane/Dockerfile.dev
+    command: ["go", "run", "./cmd/control-plane"]
+    working_dir: /workspace
+    environment:
+      GOCACHE: /tmp/go-build
+      SAFE_ENV: development
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      SAFE_S3_BUCKET: ${SAFE_S3_BUCKET:-safe-dev}
+      SAFE_S3_ENDPOINT: http://localstack:4566
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+    ports:
+      - "${CONTROL_PLANE_PORT:-8080}:8080"
+    volumes:
+      - .:/workspace
+    depends_on:
+      localstack:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./cmd
+          target: /workspace/cmd
+        - action: sync+restart
+          path: ./internal
+          target: /workspace/internal
+        - action: sync+restart
+          path: ./go.mod
+          target: /workspace/go.mod
+        - action: sync+restart
+          path: ./go.work
+          target: /workspace/go.work
+
+  localstack:
+    image: localstack/localstack:4.4.0
+    environment:
+      SERVICES: s3,sts
+      DEBUG: ${LOCALSTACK_DEBUG:-0}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+      PERSISTENCE: 1
+      EAGER_SERVICE_LOADING: 1
+    ports:
+      - "${LOCALSTACK_PORT:-4566}:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/localstack/init/01-bootstrap.sh:/etc/localstack/init/ready.d/01-bootstrap.sh:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "awslocal s3 ls >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  localstack-data:

@@ -1,6 +1,6 @@
-# Cipher
+# Safe
 
-Cipher is a zero-knowledge secret manager for individuals and small trusted groups.
+Safe is a zero-knowledge secret manager for individuals and small trusted groups.
 
 ## Current Docs
 
@@ -38,3 +38,26 @@ The following decisions are considered frozen enough to start scaffolding:
 2. Freeze canonical schemas and signing fixtures from [PROTOCOL.md](./instructions/PROTOCOL.md).
 3. Create the Go and TypeScript test-vector harnesses.
 4. Stand up the initial containerized local development environment.
+
+## Local Development
+
+The initial local development stack is Compose-first:
+
+- `localstack` for the local AWS and S3-compatible endpoint
+- `control-plane` as the first Go service running in a dev container with Compose watch support
+
+Quick start:
+
+1. Copy `.env.example` to `.env` if you need to override defaults or set `LOCALSTACK_AUTH_TOKEN`.
+2. Run `make up`.
+3. Run `make logs` to follow service output.
+4. Run `make watch` if you want Compose-managed restart behavior on Go file changes.
+
+Useful targets:
+
+- `make ps`
+- `make shell-control-plane`
+- `make shell-localstack`
+- `make s3-ls`
+- `make test-go`
+- `make down`

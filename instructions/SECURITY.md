@@ -1,8 +1,8 @@
-# Cipher Security Assessment
+# Safe Security Assessment
 
 ## 1. Purpose
 
-This document is a security assessment of the current Cipher product definition, system design, and implementation plan in:
+This document is a security assessment of the current Safe product definition, system design, and implementation plan in:
 
 - [PRODUCT.md](./instructions/PRODUCT.md)
 - [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md)
@@ -23,7 +23,7 @@ The design is directionally strong. The most important architectural decisions a
 - recovery is designed around re-wrapping a random account master key instead of decrypting on the server
 - revocation is framed as forward-looking, not retroactive
 
-Those choices give Cipher a credible path to a real zero-knowledge product.
+Those choices give Safe a credible path to a real zero-knowledge product.
 
 The main risk is not the cryptographic hierarchy. The main risk is integrity and authorization around mutable metadata and distributed state:
 
@@ -712,7 +712,7 @@ Before desktop MVP and extension release, review:
 
 ## 15. Final Assessment
 
-Cipher has a credible security architecture for a zero-knowledge secret manager. The design makes several disciplined choices that many systems avoid: explicit device enrollment, client-only key access, forward-looking revocation semantics, and a thin control plane.
+Safe has a credible security architecture for a zero-knowledge secret manager. The design makes several disciplined choices that many systems avoid: explicit device enrollment, client-only key access, forward-looking revocation semantics, and a thin control plane.
 
 The biggest unresolved risk is not whether the service can decrypt data. The biggest unresolved risk is whether the system can preserve integrity and authorization in the face of an untrusted control plane and object store while still delivering offline sync, sharing, and extension-based autofill.
 
