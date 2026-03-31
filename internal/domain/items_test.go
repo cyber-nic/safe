@@ -139,6 +139,39 @@ func TestVaultEventRecordFixtureCanonicalSerialization(t *testing.T) {
 	}
 }
 
+func TestDeleteEventRecordCanonicalSerialization(t *testing.T) {
+	record := VaultEventRecord{
+		SchemaVersion: 1,
+		EventID:       "evt-login-gmail-primary-delete-v3",
+		AccountID:     "acct-dev-001",
+		DeviceID:      "dev-web-001",
+		CollectionID:  "vault-personal",
+		Sequence:      3,
+		OccurredAt:    "2026-03-31T10:04:00Z",
+		Action:        VaultEventActionDeleteItem,
+		ItemID:        "login-gmail-primary",
+	}
+
+	canonical, err := record.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonicalize delete event: %v", err)
+	}
+
+	expected := `{"schemaVersion":1,"eventId":"evt-login-gmail-primary-delete-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:04:00Z","action":"delete_item","itemId":"login-gmail-primary"}`
+	if string(canonical) != expected {
+		t.Fatalf("delete event canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	}
+
+	parsed, err := ParseVaultEventRecordJSON(canonical)
+	if err != nil {
+		t.Fatalf("parse delete event: %v", err)
+	}
+
+	if parsed.Action != VaultEventActionDeleteItem || parsed.ItemID != "login-gmail-primary" {
+		t.Fatalf("unexpected parsed delete event: %+v", parsed)
+	}
+}
+
 func TestCollectionHeadRecordCanonicalSerialization(t *testing.T) {
 	record := StarterCollectionHeadRecord()
 

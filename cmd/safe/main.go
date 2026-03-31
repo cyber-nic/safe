@@ -143,6 +143,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret delete <item-id>")
+		}
+		return secretDelete(out, state, args[1])
 	case "update":
 		if len(args) < 4 {
 			return fmt.Errorf("usage: safe secret update <item-id> <title> <username>")
@@ -298,6 +303,26 @@ func secretUpdate(out io.Writer, state cliState, itemID, title, username string)
 	return nil
 }
 
+func secretDelete(out io.Writer, state cliState, itemID string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := projection.Items[itemID]; !ok {
+		return fmt.Errorf("secret not found: %s", itemID)
+	}
+
+	projection, newEvent, err := persistDeleteMutation(state, itemID, "2026-03-31T10:04:00Z")
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "secret delete:")
+	fmt.Fprintf(out, "- id=%s event=%s latestSeq=%d items=%d\n", itemID, newEvent.EventID, projection.LatestSeq, len(projection.Items))
+	return nil
+}
+
 func loadProjection(state cliState) (safesync.Projection, error) {
 	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
 	if err != nil {
@@ -316,6 +341,27 @@ func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, occu
 	if _, err := storage.StoreItemRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, itemRecord); err != nil {
 		return safesync.Projection{}, domain.VaultEventRecord{}, err
 	}
+	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+	if _, err := storage.StoreCollectionHeadRecord(state.store, newHead); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
+	projection, err := loadProjection(state)
+	if err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
+	return projection, newEvent, nil
+}
+
+func persistDeleteMutation(state cliState, itemID, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
+	newEvent, newHead, err := safesync.BuildDeleteItemMutation(state.head, state.session.DeviceID, itemID, occurredAt)
+	if err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+
 	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
 		return safesync.Projection{}, domain.VaultEventRecord{}, err
 	}

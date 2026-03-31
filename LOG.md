@@ -11,3 +11,9 @@
 - Added `safe secret update <item-id> <title> <username>` for login items so the CLI now covers a concrete update flow in addition to create, read, and search.
 - Refactored CLI write persistence through a shared item-mutation helper used by both `secret add` and `secret update`.
 - Added tests for successful updates, missing-item handling, and rejection of non-login updates.
+
+## 2026-03-31T12:09:21Z
+
+- Added first-class `delete_item` vault events plus replay and mutation support so item removal is modeled in the domain instead of being faked in the CLI.
+- Added `safe secret delete <item-id>` to the CLI and reused the same replay-driven state model to report the remaining item count after deletion.
+- Added domain, sync, and CLI tests covering delete event serialization, replay behavior, mutation construction, and missing-item handling.

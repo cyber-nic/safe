@@ -44,7 +44,10 @@ type VaultItemRecord struct {
 
 type VaultEventAction string
 
-const VaultEventActionPutItem VaultEventAction = "put_item"
+const (
+	VaultEventActionPutItem    VaultEventAction = "put_item"
+	VaultEventActionDeleteItem VaultEventAction = "delete_item"
+)
 
 type VaultEventRecord struct {
 	SchemaVersion int              `json:"schemaVersion"`
@@ -55,6 +58,7 @@ type VaultEventRecord struct {
 	Sequence      int              `json:"sequence"`
 	OccurredAt    string           `json:"occurredAt"`
 	Action        VaultEventAction `json:"action"`
+	ItemID        string           `json:"itemId,omitempty"`
 	ItemRecord    VaultItemRecord  `json:"itemRecord"`
 }
 
@@ -257,11 +261,17 @@ func (record VaultEventRecord) Validate() error {
 	if record.OccurredAt == "" {
 		return ErrInvalidVaultEventRecord("occurredAt")
 	}
-	if record.Action != VaultEventActionPutItem {
+	switch record.Action {
+	case VaultEventActionPutItem:
+		if err := record.ItemRecord.Validate(); err != nil {
+			return ErrInvalidVaultEventRecord("itemRecord")
+		}
+	case VaultEventActionDeleteItem:
+		if record.ItemID == "" {
+			return ErrInvalidVaultEventRecord("itemId")
+		}
+	default:
 		return ErrInvalidVaultEventRecord("action")
-	}
-	if err := record.ItemRecord.Validate(); err != nil {
-		return ErrInvalidVaultEventRecord("itemRecord")
 	}
 
 	return nil
@@ -269,11 +279,6 @@ func (record VaultEventRecord) Validate() error {
 
 func (record VaultEventRecord) CanonicalJSON() ([]byte, error) {
 	if err := record.Validate(); err != nil {
-		return nil, err
-	}
-
-	itemRecordJSON, err := record.ItemRecord.CanonicalJSON()
-	if err != nil {
 		return nil, err
 	}
 
@@ -289,17 +294,51 @@ func (record VaultEventRecord) CanonicalJSON() ([]byte, error) {
 		ItemRecord    json.RawMessage  `json:"itemRecord"`
 	}
 
-	return json.Marshal(canonicalEventRecord{
-		SchemaVersion: record.SchemaVersion,
-		EventID:       record.EventID,
-		AccountID:     record.AccountID,
-		DeviceID:      record.DeviceID,
-		CollectionID:  record.CollectionID,
-		Sequence:      record.Sequence,
-		OccurredAt:    record.OccurredAt,
-		Action:        record.Action,
-		ItemRecord:    itemRecordJSON,
-	})
+	type canonicalDeleteEventRecord struct {
+		SchemaVersion int              `json:"schemaVersion"`
+		EventID       string           `json:"eventId"`
+		AccountID     string           `json:"accountId"`
+		DeviceID      string           `json:"deviceId"`
+		CollectionID  string           `json:"collectionId"`
+		Sequence      int              `json:"sequence"`
+		OccurredAt    string           `json:"occurredAt"`
+		Action        VaultEventAction `json:"action"`
+		ItemID        string           `json:"itemId"`
+	}
+
+	switch record.Action {
+	case VaultEventActionPutItem:
+		itemRecordJSON, err := record.ItemRecord.CanonicalJSON()
+		if err != nil {
+			return nil, err
+		}
+
+		return json.Marshal(canonicalEventRecord{
+			SchemaVersion: record.SchemaVersion,
+			EventID:       record.EventID,
+			AccountID:     record.AccountID,
+			DeviceID:      record.DeviceID,
+			CollectionID:  record.CollectionID,
+			Sequence:      record.Sequence,
+			OccurredAt:    record.OccurredAt,
+			Action:        record.Action,
+			ItemRecord:    itemRecordJSON,
+		})
+	case VaultEventActionDeleteItem:
+		return json.Marshal(canonicalDeleteEventRecord{
+			SchemaVersion: record.SchemaVersion,
+			EventID:       record.EventID,
+			AccountID:     record.AccountID,
+			DeviceID:      record.DeviceID,
+			CollectionID:  record.CollectionID,
+			Sequence:      record.Sequence,
+			OccurredAt:    record.OccurredAt,
+			Action:        record.Action,
+			ItemID:        record.ItemID,
+		})
+	default:
+		return nil, ErrInvalidVaultEventRecord("action")
+	}
 }
 
 func ParseVaultEventRecordJSON(data []byte) (VaultEventRecord, error) {

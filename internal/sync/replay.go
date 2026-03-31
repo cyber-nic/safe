@@ -51,6 +51,8 @@ func ReplayCollection(events []domain.VaultEventRecord) (Projection, error) {
 		switch event.Action {
 		case domain.VaultEventActionPutItem:
 			projection.Items[event.ItemRecord.Item.ID] = event.ItemRecord
+		case domain.VaultEventActionDeleteItem:
+			delete(projection.Items, event.ItemID)
 		default:
 			return Projection{}, ErrReplayInvariant("action")
 		}

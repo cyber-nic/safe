@@ -67,6 +67,34 @@ func TestReplayCollectionRejectsMixedCollection(t *testing.T) {
 	}
 }
 
+func TestReplayCollectionDeletesItems(t *testing.T) {
+	events := append([]domain.VaultEventRecord(nil), domain.StarterVaultEventRecords()...)
+	events = append(events, domain.VaultEventRecord{
+		SchemaVersion: 1,
+		EventID:       "evt-login-gmail-primary-delete-v3",
+		AccountID:     "acct-dev-001",
+		DeviceID:      "dev-web-001",
+		CollectionID:  "vault-personal",
+		Sequence:      3,
+		OccurredAt:    "2026-03-31T10:04:00Z",
+		Action:        domain.VaultEventActionDeleteItem,
+		ItemID:        "login-gmail-primary",
+	})
+
+	projection, err := ReplayCollection(events)
+	if err != nil {
+		t.Fatalf("replay collection: %v", err)
+	}
+
+	if projection.LatestSeq != 3 {
+		t.Fatalf("unexpected latest sequence: %d", projection.LatestSeq)
+	}
+
+	if _, ok := projection.Items["login-gmail-primary"]; ok {
+		t.Fatal("expected login item to be deleted from projection")
+	}
+}
+
 func TestBuildPutItemMutation(t *testing.T) {
 	head := domain.StarterCollectionHeadRecord()
 	itemRecord := domain.VaultItemRecord{
@@ -92,6 +120,31 @@ func TestBuildPutItemMutation(t *testing.T) {
 
 	if event.EventID != "evt-login-github-primary-v3" {
 		t.Fatalf("unexpected event ID: %s", event.EventID)
+	}
+
+	if newHead.LatestSeq != 3 || newHead.LatestEventID != event.EventID {
+		t.Fatalf("unexpected head: %+v", newHead)
+	}
+}
+
+func TestBuildDeleteItemMutation(t *testing.T) {
+	head := domain.StarterCollectionHeadRecord()
+
+	event, newHead, err := BuildDeleteItemMutation(head, "dev-web-001", "login-gmail-primary", "2026-03-31T10:04:00Z")
+	if err != nil {
+		t.Fatalf("build delete mutation: %v", err)
+	}
+
+	if event.Sequence != 3 {
+		t.Fatalf("expected sequence 3, got %d", event.Sequence)
+	}
+
+	if event.EventID != "evt-login-gmail-primary-delete-v3" {
+		t.Fatalf("unexpected event ID: %s", event.EventID)
+	}
+
+	if event.Action != domain.VaultEventActionDeleteItem || event.ItemID != "login-gmail-primary" {
+		t.Fatalf("unexpected event: %+v", event)
 	}
 
 	if newHead.LatestSeq != 3 || newHead.LatestEventID != event.EventID {

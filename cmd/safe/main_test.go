@@ -180,6 +180,43 @@ func TestRunSecretUpdateRejectsNonLoginItem(t *testing.T) {
 	})
 }
 
+func TestRunSecretDelete(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "delete", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret delete: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret delete:") {
+			t.Fatalf("expected secret delete output, got %s", output)
+		}
+		if !strings.Contains(output, "id=login-gmail-primary") {
+			t.Fatalf("expected deleted item ID, got %s", output)
+		}
+		if !strings.Contains(output, "latestSeq=3") {
+			t.Fatalf("expected latestSeq=3 after delete, got %s", output)
+		}
+		if !strings.Contains(output, "items=1") {
+			t.Fatalf("expected one remaining item after delete, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretDeleteMissingItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		err := run([]string{"secret", "delete", "missing-item"}, &buffer)
+		if err == nil {
+			t.Fatal("expected missing item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret not found: missing-item") {
+			t.Fatalf("expected missing item error, got %v", err)
+		}
+	})
+}
+
 func TestRunSecretSearchByTitle(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
