@@ -865,6 +865,125 @@ func TestSecretImportRejectsUnsupportedPayloadShape(t *testing.T) {
 	})
 }
 
+func TestSecretImportNoteItemAndShow(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		importPayload := `{
+  "schemaVersion": 1,
+  "item": {
+    "id": "note-server-bootstrap",
+    "kind": "note",
+    "title": "Server Bootstrap",
+    "tags": ["infra", "runbook"],
+    "bodyPreview": "Bootstrap checklist"
+  }
+}`
+
+		var importBuffer bytes.Buffer
+		if err := secretImport(strings.NewReader(importPayload), &importBuffer, state, cliOptions{}); err != nil {
+			t.Fatalf("import note item: %v", err)
+		}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, state, cliOptions{}, "note-server-bootstrap"); err != nil {
+			t.Fatalf("show note item: %v", err)
+		}
+
+		output := showBuffer.String()
+		if !strings.Contains(output, "kind=note title=Server Bootstrap") {
+			t.Fatalf("expected note identity output, got %s", output)
+		}
+		if !strings.Contains(output, "bodyPreview=Bootstrap checklist") {
+			t.Fatalf("expected note body preview output, got %s", output)
+		}
+	})
+}
+
+func TestSecretImportAPIKeyItemAndShowJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		importPayload := `{
+  "schemaVersion": 1,
+  "item": {
+    "id": "apikey-stripe-primary",
+    "kind": "apiKey",
+    "title": "Stripe Primary",
+    "tags": ["payments"],
+    "service": "Stripe"
+  }
+}`
+
+		var importBuffer bytes.Buffer
+		if err := secretImport(strings.NewReader(importPayload), &importBuffer, state, cliOptions{}); err != nil {
+			t.Fatalf("import api key item: %v", err)
+		}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, state, cliOptions{json: true}, "apikey-stripe-primary"); err != nil {
+			t.Fatalf("show api key item json: %v", err)
+		}
+
+		var payload domain.VaultItemRecord
+		if err := json.Unmarshal(showBuffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode api key show json: %v", err)
+		}
+
+		if payload.Item.Kind != domain.VaultItemKindAPIKey || payload.Item.Service != "Stripe" {
+			t.Fatalf("unexpected api key show payload: %+v", payload)
+		}
+	})
+}
+
+func TestSecretImportSSHKeyItemSearchAndShow(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		importPayload := `{
+  "schemaVersion": 1,
+  "item": {
+    "id": "ssh-prod-root",
+    "kind": "sshKey",
+    "title": "Prod Root",
+    "tags": ["infra", "ssh"],
+    "username": "root",
+    "host": "prod-01.example.com"
+  }
+}`
+
+		var importBuffer bytes.Buffer
+		if err := secretImport(strings.NewReader(importPayload), &importBuffer, state, cliOptions{}); err != nil {
+			t.Fatalf("import ssh key item: %v", err)
+		}
+
+		var searchBuffer bytes.Buffer
+		if err := secretSearch(&searchBuffer, state, cliOptions{}, "prod-01"); err != nil {
+			t.Fatalf("search ssh key item: %v", err)
+		}
+		if !strings.Contains(searchBuffer.String(), "id=ssh-prod-root kind=sshKey title=Prod Root") {
+			t.Fatalf("expected ssh key search output, got %s", searchBuffer.String())
+		}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, state, cliOptions{}, "ssh-prod-root"); err != nil {
+			t.Fatalf("show ssh key item: %v", err)
+		}
+		if !strings.Contains(showBuffer.String(), "host=prod-01.example.com") {
+			t.Fatalf("expected ssh host output, got %s", showBuffer.String())
+		}
+	})
+}
+
 func TestMatchesSecretQueryEmptyQuery(t *testing.T) {
 	if matchesSecretQuery(domain.VaultItem{Title: "Gmail"}, "   ") {
 		t.Fatal("expected empty query to return false")

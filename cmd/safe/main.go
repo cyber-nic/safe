@@ -358,6 +358,13 @@ func secretShow(out io.Writer, state cliState, options cliOptions, itemID string
 	case domain.VaultItemKindLogin:
 		fmt.Fprintf(out, "- username=%s\n", item.Username)
 		fmt.Fprintf(out, "- urls=%s\n", strings.Join(item.URLs, ","))
+	case domain.VaultItemKindNote:
+		fmt.Fprintf(out, "- bodyPreview=%s\n", item.BodyPreview)
+	case domain.VaultItemKindAPIKey:
+		fmt.Fprintf(out, "- service=%s\n", item.Service)
+	case domain.VaultItemKindSSHKey:
+		fmt.Fprintf(out, "- username=%s\n", item.Username)
+		fmt.Fprintf(out, "- host=%s\n", item.Host)
 	case domain.VaultItemKindTOTP:
 		fmt.Fprintf(out, "- issuer=%s account=%s digits=%d period=%d algorithm=%s secretRef=%s\n", item.Issuer, item.AccountName, item.Digits, item.PeriodSeconds, item.Algorithm, item.SecretRef)
 	}
@@ -484,17 +491,17 @@ func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, error) 
 		return records, nil
 	}
 
+	record, err := domain.ParseVaultItemRecordJSON(payload)
+	if err == nil {
+		return []domain.VaultItemRecord{record}, nil
+	}
+
 	var singlePayload singleImportPayload
 	if err := json.Unmarshal(payload, &singlePayload); err == nil && len(singlePayload.Item) > 0 {
 		record, err := domain.ParseVaultItemRecordJSON(singlePayload.Item)
 		if err != nil {
 			return nil, fmt.Errorf("secret import invalid item: %w", err)
 		}
-		return []domain.VaultItemRecord{record}, nil
-	}
-
-	record, err := domain.ParseVaultItemRecordJSON(payload)
-	if err == nil {
 		return []domain.VaultItemRecord{record}, nil
 	}
 

@@ -47,3 +47,9 @@
 - Added a global `--json` CLI mode so overview, list, search, show, history, and mutation commands can emit machine-readable payloads for automation while keeping the existing human-readable default output.
 - Suppressed the bootstrap banner in JSON mode and centralized pretty JSON encoding through a shared helper.
 - Added CLI tests covering JSON overview output, JSON list/show/history responses, and JSON responses for add and import flows.
+
+## 2026-03-31T12:28:33Z
+
+- Extended the Go domain model to validate, summarize, and canonically serialize `note`, `apiKey`, and `sshKey` items so it now matches the broader TypeScript item taxonomy instead of only accepting `login` and `totp`.
+- Updated CLI secret rendering and import parsing so those additional item kinds can round-trip through `safe secret import` and `safe secret show` without being rejected or misparsed.
+- Added domain and CLI tests covering the new item-kind validation paths plus note, API key, and SSH key import/show/search flows.

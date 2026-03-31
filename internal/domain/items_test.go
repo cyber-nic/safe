@@ -15,6 +15,9 @@ type fixtureVaultItem struct {
 	Tags          []string `json:"tags"`
 	Username      string   `json:"username,omitempty"`
 	URLs          []string `json:"urls,omitempty"`
+	BodyPreview   string   `json:"bodyPreview,omitempty"`
+	Service       string   `json:"service,omitempty"`
+	Host          string   `json:"host,omitempty"`
 	Issuer        string   `json:"issuer,omitempty"`
 	AccountName   string   `json:"accountName,omitempty"`
 	Digits        int      `json:"digits,omitempty"`
@@ -215,5 +218,121 @@ func TestAccountConfigRecordCanonicalSerialization(t *testing.T) {
 
 	if parsed.DefaultCollectionID != "vault-personal" || len(parsed.CollectionIDs) != 1 {
 		t.Fatalf("unexpected parsed account config: %+v", parsed)
+	}
+}
+
+func TestVaultItemRecordValidateSupportedKinds(t *testing.T) {
+	tests := []struct {
+		name   string
+		record VaultItemRecord
+	}{
+		{
+			name: "note",
+			record: VaultItemRecord{
+				SchemaVersion: 1,
+				Item: VaultItem{
+					ID:          "note-server-bootstrap",
+					Kind:        VaultItemKindNote,
+					Title:       "Server Bootstrap",
+					Tags:        []string{"infra"},
+					BodyPreview: "Bootstrap checklist",
+				},
+			},
+		},
+		{
+			name: "apiKey",
+			record: VaultItemRecord{
+				SchemaVersion: 1,
+				Item: VaultItem{
+					ID:      "apikey-stripe-primary",
+					Kind:    VaultItemKindAPIKey,
+					Title:   "Stripe Primary",
+					Tags:    []string{"payments"},
+					Service: "Stripe",
+				},
+			},
+		},
+		{
+			name: "sshKey",
+			record: VaultItemRecord{
+				SchemaVersion: 1,
+				Item: VaultItem{
+					ID:       "ssh-prod-root",
+					Kind:     VaultItemKindSSHKey,
+					Title:    "Prod Root",
+					Tags:     []string{"infra"},
+					Username: "root",
+					Host:     "prod-01.example.com",
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.record.Validate(); err != nil {
+				t.Fatalf("validate %s: %v", test.name, err)
+			}
+
+			canonical, err := test.record.CanonicalJSON()
+			if err != nil {
+				t.Fatalf("canonical %s: %v", test.name, err)
+			}
+
+			parsed, err := ParseVaultItemRecordJSON(canonical)
+			if err != nil {
+				t.Fatalf("parse %s: %v", test.name, err)
+			}
+
+			if parsed.Item.Kind != test.record.Item.Kind || parsed.Item.ID != test.record.Item.ID {
+				t.Fatalf("unexpected parsed %s record: %+v", test.name, parsed)
+			}
+		})
+	}
+}
+
+func TestVaultItemSummarySupportedKinds(t *testing.T) {
+	tests := []struct {
+		item        VaultItem
+		description string
+	}{
+		{
+			item: VaultItem{
+				ID:          "note-server-bootstrap",
+				Kind:        VaultItemKindNote,
+				Title:       "Server Bootstrap",
+				Tags:        []string{"infra"},
+				BodyPreview: "Bootstrap checklist",
+			},
+			description: "Secure note",
+		},
+		{
+			item: VaultItem{
+				ID:      "apikey-stripe-primary",
+				Kind:    VaultItemKindAPIKey,
+				Title:   "Stripe Primary",
+				Tags:    []string{"payments"},
+				Service: "Stripe",
+			},
+			description: "API key for Stripe",
+		},
+		{
+			item: VaultItem{
+				ID:       "ssh-prod-root",
+				Kind:     VaultItemKindSSHKey,
+				Title:    "Prod Root",
+				Tags:     []string{"infra"},
+				Username: "root",
+				Host:     "prod-01.example.com",
+			},
+			description: "SSH key for root@prod-01.example.com",
+		},
+	}
+
+	for _, test := range tests {
+		summary := test.item.Summary()
+		if summary.Description != test.description {
+			t.Fatalf("unexpected summary for %s: %+v", test.item.Kind, summary)
+		}
 	}
 }

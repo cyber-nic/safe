@@ -87,6 +87,27 @@ func (item VaultItem) Summary() VaultItemSummary {
 			Title:       item.Title,
 			Description: "Login for " + item.Username,
 		}
+	case VaultItemKindNote:
+		return VaultItemSummary{
+			ID:          item.ID,
+			Kind:        item.Kind,
+			Title:       item.Title,
+			Description: "Secure note",
+		}
+	case VaultItemKindAPIKey:
+		return VaultItemSummary{
+			ID:          item.ID,
+			Kind:        item.Kind,
+			Title:       item.Title,
+			Description: "API key for " + item.Service,
+		}
+	case VaultItemKindSSHKey:
+		return VaultItemSummary{
+			ID:          item.ID,
+			Kind:        item.Kind,
+			Title:       item.Title,
+			Description: "SSH key for " + item.Username + "@" + item.Host,
+		}
 	case VaultItemKindTOTP:
 		return VaultItemSummary{
 			ID:          item.ID,
@@ -132,6 +153,21 @@ func (record VaultItemRecord) Validate() error {
 		}
 		if len(record.Item.URLs) == 0 {
 			return ErrInvalidVaultItemRecord("item.urls")
+		}
+	case VaultItemKindNote:
+		if record.Item.BodyPreview == "" {
+			return ErrInvalidVaultItemRecord("item.bodyPreview")
+		}
+	case VaultItemKindAPIKey:
+		if record.Item.Service == "" {
+			return ErrInvalidVaultItemRecord("item.service")
+		}
+	case VaultItemKindSSHKey:
+		if record.Item.Username == "" {
+			return ErrInvalidVaultItemRecord("item.username")
+		}
+		if record.Item.Host == "" {
+			return ErrInvalidVaultItemRecord("item.host")
 		}
 	case VaultItemKindTOTP:
 		if record.Item.Issuer == "" {
@@ -186,6 +222,31 @@ func (record VaultItemRecord) CanonicalJSON() ([]byte, error) {
 		SecretRef     string        `json:"secretRef"`
 	}
 
+	type canonicalNoteItem struct {
+		ID          string        `json:"id"`
+		Kind        VaultItemKind `json:"kind"`
+		Title       string        `json:"title"`
+		Tags        []string      `json:"tags"`
+		BodyPreview string        `json:"bodyPreview"`
+	}
+
+	type canonicalAPIKeyItem struct {
+		ID      string        `json:"id"`
+		Kind    VaultItemKind `json:"kind"`
+		Title   string        `json:"title"`
+		Tags    []string      `json:"tags"`
+		Service string        `json:"service"`
+	}
+
+	type canonicalSSHKeyItem struct {
+		ID       string        `json:"id"`
+		Kind     VaultItemKind `json:"kind"`
+		Title    string        `json:"title"`
+		Tags     []string      `json:"tags"`
+		Username string        `json:"username"`
+		Host     string        `json:"host"`
+	}
+
 	switch record.Item.Kind {
 	case VaultItemKindLogin:
 		return json.Marshal(struct {
@@ -200,6 +261,49 @@ func (record VaultItemRecord) CanonicalJSON() ([]byte, error) {
 				Tags:     record.Item.Tags,
 				Username: record.Item.Username,
 				URLs:     record.Item.URLs,
+			},
+		})
+	case VaultItemKindNote:
+		return json.Marshal(struct {
+			SchemaVersion int               `json:"schemaVersion"`
+			Item          canonicalNoteItem `json:"item"`
+		}{
+			SchemaVersion: record.SchemaVersion,
+			Item: canonicalNoteItem{
+				ID:          record.Item.ID,
+				Kind:        record.Item.Kind,
+				Title:       record.Item.Title,
+				Tags:        record.Item.Tags,
+				BodyPreview: record.Item.BodyPreview,
+			},
+		})
+	case VaultItemKindAPIKey:
+		return json.Marshal(struct {
+			SchemaVersion int                 `json:"schemaVersion"`
+			Item          canonicalAPIKeyItem `json:"item"`
+		}{
+			SchemaVersion: record.SchemaVersion,
+			Item: canonicalAPIKeyItem{
+				ID:      record.Item.ID,
+				Kind:    record.Item.Kind,
+				Title:   record.Item.Title,
+				Tags:    record.Item.Tags,
+				Service: record.Item.Service,
+			},
+		})
+	case VaultItemKindSSHKey:
+		return json.Marshal(struct {
+			SchemaVersion int                 `json:"schemaVersion"`
+			Item          canonicalSSHKeyItem `json:"item"`
+		}{
+			SchemaVersion: record.SchemaVersion,
+			Item: canonicalSSHKeyItem{
+				ID:       record.Item.ID,
+				Kind:     record.Item.Kind,
+				Title:    record.Item.Title,
+				Tags:     record.Item.Tags,
+				Username: record.Item.Username,
+				Host:     record.Item.Host,
 			},
 		})
 	case VaultItemKindTOTP:
