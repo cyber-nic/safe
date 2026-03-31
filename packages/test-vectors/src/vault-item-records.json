@@ -1,0 +1,28 @@
+[
+  {
+    "schemaVersion": 1,
+    "item": {
+      "id": "login-gmail-primary",
+      "kind": "login",
+      "title": "Gmail",
+      "tags": ["email", "personal"],
+      "username": "alice@example.com",
+      "urls": ["https://accounts.google.com"]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "item": {
+      "id": "totp-gmail-primary",
+      "kind": "totp",
+      "title": "Gmail 2FA",
+      "tags": ["2fa", "authenticator"],
+      "issuer": "Google",
+      "accountName": "alice@example.com",
+      "digits": 6,
+      "periodSeconds": 30,
+      "algorithm": "SHA1",
+      "secretRef": "vault-secret://totp/gmail-primary"
+    }
+  }
+]

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -57,5 +58,44 @@ func TestVaultItemFixtureShape(t *testing.T) {
 
 	if items[1].Algorithm != "SHA1" {
 		t.Fatalf("expected TOTP algorithm SHA1, got %q", items[1].Algorithm)
+	}
+}
+
+func TestVaultItemRecordFixtureCanonicalSerialization(t *testing.T) {
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", "vault-item-records.json")
+
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read record fixture: %v", err)
+	}
+
+	var rawRecords []json.RawMessage
+	if err := json.Unmarshal(payload, &rawRecords); err != nil {
+		t.Fatalf("unmarshal record fixture: %v", err)
+	}
+
+	if len(rawRecords) != len(StarterVaultItemRecords()) {
+		t.Fatalf("expected %d starter records, got %d", len(StarterVaultItemRecords()), len(rawRecords))
+	}
+
+	for index, rawRecord := range rawRecords {
+		record, err := ParseVaultItemRecordJSON(rawRecord)
+		if err != nil {
+			t.Fatalf("parse record %d: %v", index, err)
+		}
+
+		canonical, err := record.CanonicalJSON()
+		if err != nil {
+			t.Fatalf("canonicalize record %d: %v", index, err)
+		}
+
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, rawRecord); err != nil {
+			t.Fatalf("compact record %d: %v", index, err)
+		}
+
+		if compact.String() != string(canonical) {
+			t.Fatalf("record %d canonical mismatch\nexpected: %s\ngot: %s", index, compact.String(), string(canonical))
+		}
 	}
 }

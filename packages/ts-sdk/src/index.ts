@@ -54,6 +54,11 @@ export type VaultItem =
   | SshKeyItem
   | TotpItem;
 
+export type VaultItemRecord = {
+  schemaVersion: 1;
+  item: VaultItem;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -98,6 +103,13 @@ export function createTotpItem(input: {
 
 export function isTotpItem(item: VaultItem): item is TotpItem {
   return item.kind === "totp";
+}
+
+export function createVaultItemRecord(item: VaultItem): VaultItemRecord {
+  return {
+    schemaVersion: 1,
+    item,
+  };
 }
 
 export function parseVaultItem(value: unknown): VaultItem {
@@ -181,6 +193,92 @@ export function parseVaultItems(values: unknown): VaultItem[] {
   }
 
   return values.map(parseVaultItem);
+}
+
+export function parseVaultItemRecord(value: unknown): VaultItemRecord {
+  if (!isRecord(value)) {
+    throw new Error("invalid vault item record");
+  }
+
+  if (value.schemaVersion !== 1) {
+    throw new Error("invalid vault item record field: schemaVersion");
+  }
+
+  return {
+    schemaVersion: 1,
+    item: parseVaultItem(value.item),
+  };
+}
+
+export function parseVaultItemRecords(values: unknown): VaultItemRecord[] {
+  if (!Array.isArray(values)) {
+    throw new Error("invalid vault item record list");
+  }
+
+  return values.map(parseVaultItemRecord);
+}
+
+function canonicalVaultItemShape(item: VaultItem): Record<string, unknown> {
+  switch (item.kind) {
+    case "login":
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        tags: item.tags,
+        username: item.username,
+        urls: item.urls,
+      };
+    case "note":
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        tags: item.tags,
+        bodyPreview: item.bodyPreview,
+      };
+    case "apiKey":
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        tags: item.tags,
+        service: item.service,
+      };
+    case "sshKey":
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        tags: item.tags,
+        username: item.username,
+        host: item.host,
+      };
+    case "totp":
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        tags: item.tags,
+        issuer: item.issuer,
+        accountName: item.accountName,
+        digits: item.digits,
+        periodSeconds: item.periodSeconds,
+        algorithm: item.algorithm,
+        secretRef: item.secretRef,
+      };
+  }
+}
+
+export function serializeCanonicalVaultItem(item: VaultItem): string {
+  return JSON.stringify(canonicalVaultItemShape(item));
+}
+
+export function serializeCanonicalVaultItemRecord(record: VaultItemRecord): string {
+  return JSON.stringify({
+    schemaVersion: record.schemaVersion,
+    item: canonicalVaultItemShape(record.item),
+  });
 }
 
 export function describeVaultItem(item: VaultItem): string {

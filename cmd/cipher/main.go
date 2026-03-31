@@ -13,4 +13,15 @@ func main() {
 	for _, item := range domain.StarterVaultItems() {
 		fmt.Printf("- [%s] %s: %s\n", item.Kind, item.Title, item.Description)
 	}
+
+	fmt.Println("canonical starter records:")
+
+	for _, record := range domain.StarterVaultItemRecords() {
+		canonical, err := record.CanonicalJSON()
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("- %s\n", canonical)
+	}
 }
