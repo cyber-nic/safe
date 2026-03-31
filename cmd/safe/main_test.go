@@ -113,6 +113,69 @@ func TestRunSecretList(t *testing.T) {
 	})
 }
 
+func TestRunOverviewJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json"}, &buffer); err != nil {
+			t.Fatalf("run overview json: %v", err)
+		}
+
+		if strings.Contains(buffer.String(), "safe CLI bootstrap") {
+			t.Fatalf("did not expect bootstrap banner in json output: %s", buffer.String())
+		}
+
+		var payload struct {
+			AccountID         string `json:"accountId"`
+			DefaultCollection string `json:"defaultCollection"`
+			LatestSeq         int    `json:"latestSeq"`
+			ItemCount         int    `json:"itemCount"`
+			HeadEventID       string `json:"headEventId"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode overview json: %v", err)
+		}
+
+		if payload.AccountID != "acct-dev-001" || payload.DefaultCollection != "vault-personal" {
+			t.Fatalf("unexpected overview payload: %+v", payload)
+		}
+		if payload.LatestSeq != 2 || payload.ItemCount != 2 {
+			t.Fatalf("unexpected overview counts: %+v", payload)
+		}
+	})
+}
+
+func TestRunSecretListJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "list"}, &buffer); err != nil {
+			t.Fatalf("run secret list json: %v", err)
+		}
+
+		if strings.Contains(buffer.String(), "safe CLI bootstrap") {
+			t.Fatalf("did not expect bootstrap banner in json output: %s", buffer.String())
+		}
+
+		var payload struct {
+			Items []struct {
+				ID       string `json:"id"`
+				Kind     string `json:"kind"`
+				Title    string `json:"title"`
+				Username string `json:"username"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode list json: %v", err)
+		}
+
+		if len(payload.Items) != 2 {
+			t.Fatalf("expected 2 items, got %+v", payload)
+		}
+		if payload.Items[0].ID != "login-gmail-primary" || payload.Items[1].ID != "totp-gmail-primary" {
+			t.Fatalf("expected sorted json list, got %+v", payload.Items)
+		}
+	})
+}
+
 func TestRunSecretAdd(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
@@ -129,6 +192,36 @@ func TestRunSecretAdd(t *testing.T) {
 		}
 		if !strings.Contains(output, "latestSeq=3") {
 			t.Fatalf("expected latestSeq=3 after add, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretAddJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "add", "GitHub", "alice"}, &buffer); err != nil {
+			t.Fatalf("run secret add json: %v", err)
+		}
+
+		var payload struct {
+			Item struct {
+				ID       string `json:"id"`
+				Title    string `json:"title"`
+				Username string `json:"username"`
+			} `json:"item"`
+			EventID   string `json:"eventId"`
+			LatestSeq int    `json:"latestSeq"`
+			ItemCount int    `json:"itemCount"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode add json: %v", err)
+		}
+
+		if payload.Item.ID != "login-github-primary" || payload.Item.Title != "GitHub" {
+			t.Fatalf("unexpected add payload: %+v", payload)
+		}
+		if payload.LatestSeq != 3 || payload.ItemCount != 3 {
+			t.Fatalf("unexpected add counts: %+v", payload)
 		}
 	})
 }
@@ -235,6 +328,34 @@ func TestRunSecretHistory(t *testing.T) {
 	})
 }
 
+func TestRunSecretHistoryJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "history", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret history json: %v", err)
+		}
+
+		var payload struct {
+			ItemID string `json:"itemId"`
+			Events []struct {
+				EventID  string `json:"eventId"`
+				Action   string `json:"action"`
+				Sequence int    `json:"sequence"`
+			} `json:"events"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode history json: %v", err)
+		}
+
+		if payload.ItemID != "login-gmail-primary" || len(payload.Events) != 1 {
+			t.Fatalf("unexpected history payload: %+v", payload)
+		}
+		if payload.Events[0].EventID != "evt-login-gmail-primary-v1" {
+			t.Fatalf("unexpected history event: %+v", payload.Events[0])
+		}
+	})
+}
+
 func TestSecretRestore(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		state, err := bootstrapCLIState()
@@ -243,12 +364,12 @@ func TestSecretRestore(t *testing.T) {
 		}
 
 		var deleteBuffer bytes.Buffer
-		if err := secretDelete(&deleteBuffer, state, "login-gmail-primary"); err != nil {
+		if err := secretDelete(&deleteBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("delete secret before restore: %v", err)
 		}
 
 		var restoreBuffer bytes.Buffer
-		if err := secretRestore(&restoreBuffer, state, "login-gmail-primary"); err != nil {
+		if err := secretRestore(&restoreBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("restore secret: %v", err)
 		}
 
@@ -276,17 +397,17 @@ func TestSecretHistoryAfterDeleteAndRestore(t *testing.T) {
 		}
 
 		var deleteBuffer bytes.Buffer
-		if err := secretDelete(&deleteBuffer, state, "login-gmail-primary"); err != nil {
+		if err := secretDelete(&deleteBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("delete secret before history check: %v", err)
 		}
 
 		var restoreBuffer bytes.Buffer
-		if err := secretRestore(&restoreBuffer, state, "login-gmail-primary"); err != nil {
+		if err := secretRestore(&restoreBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("restore secret before history check: %v", err)
 		}
 
 		var historyBuffer bytes.Buffer
-		if err := secretHistory(&historyBuffer, state, "login-gmail-primary"); err != nil {
+		if err := secretHistory(&historyBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("history after restore: %v", err)
 		}
 
@@ -311,7 +432,7 @@ func TestSecretHistoryMissingItem(t *testing.T) {
 		}
 
 		var buffer bytes.Buffer
-		err = secretHistory(&buffer, state, "missing-item")
+		err = secretHistory(&buffer, state, cliOptions{}, "missing-item")
 		if err == nil {
 			t.Fatal("expected missing history error")
 		}
@@ -330,7 +451,7 @@ func TestSecretRestoreRejectsActiveItem(t *testing.T) {
 		}
 
 		var buffer bytes.Buffer
-		err = secretRestore(&buffer, state, "login-gmail-primary")
+		err = secretRestore(&buffer, state, cliOptions{}, "login-gmail-primary")
 		if err == nil {
 			t.Fatal("expected active item error")
 		}
@@ -349,7 +470,7 @@ func TestSecretRestoreMissingVersion(t *testing.T) {
 		}
 
 		var buffer bytes.Buffer
-		err = secretRestore(&buffer, state, "missing-item")
+		err = secretRestore(&buffer, state, cliOptions{}, "missing-item")
 		if err == nil {
 			t.Fatal("expected missing version error")
 		}
@@ -427,6 +548,24 @@ func TestRunSecretShow(t *testing.T) {
 		}
 		if !strings.Contains(output, "username=alice@example.com") {
 			t.Fatalf("expected Gmail username output, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretShowJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "show", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret show json: %v", err)
+		}
+
+		var payload domain.VaultItemRecord
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode show json: %v", err)
+		}
+
+		if payload.Item.ID != "login-gmail-primary" || payload.Item.Username != "alice@example.com" {
+			t.Fatalf("unexpected show payload: %+v", payload)
 		}
 	})
 }
@@ -556,12 +695,12 @@ func TestSecretImportSingleItemExport(t *testing.T) {
 		}
 
 		var deleteBuffer bytes.Buffer
-		if err := secretDelete(&deleteBuffer, importState, "login-gmail-primary"); err != nil {
+		if err := secretDelete(&deleteBuffer, importState, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("delete before import: %v", err)
 		}
 
 		var importBuffer bytes.Buffer
-		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState); err != nil {
+		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState, cliOptions{}); err != nil {
 			t.Fatalf("import single secret: %v", err)
 		}
 
@@ -610,6 +749,38 @@ func TestRunSecretImportFullExport(t *testing.T) {
 	})
 }
 
+func TestRunSecretImportJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		exportState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap export state: %v", err)
+		}
+
+		var exportBuffer bytes.Buffer
+		if err := secretExport(&exportBuffer, exportState, ""); err != nil {
+			t.Fatalf("export vault: %v", err)
+		}
+
+		var importBuffer bytes.Buffer
+		if err := runWithIO([]string{"--json", "secret", "import"}, bytes.NewReader(exportBuffer.Bytes()), &importBuffer); err != nil {
+			t.Fatalf("run secret import json: %v", err)
+		}
+
+		var payload struct {
+			Imported  int `json:"imported"`
+			LatestSeq int `json:"latestSeq"`
+			ItemCount int `json:"itemCount"`
+		}
+		if err := json.Unmarshal(importBuffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode import json: %v", err)
+		}
+
+		if payload.Imported != 2 || payload.LatestSeq != 4 || payload.ItemCount != 2 {
+			t.Fatalf("unexpected import payload: %+v", payload)
+		}
+	})
+}
+
 func TestSecretImportFullExportRestoresDeletedVault(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		exportState, err := bootstrapCLIState()
@@ -628,17 +799,17 @@ func TestSecretImportFullExportRestoresDeletedVault(t *testing.T) {
 		}
 
 		var deleteLogin bytes.Buffer
-		if err := secretDelete(&deleteLogin, importState, "login-gmail-primary"); err != nil {
+		if err := secretDelete(&deleteLogin, importState, cliOptions{}, "login-gmail-primary"); err != nil {
 			t.Fatalf("delete login before import: %v", err)
 		}
 
 		var deleteTotp bytes.Buffer
-		if err := secretDelete(&deleteTotp, importState, "totp-gmail-primary"); err != nil {
+		if err := secretDelete(&deleteTotp, importState, cliOptions{}, "totp-gmail-primary"); err != nil {
 			t.Fatalf("delete totp before import: %v", err)
 		}
 
 		var importBuffer bytes.Buffer
-		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState); err != nil {
+		if err := secretImport(bytes.NewReader(exportBuffer.Bytes()), &importBuffer, importState, cliOptions{}); err != nil {
 			t.Fatalf("import full export: %v", err)
 		}
 
@@ -664,7 +835,7 @@ func TestSecretImportRejectsInvalidPayload(t *testing.T) {
 		}
 
 		var importBuffer bytes.Buffer
-		err = secretImport(strings.NewReader(`{"items":[{"schemaVersion":2}]}`), &importBuffer, state)
+		err = secretImport(strings.NewReader(`{"items":[{"schemaVersion":2}]}`), &importBuffer, state, cliOptions{})
 		if err == nil {
 			t.Fatal("expected invalid payload error")
 		}
@@ -683,7 +854,7 @@ func TestSecretImportRejectsUnsupportedPayloadShape(t *testing.T) {
 		}
 
 		var importBuffer bytes.Buffer
-		err = secretImport(strings.NewReader(`{"latestSeq":2}`), &importBuffer, state)
+		err = secretImport(strings.NewReader(`{"latestSeq":2}`), &importBuffer, state, cliOptions{})
 		if err == nil {
 			t.Fatal("expected unsupported payload shape error")
 		}

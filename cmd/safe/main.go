@@ -38,6 +38,10 @@ type cliState struct {
 	store         *storage.MemoryObjectStore
 }
 
+type cliOptions struct {
+	json bool
+}
+
 func main() {
 	if err := runWithIO(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		panic(err)
@@ -49,25 +53,48 @@ func run(args []string, out io.Writer) error {
 }
 
 func runWithIO(args []string, in io.Reader, out io.Writer) error {
+	options, args, err := parseCLIOptions(args)
+	if err != nil {
+		return err
+	}
+
 	state, err := bootstrapCLIState()
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintln(out, "safe CLI bootstrap")
-	fmt.Fprintf(out, "control plane bootstrap:\n- env=%s account=%s device=%s\n", state.session.Env, state.session.AccountID, state.session.DeviceID)
-	fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.storageConfig.Bucket, state.storageConfig.Region, state.storageConfig.Endpoint)
+	if !options.json {
+		fmt.Fprintln(out, "safe CLI bootstrap")
+		fmt.Fprintf(out, "control plane bootstrap:\n- env=%s account=%s device=%s\n", state.session.Env, state.session.AccountID, state.session.DeviceID)
+		fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.storageConfig.Bucket, state.storageConfig.Region, state.storageConfig.Endpoint)
+	}
 
 	if len(args) == 0 {
-		return printOverview(out, state)
+		return printOverview(out, state, options)
 	}
 
 	switch args[0] {
 	case "secret":
-		return runSecretCommand(in, out, state, args[1:])
+		return runSecretCommand(in, out, state, options, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+func parseCLIOptions(args []string) (cliOptions, []string, error) {
+	options := cliOptions{}
+	filtered := make([]string, 0, len(args))
+
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			options.json = true
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+
+	return options, filtered, nil
 }
 
 func bootstrapCLIState() (cliState, error) {
@@ -123,7 +150,7 @@ func bootstrapCLIState() (cliState, error) {
 	}, nil
 }
 
-func printOverview(out io.Writer, state cliState) error {
+func printOverview(out io.Writer, state cliState, options cliOptions) error {
 	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
 	if err != nil {
 		return err
@@ -134,24 +161,40 @@ func printOverview(out io.Writer, state cliState) error {
 		return err
 	}
 
+	if options.json {
+		return writeJSON(out, struct {
+			AccountID         string `json:"accountId"`
+			DefaultCollection string `json:"defaultCollection"`
+			LatestSeq         int    `json:"latestSeq"`
+			ItemCount         int    `json:"itemCount"`
+			HeadEventID       string `json:"headEventId"`
+		}{
+			AccountID:         state.accountConfig.AccountID,
+			DefaultCollection: state.accountConfig.DefaultCollectionID,
+			LatestSeq:         projection.LatestSeq,
+			ItemCount:         len(projection.Items),
+			HeadEventID:       state.head.LatestEventID,
+		})
+	}
+
 	fmt.Fprintln(out, "sync replay:")
 	fmt.Fprintf(out, "- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", state.accountConfig.AccountID, state.accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), state.head.LatestEventID)
 	return nil
 }
 
-func runSecretCommand(in io.Reader, out io.Writer, state cliState, args []string) error {
+func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOptions, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("secret command requires a subcommand")
 	}
 
 	switch args[0] {
 	case "list":
-		return secretList(out, state)
+		return secretList(out, state, options)
 	case "import":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: safe secret import")
 		}
-		return secretImport(in, out, state)
+		return secretImport(in, out, state, options)
 	case "export":
 		if len(args) > 2 {
 			return fmt.Errorf("usage: safe secret export [item-id]")
@@ -165,43 +208,43 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, args []string
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret history <item-id>")
 		}
-		return secretHistory(out, state, args[1])
+		return secretHistory(out, state, options, args[1])
 	case "restore":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret restore <item-id>")
 		}
-		return secretRestore(out, state, args[1])
+		return secretRestore(out, state, options, args[1])
 	case "delete":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret delete <item-id>")
 		}
-		return secretDelete(out, state, args[1])
+		return secretDelete(out, state, options, args[1])
 	case "update":
 		if len(args) < 4 {
 			return fmt.Errorf("usage: safe secret update <item-id> <title> <username>")
 		}
-		return secretUpdate(out, state, args[1], args[2], args[3])
+		return secretUpdate(out, state, options, args[1], args[2], args[3])
 	case "search":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret search <query>")
 		}
-		return secretSearch(out, state, strings.Join(args[1:], " "))
+		return secretSearch(out, state, options, strings.Join(args[1:], " "))
 	case "show":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret show <item-id>")
 		}
-		return secretShow(out, state, args[1])
+		return secretShow(out, state, options, args[1])
 	case "add":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: safe secret add <title> <username>")
 		}
-		return secretAdd(out, state, args[1], args[2])
+		return secretAdd(out, state, options, args[1], args[2])
 	default:
 		return fmt.Errorf("unknown secret subcommand: %s", args[0])
 	}
 }
 
-func secretList(out io.Writer, state cliState) error {
+func secretList(out io.Writer, state cliState, options cliOptions) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -213,6 +256,30 @@ func secretList(out io.Writer, state cliState) error {
 	}
 	sort.Strings(ids)
 
+	if options.json {
+		type listEntry struct {
+			ID       string               `json:"id"`
+			Kind     domain.VaultItemKind `json:"kind"`
+			Title    string               `json:"title"`
+			Username string               `json:"username,omitempty"`
+		}
+
+		items := make([]listEntry, 0, len(ids))
+		for _, id := range ids {
+			item := projection.Items[id].Item
+			items = append(items, listEntry{
+				ID:       item.ID,
+				Kind:     item.Kind,
+				Title:    item.Title,
+				Username: item.Username,
+			})
+		}
+
+		return writeJSON(out, struct {
+			Items []listEntry `json:"items"`
+		}{Items: items})
+	}
+
 	fmt.Fprintln(out, "secret list:")
 	for _, id := range ids {
 		item := projection.Items[id].Item
@@ -222,7 +289,7 @@ func secretList(out io.Writer, state cliState) error {
 	return nil
 }
 
-func secretSearch(out io.Writer, state cliState, query string) error {
+func secretSearch(out io.Writer, state cliState, options cliOptions, query string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -235,6 +302,21 @@ func secretSearch(out io.Writer, state cliState, query string) error {
 		}
 	}
 	sort.Strings(ids)
+
+	if options.json {
+		items := make([]domain.VaultItemSummary, 0, len(ids))
+		for _, id := range ids {
+			items = append(items, projection.Items[id].Item.Summary())
+		}
+
+		return writeJSON(out, struct {
+			Query string                    `json:"query"`
+			Items []domain.VaultItemSummary `json:"items"`
+		}{
+			Query: query,
+			Items: items,
+		})
+	}
 
 	fmt.Fprintf(out, "secret search: query=%q\n", query)
 	if len(ids) == 0 {
@@ -250,7 +332,7 @@ func secretSearch(out io.Writer, state cliState, query string) error {
 	return nil
 }
 
-func secretShow(out io.Writer, state cliState, itemID string) error {
+func secretShow(out io.Writer, state cliState, options cliOptions, itemID string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -259,6 +341,10 @@ func secretShow(out io.Writer, state cliState, itemID string) error {
 	record, ok := projection.Items[itemID]
 	if !ok {
 		return fmt.Errorf("secret not found: %s", itemID)
+	}
+
+	if options.json {
+		return writeJSON(out, record)
 	}
 
 	item := record.Item
@@ -279,7 +365,7 @@ func secretShow(out io.Writer, state cliState, itemID string) error {
 	return nil
 }
 
-func secretImport(in io.Reader, out io.Writer, state cliState) error {
+func secretImport(in io.Reader, out io.Writer, state cliState, options cliOptions) error {
 	payload, err := io.ReadAll(in)
 	if err != nil {
 		return err
@@ -297,6 +383,18 @@ func secretImport(in io.Reader, out io.Writer, state cliState) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			Imported  int `json:"imported"`
+			LatestSeq int `json:"latestSeq"`
+			ItemCount int `json:"itemCount"`
+		}{
+			Imported:  len(records),
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
 	}
 
 	fmt.Fprintln(out, "secret import:")
@@ -403,7 +501,7 @@ func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, error) 
 	return nil, fmt.Errorf("secret import payload must be a vault item record or secret export JSON")
 }
 
-func secretHistory(out io.Writer, state cliState, itemID string) error {
+func secretHistory(out io.Writer, state cliState, options cliOptions, itemID string) error {
 	events, err := loadEvents(state)
 	if err != nil {
 		return err
@@ -424,6 +522,16 @@ func secretHistory(out io.Writer, state cliState, itemID string) error {
 		return matches[i].Sequence < matches[j].Sequence
 	})
 
+	if options.json {
+		return writeJSON(out, struct {
+			ItemID string                    `json:"itemId"`
+			Events []domain.VaultEventRecord `json:"events"`
+		}{
+			ItemID: itemID,
+			Events: matches,
+		})
+	}
+
 	fmt.Fprintln(out, "secret history:")
 	for _, event := range matches {
 		fmt.Fprintf(out, "- seq=%d action=%s event=%s at=%s\n", event.Sequence, event.Action, event.EventID, event.OccurredAt)
@@ -432,7 +540,7 @@ func secretHistory(out io.Writer, state cliState, itemID string) error {
 	return nil
 }
 
-func secretAdd(out io.Writer, state cliState, title, username string) error {
+func secretAdd(out io.Writer, state cliState, options cliOptions, title, username string) error {
 	itemID := fmt.Sprintf("login-%s-primary", slugify(title))
 	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
@@ -451,12 +559,26 @@ func secretAdd(out io.Writer, state cliState, title, username string) error {
 		return err
 	}
 
+	if options.json {
+		return writeJSON(out, struct {
+			Item      domain.VaultItem `json:"item"`
+			EventID   string           `json:"eventId"`
+			LatestSeq int              `json:"latestSeq"`
+			ItemCount int              `json:"itemCount"`
+		}{
+			Item:      itemRecord.Item,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
 	fmt.Fprintln(out, "secret add:")
 	fmt.Fprintf(out, "- added=%s username=%s event=%s latestSeq=%d items=%d\n", title, username, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
 }
 
-func secretUpdate(out io.Writer, state cliState, itemID, title, username string) error {
+func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, title, username string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -479,12 +601,24 @@ func secretUpdate(out io.Writer, state cliState, itemID, title, username string)
 		return err
 	}
 
+	if options.json {
+		return writeJSON(out, struct {
+			Item      domain.VaultItem `json:"item"`
+			EventID   string           `json:"eventId"`
+			LatestSeq int              `json:"latestSeq"`
+		}{
+			Item:      updated.Item,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+		})
+	}
+
 	fmt.Fprintln(out, "secret update:")
 	fmt.Fprintf(out, "- id=%s title=%s username=%s event=%s latestSeq=%d\n", itemID, title, username, newEvent.EventID, projection.LatestSeq)
 	return nil
 }
 
-func secretDelete(out io.Writer, state cliState, itemID string) error {
+func secretDelete(out io.Writer, state cliState, options cliOptions, itemID string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -499,12 +633,26 @@ func secretDelete(out io.Writer, state cliState, itemID string) error {
 		return err
 	}
 
+	if options.json {
+		return writeJSON(out, struct {
+			ItemID    string `json:"itemId"`
+			EventID   string `json:"eventId"`
+			LatestSeq int    `json:"latestSeq"`
+			ItemCount int    `json:"itemCount"`
+		}{
+			ItemID:    itemID,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
 	fmt.Fprintln(out, "secret delete:")
 	fmt.Fprintf(out, "- id=%s event=%s latestSeq=%d items=%d\n", itemID, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
 }
 
-func secretRestore(out io.Writer, state cliState, itemID string) error {
+func secretRestore(out io.Writer, state cliState, options cliOptions, itemID string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -524,9 +672,29 @@ func secretRestore(out io.Writer, state cliState, itemID string) error {
 		return err
 	}
 
+	if options.json {
+		return writeJSON(out, struct {
+			ItemID    string `json:"itemId"`
+			EventID   string `json:"eventId"`
+			LatestSeq int    `json:"latestSeq"`
+			ItemCount int    `json:"itemCount"`
+		}{
+			ItemID:    itemID,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
 	fmt.Fprintln(out, "secret restore:")
 	fmt.Fprintf(out, "- id=%s event=%s latestSeq=%d items=%d\n", itemID, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
+}
+
+func writeJSON(out io.Writer, value any) error {
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
 }
 
 func loadProjection(state cliState) (safesync.Projection, error) {

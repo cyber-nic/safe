@@ -41,3 +41,9 @@
 - Added `safe secret import` so the CLI can read exported vault JSON from stdin and replay it back into the active collection through normal put-item mutations.
 - Refactored CLI execution to accept stdin explicitly, which keeps command plumbing testable while preserving the existing terminal entrypoint.
 - Added CLI tests covering single-item import, full export/import round-trips, deleted-vault restoration, and invalid import payload handling.
+
+## 2026-03-31T12:25:01Z
+
+- Added a global `--json` CLI mode so overview, list, search, show, history, and mutation commands can emit machine-readable payloads for automation while keeping the existing human-readable default output.
+- Suppressed the bootstrap banner in JSON mode and centralized pretty JSON encoding through a shared helper.
+- Added CLI tests covering JSON overview output, JSON list/show/history responses, and JSON responses for add and import flows.
