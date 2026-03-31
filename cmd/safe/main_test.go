@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndelorme/safe/internal/domain"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -130,6 +132,57 @@ func TestRunSecretAdd(t *testing.T) {
 	})
 }
 
+func TestRunSecretSearchByTitle(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "search", "gmail"}, &buffer); err != nil {
+			t.Fatalf("run secret search by title: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, `secret search: query="gmail"`) {
+			t.Fatalf("expected search header, got %s", output)
+		}
+		if !strings.Contains(output, "id=login-gmail-primary kind=login title=Gmail") {
+			t.Fatalf("expected Gmail login match, got %s", output)
+		}
+		if !strings.Contains(output, "id=totp-gmail-primary kind=totp title=Gmail 2FA") {
+			t.Fatalf("expected Gmail totp match, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretSearchByTag(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "search", "authenticator"}, &buffer); err != nil {
+			t.Fatalf("run secret search by tag: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "id=totp-gmail-primary kind=totp title=Gmail 2FA") {
+			t.Fatalf("expected TOTP tag match, got %s", output)
+		}
+		if strings.Contains(output, "id=login-gmail-primary kind=login title=Gmail") {
+			t.Fatalf("did not expect login match for authenticator tag, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretSearchNoMatches(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "search", "nomatch"}, &buffer); err != nil {
+			t.Fatalf("run secret search no matches: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "- no matches") {
+			t.Fatalf("expected no matches output, got %s", output)
+		}
+	})
+}
+
 func TestRunSecretShow(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
@@ -162,6 +215,12 @@ func TestRunSecretShowMissingItem(t *testing.T) {
 			t.Fatalf("expected missing item error, got %v", err)
 		}
 	})
+}
+
+func TestMatchesSecretQueryEmptyQuery(t *testing.T) {
+	if matchesSecretQuery(domain.VaultItem{Title: "Gmail"}, "   ") {
+		t.Fatal("expected empty query to return false")
+	}
 }
 
 func withFakeBootstrap(t *testing.T, fn func()) {

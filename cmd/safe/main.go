@@ -143,6 +143,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "search":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret search <query>")
+		}
+		return secretSearch(out, state, strings.Join(args[1:], " "))
 	case "show":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret show <item-id>")
@@ -174,6 +179,34 @@ func secretList(out io.Writer, state cliState) error {
 	for _, id := range ids {
 		item := projection.Items[id].Item
 		fmt.Fprintf(out, "- %s (%s)\n", item.Title, item.Username)
+	}
+
+	return nil
+}
+
+func secretSearch(out io.Writer, state cliState, query string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	ids := make([]string, 0, len(projection.Items))
+	for id, record := range projection.Items {
+		if matchesSecretQuery(record.Item, query) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+
+	fmt.Fprintf(out, "secret search: query=%q\n", query)
+	if len(ids) == 0 {
+		fmt.Fprintln(out, "- no matches")
+		return nil
+	}
+
+	for _, id := range ids {
+		item := projection.Items[id].Item
+		fmt.Fprintf(out, "- id=%s kind=%s title=%s\n", item.ID, item.Kind, item.Title)
 	}
 
 	return nil
@@ -258,6 +291,34 @@ func loadProjection(state cliState) (safesync.Projection, error) {
 	}
 
 	return safesync.ReplayCollection(storedEvents)
+}
+
+func matchesSecretQuery(item domain.VaultItem, query string) bool {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return false
+	}
+
+	fields := []string{
+		item.ID,
+		item.Title,
+		item.Username,
+		item.BodyPreview,
+		item.Service,
+		item.Host,
+		item.Issuer,
+		item.AccountName,
+	}
+	fields = append(fields, item.Tags...)
+	fields = append(fields, item.URLs...)
+
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), query) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func slugify(value string) string {
