@@ -136,6 +136,46 @@ func printControlPlaneBootstrap() error {
 	fmt.Println("sync replay:")
 	fmt.Printf("- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", accountConfig.AccountID, accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), head.LatestEventID)
 
+	newPasswordRecord := domain.VaultItemRecord{
+		SchemaVersion: 1,
+		Item: domain.VaultItem{
+			ID:       "login-github-primary",
+			Kind:     domain.VaultItemKindLogin,
+			Title:    "GitHub",
+			Tags:     []string{"dev", "new"},
+			Username: "alice",
+			URLs:     []string{"https://github.com/login"},
+		},
+	}
+
+	newEvent, newHead, err := safesync.BuildPutItemMutation(head, session.DeviceID, newPasswordRecord, "2026-03-31T10:02:00Z")
+	if err != nil {
+		return err
+	}
+
+	if _, err := storage.StoreItemRecord(objectStore, session.AccountID, accountConfig.DefaultCollectionID, newPasswordRecord); err != nil {
+		return err
+	}
+	if _, err := storage.StoreEventRecord(objectStore, newEvent); err != nil {
+		return err
+	}
+	if _, err := storage.StoreCollectionHeadRecord(objectStore, newHead); err != nil {
+		return err
+	}
+
+	mutatedEvents, err := storage.LoadCollectionEventRecords(objectStore, session.AccountID, accountConfig.DefaultCollectionID)
+	if err != nil {
+		return err
+	}
+
+	mutatedProjection, err := safesync.ReplayCollection(mutatedEvents)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("mutation dry run:")
+	fmt.Printf("- added=%s event=%s latestSeq=%d items=%d\n", newPasswordRecord.Item.Title, newEvent.EventID, mutatedProjection.LatestSeq, len(mutatedProjection.Items))
+
 	return nil
 }
 

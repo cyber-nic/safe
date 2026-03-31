@@ -66,3 +66,35 @@ func TestReplayCollectionRejectsMixedCollection(t *testing.T) {
 		t.Fatal("expected mixed collection error")
 	}
 }
+
+func TestBuildPutItemMutation(t *testing.T) {
+	head := domain.StarterCollectionHeadRecord()
+	itemRecord := domain.VaultItemRecord{
+		SchemaVersion: 1,
+		Item: domain.VaultItem{
+			ID:       "login-github-primary",
+			Kind:     domain.VaultItemKindLogin,
+			Title:    "GitHub",
+			Tags:     []string{"dev"},
+			Username: "alice",
+			URLs:     []string{"https://github.com/login"},
+		},
+	}
+
+	event, newHead, err := BuildPutItemMutation(head, "dev-web-001", itemRecord, "2026-03-31T10:02:00Z")
+	if err != nil {
+		t.Fatalf("build mutation: %v", err)
+	}
+
+	if event.Sequence != 3 {
+		t.Fatalf("expected sequence 3, got %d", event.Sequence)
+	}
+
+	if event.EventID != "evt-login-github-primary-v3" {
+		t.Fatalf("unexpected event ID: %s", event.EventID)
+	}
+
+	if newHead.LatestSeq != 3 || newHead.LatestEventID != event.EventID {
+		t.Fatalf("unexpected head: %+v", newHead)
+	}
+}
