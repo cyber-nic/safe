@@ -130,6 +130,40 @@ func TestRunSecretAdd(t *testing.T) {
 	})
 }
 
+func TestRunSecretShow(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "show", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret show: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret show:") {
+			t.Fatalf("expected secret show output, got %s", output)
+		}
+		if !strings.Contains(output, "id=login-gmail-primary kind=login title=Gmail") {
+			t.Fatalf("expected Gmail identity output, got %s", output)
+		}
+		if !strings.Contains(output, "username=alice@example.com") {
+			t.Fatalf("expected Gmail username output, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretShowMissingItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		err := run([]string{"secret", "show", "missing-item"}, &buffer)
+		if err == nil {
+			t.Fatal("expected missing item error")
+		}
+
+		if !strings.Contains(err.Error(), "secret not found: missing-item") {
+			t.Fatalf("expected missing item error, got %v", err)
+		}
+	})
+}
+
 func withFakeBootstrap(t *testing.T, fn func()) {
 	t.Helper()
 

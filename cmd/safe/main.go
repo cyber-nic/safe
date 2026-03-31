@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ndelorme/safe/internal/domain"
@@ -142,6 +143,11 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	switch args[0] {
 	case "list":
 		return secretList(out, state)
+	case "show":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret show <item-id>")
+		}
+		return secretShow(out, state, args[1])
 	case "add":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: safe secret add <title> <username>")
@@ -153,12 +159,7 @@ func runSecretCommand(out io.Writer, state cliState, args []string) error {
 }
 
 func secretList(out io.Writer, state cliState) error {
-	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
-	if err != nil {
-		return err
-	}
-
-	projection, err := safesync.ReplayCollection(storedEvents)
+	projection, err := loadProjection(state)
 	if err != nil {
 		return err
 	}
@@ -173,6 +174,35 @@ func secretList(out io.Writer, state cliState) error {
 	for _, id := range ids {
 		item := projection.Items[id].Item
 		fmt.Fprintf(out, "- %s (%s)\n", item.Title, item.Username)
+	}
+
+	return nil
+}
+
+func secretShow(out io.Writer, state cliState, itemID string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	record, ok := projection.Items[itemID]
+	if !ok {
+		return fmt.Errorf("secret not found: %s", itemID)
+	}
+
+	item := record.Item
+	fmt.Fprintln(out, "secret show:")
+	fmt.Fprintf(out, "- id=%s kind=%s title=%s\n", item.ID, item.Kind, item.Title)
+	if len(item.Tags) > 0 {
+		fmt.Fprintf(out, "- tags=%s\n", strings.Join(item.Tags, ","))
+	}
+
+	switch item.Kind {
+	case domain.VaultItemKindLogin:
+		fmt.Fprintf(out, "- username=%s\n", item.Username)
+		fmt.Fprintf(out, "- urls=%s\n", strings.Join(item.URLs, ","))
+	case domain.VaultItemKindTOTP:
+		fmt.Fprintf(out, "- issuer=%s account=%s digits=%d period=%d algorithm=%s secretRef=%s\n", item.Issuer, item.AccountName, item.Digits, item.PeriodSeconds, item.Algorithm, item.SecretRef)
 	}
 
 	return nil
@@ -219,6 +249,15 @@ func secretAdd(out io.Writer, state cliState, title, username string) error {
 	fmt.Fprintln(out, "secret add:")
 	fmt.Fprintf(out, "- added=%s username=%s event=%s latestSeq=%d items=%d\n", title, username, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
+}
+
+func loadProjection(state cliState) (safesync.Projection, error) {
+	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	if err != nil {
+		return safesync.Projection{}, err
+	}
+
+	return safesync.ReplayCollection(storedEvents)
 }
 
 func slugify(value string) string {
