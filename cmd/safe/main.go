@@ -58,8 +58,8 @@ func run(args []string, out io.Writer) error {
 	}
 
 	switch args[0] {
-	case "password":
-		return runPasswordCommand(out, state, args[1:])
+	case "secret":
+		return runSecretCommand(out, state, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -134,25 +134,25 @@ func printOverview(out io.Writer, state cliState) error {
 	return nil
 }
 
-func runPasswordCommand(out io.Writer, state cliState, args []string) error {
+func runSecretCommand(out io.Writer, state cliState, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("password command requires a subcommand")
+		return fmt.Errorf("secret command requires a subcommand")
 	}
 
 	switch args[0] {
 	case "list":
-		return passwordList(out, state)
+		return secretList(out, state)
 	case "add":
 		if len(args) < 3 {
-			return fmt.Errorf("usage: safe password add <title> <username>")
+			return fmt.Errorf("usage: safe secret add <title> <username>")
 		}
-		return passwordAdd(out, state, args[1], args[2])
+		return secretAdd(out, state, args[1], args[2])
 	default:
-		return fmt.Errorf("unknown password subcommand: %s", args[0])
+		return fmt.Errorf("unknown secret subcommand: %s", args[0])
 	}
 }
 
-func passwordList(out io.Writer, state cliState) error {
+func secretList(out io.Writer, state cliState) error {
 	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
 	if err != nil {
 		return err
@@ -169,7 +169,7 @@ func passwordList(out io.Writer, state cliState) error {
 	}
 	sort.Strings(ids)
 
-	fmt.Fprintln(out, "password list:")
+	fmt.Fprintln(out, "secret list:")
 	for _, id := range ids {
 		item := projection.Items[id].Item
 		fmt.Fprintf(out, "- %s (%s)\n", item.Title, item.Username)
@@ -178,7 +178,7 @@ func passwordList(out io.Writer, state cliState) error {
 	return nil
 }
 
-func passwordAdd(out io.Writer, state cliState, title, username string) error {
+func secretAdd(out io.Writer, state cliState, title, username string) error {
 	itemID := fmt.Sprintf("login-%s-primary", slugify(title))
 	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
@@ -216,7 +216,7 @@ func passwordAdd(out io.Writer, state cliState, title, username string) error {
 		return err
 	}
 
-	fmt.Fprintln(out, "password add:")
+	fmt.Fprintln(out, "secret add:")
 	fmt.Fprintf(out, "- added=%s username=%s event=%s latestSeq=%d items=%d\n", title, username, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
 }

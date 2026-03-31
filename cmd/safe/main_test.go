@@ -93,16 +93,16 @@ func TestFetchStorageConfig(t *testing.T) {
 	}
 }
 
-func TestRunPasswordList(t *testing.T) {
+func TestRunSecretList(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
-		if err := run([]string{"password", "list"}, &buffer); err != nil {
-			t.Fatalf("run password list: %v", err)
+		if err := run([]string{"secret", "list"}, &buffer); err != nil {
+			t.Fatalf("run secret list: %v", err)
 		}
 
 		output := buffer.String()
-		if !strings.Contains(output, "password list:") {
-			t.Fatalf("expected password list output, got %s", output)
+		if !strings.Contains(output, "secret list:") {
+			t.Fatalf("expected secret list output, got %s", output)
 		}
 		if !strings.Contains(output, "Gmail (alice@example.com)") {
 			t.Fatalf("expected Gmail entry, got %s", output)
@@ -110,16 +110,16 @@ func TestRunPasswordList(t *testing.T) {
 	})
 }
 
-func TestRunPasswordAdd(t *testing.T) {
+func TestRunSecretAdd(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
-		if err := run([]string{"password", "add", "GitHub", "alice"}, &buffer); err != nil {
-			t.Fatalf("run password add: %v", err)
+		if err := run([]string{"secret", "add", "GitHub", "alice"}, &buffer); err != nil {
+			t.Fatalf("run secret add: %v", err)
 		}
 
 		output := buffer.String()
-		if !strings.Contains(output, "password add:") {
-			t.Fatalf("expected password add output, got %s", output)
+		if !strings.Contains(output, "secret add:") {
+			t.Fatalf("expected secret add output, got %s", output)
 		}
 		if !strings.Contains(output, "added=GitHub") {
 			t.Fatalf("expected GitHub add output, got %s", output)
