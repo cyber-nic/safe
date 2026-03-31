@@ -20,18 +20,19 @@ The system is designed so the service can coordinate access without being able t
 
 ### Clients
 
-Safe has four client surfaces:
+Safe has two v1 client surfaces and additional future clients:
 
-- desktop app as the primary v1 user client
-- browser extension for lookup and conservative autofill
+- web app as the primary v1 user client
 - CLI for power users and automation-friendly flows
-- web app for SSR onboarding and account-management flows
+- browser extension later for lookup and conservative autofill
+- future mobile and other clients after the core vault runtime is stable
 
 Client responsibilities:
 
 - master-password unlock
 - local key derivation and cryptographic operations
 - encrypted local persistence
+- local OTP/TOTP code generation from stored authenticator secrets
 - local search over decrypted metadata
 - sync and replay
 - device enrollment, recovery, and sharing flows
@@ -73,7 +74,7 @@ It stores:
 The v1 implementation split is:
 
 - Go for the control plane, CLI, and backend or storage-facing system components
-- TypeScript for the desktop app, browser extension, and SSR web-facing client code
+- TypeScript for the web app and shared web-facing client code
 - Material UI for the primary UI component layer
 - containers for local development and deployment consistency
 - AWS as the primary cloud target
@@ -152,7 +153,7 @@ Each of these should own its own rules, state transitions, and invariants. Backe
 
 The intended repository shape is:
 
-- `/apps` for desktop, extension, and web
+- `/apps` for web first, with future client surfaces added only when they are on the roadmap
 - `/cmd` for Go binaries such as CLI and control plane
 - `/internal` for Go domain and infrastructure packages
 - `/packages` for TypeScript shared packages, UI kit, and test vectors

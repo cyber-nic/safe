@@ -20,7 +20,7 @@ The delivery strategy for v1 is:
 
 1. Prove the cryptographic and sync core before building surface area.
 2. Ship a single-user product before shared collections.
-3. Add the browser extension only after local storage, unlock, and sync are stable.
+3. Start with the web app and CLI only. Add the browser extension only after local storage, unlock, and sync are stable.
 4. Treat sharing, revocation, and recovery as security-sensitive features, not "later polish".
 5. Keep the backend narrow from day one to avoid accidental server-side state creep.
 
@@ -41,13 +41,13 @@ The critical path is not UI. The critical path is:
 - Master-password unlock
 - Account key wrapping and recovery key support
 - Explicit device enrollment via existing-device approval or recovery-key bootstrap
-- Desktop app
+- Web app
 - CLI
 - Local encrypted cache
 - Event-log plus snapshot sync against S3-compatible storage
 - Personal vault
+- Built-in authenticator with local OTP/TOTP seed storage and 6-digit code generation
 - Local search
-- Browser extension with conservative autofill
 - Collection-based sharing
 - Member revocation with collection key rotation
 - Export and import
@@ -55,7 +55,8 @@ The critical path is not UI. The critical path is:
 ### Can Slip Without Breaking v1
 
 - Mobile clients
-- Rich item templates beyond passwords, notes, API keys, and SSH keys
+- Browser extension
+- Rich item templates beyond passwords, OTP/TOTP authenticators, notes, API keys, and SSH keys
 - Read-only sharing role
 - Advanced audit UX
 - Polished admin controls for multiple devices
@@ -77,8 +78,6 @@ Suggested structure:
 
 ```text
 /apps
-  /desktop
-  /extension
   /web
 /cmd
   /safe
@@ -106,7 +105,7 @@ Principles:
 
 - Shared protocol schemas and canonical serialization rules must be language-neutral
 - Go owns backend, CLI, and core systems packages
-- TypeScript owns desktop, extension, and web-facing client packages
+- TypeScript owns web-facing client packages
 - Sync behavior and crypto rules must be implemented once per language boundary and verified with shared test vectors
 - The backend should depend on shared schemas but not on client-side secret-handling code
 - Test vectors must include canonical bytes for signing and rollback detection, not just validation types
@@ -118,35 +117,21 @@ These choices should be fixed early to reduce rework.
 ### Core Language
 
 - Go for backend and systems components
-- TypeScript for frontend, extension, desktop UI, and shared web-facing client logic
+- TypeScript for frontend and shared web-facing client logic
 
 Reason:
 
 - Go is a better fit for the control plane, storage adapters, and operational services
-- TypeScript is a better fit for desktop UI, browser extension UX, and shared client experiences
+- TypeScript is a better fit for the web app and shared client experiences
 - Shared schemas and test vectors preserve interoperability without forcing one runtime everywhere
-
-### Desktop
-
-- Electron with a TypeScript UI and Material UI component layer
-
-Recommendation:
-
-- Keep the desktop shell boring in v1
-- Reuse as much TypeScript UI code as practical across desktop and web-facing surfaces
 
 ### CLI
 
 - Go-based CLI with script-friendly output and a narrow command surface
 
-### Browser Extension
-
-- Manifest V3 extension
-- TypeScript extension using shared protocol code and extension-specific secure boundary code
-
 ### Web
 
-- SSR web application for onboarding, account management, and future authenticated web flows
+- SSR web application for onboarding, vault access, account management, and future authenticated web flows
 - Material UI as the default component system for the web surface
 
 ### Control Plane
@@ -156,8 +141,8 @@ Recommendation:
 
 ### Local Storage
 
-- Desktop/CLI: SQLite
-- Extension: IndexedDB
+- Web app: IndexedDB
+- CLI: SQLite
 
 ### Infrastructure
 
@@ -227,6 +212,7 @@ Scope:
 
 - Unlock lifecycle
 - Encrypted local cache
+- OTP/TOTP seed handling and code-generation interfaces
 - Search index
 - Session lock and wipe behavior
 - Import/export pipeline
@@ -254,13 +240,14 @@ Outputs:
 - Auth and policy middleware
 - Integration tests against object storage
 
-### Workstream F: Desktop App
+### Workstream F: Web App
 
 Scope:
 
 - Account onboarding
 - Unlock UI
 - Vault browsing/editing
+- Built-in authenticator setup and code display UX
 - Search
 - Device management
 - Recovery and export UX
@@ -269,20 +256,7 @@ Outputs:
 
 - Primary v1 user client
 
-### Workstream G: Browser Extension
-
-Scope:
-
-- Background/service worker secret boundary
-- Site matching
-- Secure lookup and fill flows
-- Lock state handling
-
-Outputs:
-
-- Conservative autofill-capable extension
-
-### Workstream H: CLI
+### Workstream G: CLI
 
 Scope:
 
@@ -296,19 +270,20 @@ Outputs:
 
 - Operational CLI for power users and future automation
 
-### Workstream I: Web and Shared UI
+### Workstream H: Shared UI and Browser Foundations
 
 Scope:
 
+- Shared web UI primitives
 - SSR account onboarding surface
-- Authenticated account management views
+- Authenticated account and device management views
 - Shared Material UI design system
 - Shared frontend shell patterns
 
 Outputs:
 
-- Web app for onboarding and account management
-- Shared UI primitives for desktop and web
+- Shared UI primitives for the web app
+- Browser-facing abstractions that can be reused later if an extension is added
 
 ## 7. Phase Plan
 
@@ -402,12 +377,13 @@ Build:
 Tests:
 
 - Lock/unlock persistence tests
+- OTP/TOTP code-generation tests against stable time fixtures
 - Search index rebuild tests
 - Crash recovery tests
 
 Exit criteria:
 
-- A desktop or CLI client can create and manage secrets entirely offline
+- The web app and CLI can create and manage secrets from durable local state
 - Local cache remains inaccessible while locked
 - Local search works across supported fields
 
@@ -474,11 +450,11 @@ Exit criteria:
 - Revoked devices lose future object access through the control plane
 - Shared collection members can fetch only the collection paths they are authorized to read
 
-### Phase 5: Desktop Product MVP
+### Phase 5: Web Product MVP
 
 Goal:
 
-- Ship a usable single-user desktop product.
+- Ship a usable single-user web product.
 
 Build:
 
@@ -490,11 +466,12 @@ Build:
 - Manual sync controls
 - Export/import UX
 - Recovery-key presentation and backup confirmation flow
-- Existing-device approval flow for new desktop enrollment
+- Existing-device approval flow for new browser enrollment
 
 Tests:
 
-- End-to-end desktop smoke tests
+- End-to-end web smoke tests
+- Built-in authenticator setup and rotating-code display tests
 - Regression tests for lock state, sync, and export
 - Recovery-key acknowledgement and restore drill tests
 
@@ -502,32 +479,7 @@ Exit criteria:
 
 - A normal user can sign up, back up their recovery key, create secrets, search them, sync them, and export them
 
-### Phase 6: Browser Extension
-
-Goal:
-
-- Add secure lookup and autofill without compromising the core security model.
-
-Build:
-
-- Extension onboarding tied to existing account/device
-- Lock/unlock behavior
-- Site matching rules
-- Manual fill and conservative autofill
-- Secret lookup UI
-
-Tests:
-
-- Origin-binding tests
-- No-page-JS access tests
-- Fill behavior tests across login form variants
-
-Exit criteria:
-
-- The extension can securely retrieve entries and fill matching sites
-- The extension fails closed on ambiguous origin matches
-
-### Phase 7: Sharing and Revocation
+### Phase 6: Sharing and Revocation
 
 Goal:
 
@@ -557,7 +509,7 @@ Exit criteria:
 - Revoked members cannot decrypt newly protected data after rotation
 - Existing limitations of revocation are clearly surfaced in UX and docs
 
-### Phase 8: Recovery, Hardening, and v1 Release
+### Phase 7: Recovery, Hardening, and v1 Release
 
 Goal:
 
@@ -613,25 +565,19 @@ Definition:
 - Snapshot and replay behavior is validated
 - Rollback detection is validated
 
-### Milestone D: Desktop MVP Ready
+### Milestone D: Web MVP Ready
 
 Definition:
 
-- Desktop app is usable for a real primary account
+- Web app is usable for a real primary account
 
-### Milestone E: Extension Ready
-
-Definition:
-
-- Extension can safely retrieve and fill credentials on supported sites
-
-### Milestone F: Shared Collections Ready
+### Milestone E: Shared Collections Ready
 
 Definition:
 
 - Invite, accept, sync, revoke, and key rotation all work
 
-### Milestone G: Release Candidate
+### Milestone F: Release Candidate
 
 Definition:
 
@@ -708,17 +654,11 @@ The following must block release if incomplete.
 - Snapshot consistency verified
 - Mutable head commit protocol and rollback detection verified
 
-### Gate 3: Extension Review
-
-- Origin binding validated
-- No secret exposure to page JS
-- Sensitive logging disabled
-
-### Gate 4: Recovery Review
+### Gate 3: Recovery Review
 
 - Recovery key generation, storage guidance, and re-wrap path validated
 
-### Gate 5: Logging and Telemetry Review
+### Gate 4: Logging and Telemetry Review
 
 - No plaintext secret material
 - No decrypted search terms in logs
@@ -744,7 +684,6 @@ Testing should be layered.
 ### End-to-End Tests
 
 - Sign up, unlock, create item, sync to second device
-- Install extension, unlock, fill site
 - Share collection, accept invite, revoke member
 - Recover account with recovery key
 
@@ -789,11 +728,10 @@ For a small team, recommended sequencing is:
 
 1. One owner on crypto plus object model.
 2. One owner on sync and storage adapter.
-3. One owner on desktop and shared vault runtime.
+3. One owner on web app and shared vault runtime.
 4. One owner on control plane and infra.
-5. Extension work starts only after shared core packages are stable.
 
-If the team is very small, do not start extension and sharing in parallel. Sharing is the harder security problem.
+If the team is very small, do not start browser-extension exploration and sharing in parallel. Sharing is the harder security problem.
 
 ## 14. Top Risks During Execution
 
@@ -827,15 +765,15 @@ Mitigation:
 
 - Freeze an explicit compare-and-swap commit protocol with idempotency keys before sync implementation starts.
 
-### Risk 4: Extension Security Shortcuts
+### Risk 4: Browser Boundary Shortcuts
 
 Failure mode:
 
-- Autofill convenience bypasses origin and context isolation rules.
+- Browser implementation convenience bypasses lock, origin, or storage-isolation rules.
 
 Mitigation:
 
-- Conservative defaults and explicit extension security review.
+- Conservative browser defaults and explicit security review before any extension work starts.
 
 ### Risk 5: Revocation Ambiguity
 
@@ -873,9 +811,8 @@ v1 is done when all of the following are true:
 
 - A user can create an account, store a recovery key, unlock the vault, and manage secrets locally
 - Two devices can sync through S3-compatible storage reliably
-- Desktop is usable as the main client
+- Web app is usable as the main client
 - CLI supports core vault operations
-- Browser extension supports secure lookup and conservative autofill
 - Shared collections work across two accounts
 - Revocation plus collection key rotation protects future shared data
 - Recovery works without backend escrow

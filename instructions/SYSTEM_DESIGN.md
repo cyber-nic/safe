@@ -7,7 +7,7 @@ This document defines the v1 architecture for a zero-knowledge secret manager fo
 The product goal is:
 
 - Store secrets securely with client-side encryption only
-- Work across desktop, mobile, browser extension, and CLI
+- Work across a web app and CLI in v1, with future mobile and extension clients
 - Support simple encrypted sharing between a small number of trusted users
 - Remain fast, offline-capable, and operational on unreliable networks
 - Use S3-compatible object storage as the durable data plane
@@ -60,10 +60,11 @@ The system has three parts.
 
 ### Client Applications
 
-Clients include desktop, mobile, browser extension, and CLI. They are responsible for:
+Clients in v1 include the web app and CLI. Future clients may include mobile and a browser extension. Client responsibilities are:
 
 - User unlock with master password
 - Key derivation and cryptographic operations
+- Local OTP/TOTP code generation from decrypted authenticator seeds
 - Local encrypted storage
 - Local indexing and search
 - Sync, conflict handling, and snapshot generation
@@ -186,6 +187,15 @@ This is preferable to deriving every level from the password directly. The passw
 The implementation should standardize on one primitive set across all clients. Mixing algorithms by platform creates migration and audit risk.
 
 For v1, the primitive set should be frozen in Phase 0 and used consistently across all clients and services.
+
+### OTP/TOTP Support
+
+Built-in authenticator support is part of v1.
+
+- TOTP seeds are stored as high-sensitivity secret material inside encrypted vault items
+- 6-digit codes are generated locally on the client from the decrypted seed and current time
+- The control plane and object store must never generate, validate, or persist live OTP/TOTP codes
+- OTP/TOTP entries should be modeled as first-class vault items rather than as unstructured note fields
 
 ### Password Rotation
 
@@ -487,9 +497,9 @@ Each client maintains:
 
 Recommended local stores:
 
-- Desktop and CLI: SQLite with page-level encryption or encrypted blobs
-- Browser extension: IndexedDB for cached ciphertext and a minimal decrypted index
-- Mobile: SQLite or platform-native secure storage plus database
+- Web app: IndexedDB for cached ciphertext and a minimal decrypted index
+- CLI: SQLite with page-level encryption or encrypted blobs
+- Mobile or extension later: platform-appropriate storage with the same ciphertext-first model
 
 The local database should be treated as a cache plus usability layer, not the primary durable source of truth.
 
@@ -509,7 +519,7 @@ Design notes:
 
 - Search index contents are sensitive because they are decrypted derivatives
 - The index must be deleted on sign-out and protected at rest
-- Browser extension search should avoid preloading full secret values unless the user explicitly opens the item
+- Browser-based search should avoid preloading full secret values unless the user explicitly opens the item
 
 ## 15. Sharing Model
 
@@ -587,7 +597,7 @@ The extension should default to conservative behavior. A false negative on autof
 The implementation stack for v1 should be:
 
 - Go for the control plane, storage-facing backend components, and CLI
-- TypeScript for desktop UI, browser extension, and web-facing client code
+- TypeScript for the web app and shared web-facing client code
 - Material UI for the primary application UI layer
 - Containers for local development and deployment consistency
 - AWS as the primary cloud target, with S3 as the initial object store
@@ -759,7 +769,7 @@ The original document omitted validation strategy. v1 should include it.
 
 ### Client Security Tests
 
-- Extension origin-binding tests
+- Web client storage-boundary and origin tests
 - Local cache lock/unlock behavior
 - Secret redaction in logs and crash reports
 - Local rollback-detection behavior when older signed heads or snapshots are replayed
@@ -771,23 +781,22 @@ The original document omitted validation strategy. v1 should include it.
 - Single-user vault
 - Account unlock and local cache
 - Basic event log and snapshot sync
-- Desktop app and CLI
+- Web app and CLI
 
 ### Phase 2
-
-- Browser extension
-- Origin-bound lookup and autofill
-
-### Phase 3
 
 - Collection-based sharing
 - Invite acceptance
 - Member revocation and collection key rotation
 
-### Phase 4
+### Phase 3
 
 - Recovery key flow
 - Export and import
+- Browser extension investigation only if the web and CLI core is stable
+
+### Phase 4
+
 - Mobile clients
 
 ### Phase 5
@@ -828,6 +837,6 @@ The critical implementation areas are:
 - Correct key wrapping and recovery flows
 - Deterministic sync and conflict handling
 - Safe collection sharing and revocation
-- Browser extension isolation
+- Browser storage and client-boundary hardening
 
 If those areas are implemented rigorously, the architecture is viable. If they are hand-waved, the product will look simple on paper and fail in production.

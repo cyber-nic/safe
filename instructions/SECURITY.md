@@ -30,14 +30,14 @@ The main risk is not the cryptographic hierarchy. The main risk is integrity and
 - head pointers, snapshots, account config, memberships, and device state are small but security-critical
 - object storage is not transactional and will happily preserve inconsistent or replayed state unless the protocol prevents it
 - the control plane cannot read secrets, but it can still cause rollback, misrouting, over-broad authorization, or unauthorized device enrollment if its authority is not tightly constrained
-- the browser extension is a high-risk plaintext exposure surface
+- a future browser extension will be a high-risk plaintext exposure surface and should stay out of the initial release path
 
 The current design is viable for v1 if several items are treated as release blockers:
 
 1. Authenticated mutable metadata with rollback detection must be mandatory, not optional.
 2. Signed URL or scoped credential issuance must be path-scoped, short-lived, non-listing by default, and tested for replay and prefix overreach.
 3. Device enrollment and invite acceptance must bind identities, devices, and key material explicitly.
-4. Local decrypted derivatives, especially the search index and extension memory, must be minimized and wiped reliably.
+4. Local decrypted derivatives, especially the search index and any browser-resident memory, must be minimized and wiped reliably.
 5. Logging, telemetry, crash reporting, import/export, and debug tooling must be designed as data-exfiltration surfaces, not secondary concerns.
 
 If those items are implemented rigorously, the proposed v1 can meet a reasonable security bar for a personal and small-group secret manager. If they are deferred or left ambiguous, the product will likely fail in exactly the places zero-knowledge systems usually fail: state integrity, capability scoping, client compromise surfaces, and operational leakage.
@@ -81,6 +81,7 @@ The design contains several distinct asset classes with different sensitivity.
 - account master key (AMK)
 - collection keys
 - item data keys
+- OTP/TOTP seeds
 - device private keys
 - plaintext secret payloads
 - recovery key
@@ -372,7 +373,7 @@ The local search index contains decrypted derivatives of the most sensitive user
 
 Risks:
 
-- disk extraction on desktop
+- disk or browser-storage extraction from a client device
 - backup tooling capturing index contents
 - stale index persistence after sign-out
 - extension environment retaining searchable metadata longer than intended
@@ -382,7 +383,7 @@ Required action:
 - Treat the search index as high-sensitivity material equal to plaintext metadata.
 - Encrypt it at rest using keys only available while unlocked or re-derived securely.
 - Wipe it on sign-out and provide tested rebuild logic.
-- Minimize indexed fields in the extension specifically.
+- Minimize indexed fields in browser-resident clients specifically.
 
 Release impact:
 
@@ -623,14 +624,14 @@ The implementation plan already includes many of the right tests. The assessment
 - capability scope tests for prefix escape and method escalation
 - device enrollment tests with mismatched or substituted device keys
 - invite replay and account/device misbinding tests
-- extension tests for iframe confusion, subdomain confusion, redirect confusion, and page-script isolation
+- web client tests for browser storage isolation, origin confusion, and lock-state cleanup
 - local lock/sign-out tests validating removal of decrypted derivatives
 
 ### 11.2 Must-Have Adversarial Review
 
 - protocol review of signed mutable state and rollback handling
 - storage authorization review
-- extension threat-model review
+- browser-boundary threat-model review
 - logging and telemetry redaction review
 - recovery flow walkthrough using persisted fixtures only
 
@@ -638,8 +639,8 @@ The implementation plan already includes many of the right tests. The assessment
 
 - simulated revoked-device access attempt using cached capabilities
 - simulated shared-member revocation followed by future-write access attempt
-- local disk inspection of a locked desktop client
-- extension fill attempts against intentionally deceptive domains
+- local storage inspection of a locked client
+- browser-origin confusion attempts against the web client
 
 ## 12. Release Blockers
 
@@ -649,7 +650,7 @@ The following should block a public v1 release if unresolved.
 2. No proof that storage capabilities are tightly path-scoped and short-lived.
 3. No fully specified and tested device enrollment ceremony.
 4. No fully specified and tested invite acceptance and recipient binding model.
-5. No extension security review with origin-binding and page-isolation validation.
+5. No browser-boundary security review covering storage isolation, origin binding, and page-isolation validation where applicable.
 6. No redaction review for logs, telemetry, crash reporting, and debug tooling.
 7. No demonstrated recovery flow using serialized persisted account state.
 
@@ -703,7 +704,7 @@ Export and import need their own gate:
 
 ### 14.5 Add a Local Data Exposure Review
 
-Before desktop MVP and extension release, review:
+Before web MVP and any future extension release, review:
 
 - decrypted search index contents
 - cache retention while locked
@@ -714,6 +715,6 @@ Before desktop MVP and extension release, review:
 
 Safe has a credible security architecture for a zero-knowledge secret manager. The design makes several disciplined choices that many systems avoid: explicit device enrollment, client-only key access, forward-looking revocation semantics, and a thin control plane.
 
-The biggest unresolved risk is not whether the service can decrypt data. The biggest unresolved risk is whether the system can preserve integrity and authorization in the face of an untrusted control plane and object store while still delivering offline sync, sharing, and extension-based autofill.
+The biggest unresolved risk is not whether the service can decrypt data. The biggest unresolved risk is whether the system can preserve integrity and authorization in the face of an untrusted control plane and object store while still delivering offline sync and sharing without weakening the client boundary.
 
-If the team makes authenticated mutable metadata, capability scoping, enrollment integrity, extension isolation, and operational redaction first-class release criteria, the design can support a strong v1. If those remain partially specified or are postponed behind product surface work, the system will be materially weaker than its zero-knowledge positioning suggests.
+If the team makes authenticated mutable metadata, capability scoping, enrollment integrity, browser-boundary hardening, and operational redaction first-class release criteria, the design can support a strong v1. If those remain partially specified or are postponed behind product surface work, the system will be materially weaker than its zero-knowledge positioning suggests.

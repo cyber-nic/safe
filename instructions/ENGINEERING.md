@@ -26,7 +26,7 @@
 ## Local Development Notes
 
 - The default local stack should be a Compose project with the control plane, supporting services, and LocalStack.
-- Desktop, web, extension, and CLI development may run partly on the host when that produces a faster feedback loop, but all backing dependencies should still be available through Compose.
+- Web and CLI development may run partly on the host when that produces a faster feedback loop, but all backing dependencies should still be available through Compose.
 - If a service has a strong native hot-reload workflow, prefer Compose-managed dependencies plus a host-run application process over forcing every edit through image rebuilds.
 - Introduce `kind` only after we have Kubernetes manifests worth validating. It should not precede a stable Compose-based environment.
 - We are not standardizing on MinIO for v1 local development. The primary goal is AWS S3 behavior, so LocalStack is the better default fit.
