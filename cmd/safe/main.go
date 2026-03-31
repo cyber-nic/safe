@@ -10,6 +10,7 @@ import (
 
 	"github.com/ndelorme/safe/internal/domain"
 	"github.com/ndelorme/safe/internal/storage"
+	safesync "github.com/ndelorme/safe/internal/sync"
 )
 
 type devSessionResponse struct {
@@ -103,6 +104,14 @@ func printControlPlaneBootstrap() error {
 	fmt.Println("storage dry run:")
 	fmt.Printf("- staged %d item records\n", len(domain.StarterVaultItemRecords()))
 	fmt.Printf("- staged %d event records\n", len(domain.StarterVaultEventRecords()))
+
+	projection, err := safesync.ReplayCollection(domain.StarterVaultEventRecords())
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("sync replay:")
+	fmt.Printf("- collection=%s latestSeq=%d items=%d\n", projection.CollectionID, projection.LatestSeq, len(projection.Items))
 
 	return nil
 }
