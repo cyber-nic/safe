@@ -167,3 +167,9 @@
 - Added consumer-facing vault insights to the replay-backed web workspace so the client can flag logins missing built-in 2FA coverage, orphan authenticators, duplicate login candidates, and multiple API keys for one service from the actual projected vault state.
 - Kept the new insight layer purely derived from existing replayed items and matching rules, which makes it durable product logic for future UI work rather than demo-only presentation state.
 - Added web tests covering the starter no-insights case plus insight detection for missing 2FA coverage, orphan authenticators, duplicate logins, and duplicate API-key service groups.
+
+## 2026-04-01T11:18:44Z
+
+- Updated the implementation plan to make the first real user loop explicit: sign in, save a secret, and read that secret back safely in a real client before expanding further surface area.
+- Clarified in the plan that fixture-backed workspace richness and broad starter command coverage do not count as critical-path progress when the save/read loop still depends on starter or in-memory state.
+- Updated `PRODUCT.md` and `README.md` so the product framing and immediate next steps now reinforce that same priority order instead of encouraging more secondary surface work first.

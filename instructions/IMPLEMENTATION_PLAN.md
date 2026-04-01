@@ -42,13 +42,21 @@ Interpretation:
 
 The delivery strategy for v1 is:
 
-1. Prove the cryptographic and sync core before building surface area.
+1. Land the smallest real user loop first: sign in, save a secret, read a secret.
 2. Ship a single-user product before shared collections.
-3. Start with the web app and CLI only. Add the browser extension only after local storage, unlock, and sync are stable.
-4. Treat sharing, revocation, and recovery as security-sensitive features, not "later polish".
-5. Keep the backend narrow from day one to avoid accidental server-side state creep.
+3. Treat web UI and CLI surface area as valuable only when they complete that real loop against the intended runtime, not when they simulate it over fixtures or in-memory models.
+4. Add authenticator codes, search, import/export, and richer item handling only after the basic save/read loop exists in a real client.
+5. Treat sharing, revocation, and recovery as security-sensitive features, not "later polish".
+6. Keep the backend narrow from day one to avoid accidental server-side state creep.
 
-The critical path is not UI. The critical path is:
+The critical path is the first trustworthy user workflow:
+
+- Sign in or identify the user
+- Unlock local state
+- Save a secret durably and encrypted
+- Read that secret back after lock/unlock or restart
+
+The enabling technical path beneath that workflow is:
 
 - Key management
 - Local encrypted storage
@@ -58,6 +66,12 @@ The critical path is not UI. The critical path is:
 - Safe device and sharing flows
 
 The repo should treat any work outside that list as supporting work, not as evidence that the critical path is complete.
+
+What this means in practice:
+
+- a broad starter command surface is not progress if save/read still depends on in-memory starter data
+- a rich derived web workspace is not progress if there is still no navigable client where a user can sign in, save, and read a real secret
+- protocol and fixture work is only successful when it directly shortens the path to the first trustworthy save/read loop
 
 ## 3. v1 Scope
 
@@ -77,6 +91,14 @@ The repo should treat any work outside that list as supporting work, not as evid
 - Collection-based sharing
 - Member revocation with collection key rotation
 - Export and import
+
+### Must Work Before Expanding Surface Area
+
+- A user can authenticate into a real client surface
+- A user can create one secret in that client surface
+- That secret is durably stored in the intended encrypted local runtime
+- The same user can read that secret back in the same session and after re-opening or re-unlocking
+- Failure cases for that loop are understandable and recoverable enough for early user feedback
 
 ### Can Slip Without Breaking v1
 
@@ -247,6 +269,12 @@ Outputs:
 
 - Shared vault runtime contracts and local persistence adapters
 - Local persistence adapters
+
+Priority inside this workstream:
+
+1. encrypted local persistence for one saved secret
+2. unlock/lock lifecycle sufficient to save and read that secret again
+3. only then additional affordances such as authenticator convenience, search, and bulk import/export
 
 ### Workstream E: Control Plane
 

@@ -52,10 +52,10 @@ But the project is still behind the plan's actual critical path:
 
 ## Immediate Next Steps
 
-1. Finish freezing signer ownership, authenticated mutable metadata, and rollback rules from [PROTOCOL.md](./instructions/PROTOCOL.md).
-2. Implement the first real cryptographic key hierarchy slice: password derivation, KEK/AMK wrapping, and recovery-key fixtures.
-3. Replace the CLI's starter in-memory vault model with durable encrypted local persistence aligned with the Phase 2 local-runtime plan.
-4. Start the real object-storage sync path only after the local encrypted-state and signed-metadata groundwork is in place.
+1. Finish the first real user loop in a client surface: sign in, save a secret, and read it back.
+2. Replace the current starter in-memory vault behavior with durable encrypted local persistence aligned with the local-runtime plan.
+3. Implement the minimum unlock path needed to reopen and read a saved secret safely.
+4. Continue signer, rollback, and sync-hardening work only insofar as it supports that first trustworthy save/read loop, then expand outward.
 
 ## Local Development
 

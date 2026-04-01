@@ -6,6 +6,14 @@ Safe is a zero-knowledge secret manager for individuals and small trusted groups
 
 The v1 product is a secure personal vault with small-group sharing.
 
+The first product loop that matters is narrower than the full v1 scope:
+
+- sign in
+- save a secret
+- read that secret back safely
+
+If that loop is not working in a real client, additional surface area should be treated as secondary.
+
 Primary user outcomes:
 
 - Create and manage secrets in a primary web app
