@@ -6,6 +6,7 @@ import {
   describeVaultItem,
   generateTotpCodeForItem,
   isTotpItem,
+  parseVaultItemRecord,
   replayCollectionAgainstHead,
   type AccountConfigRecord,
   type CollectionHeadRecord,
@@ -141,8 +142,27 @@ export type VaultItemDetail = {
   canRestore: boolean;
 };
 
+export type VaultExportPayload = {
+  accountId: string;
+  collectionId: string;
+  latestSeq: number;
+  item?: VaultItemRecord;
+  items?: VaultItemRecord[];
+  secretMaterial?: VaultSecretMaterial;
+};
+
+export type VaultImportResult = {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  importedItemIds: string[];
+};
+
 function normalizeSearchValue(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function countItemsByKind(items: VaultItem[]): Record<VaultItemKind, number> {
@@ -614,6 +634,82 @@ async function persistUpdatedItem(input: {
   };
 }
 
+function sortItemRecords(records: VaultItemRecord[]): VaultItemRecord[] {
+  return [...records].sort((left, right) =>
+    left.item.id.localeCompare(right.item.id),
+  );
+}
+
+function collectExportSecretMaterial(
+  records: VaultItemRecord[],
+  secretMaterial: VaultSecretMaterial,
+): VaultSecretMaterial {
+  const exportedSecrets: VaultSecretMaterial = {};
+
+  for (const record of records) {
+    if (record.item.kind !== "totp") {
+      continue;
+    }
+
+    const secret = secretMaterial[record.item.secretRef];
+    if (secret) {
+      exportedSecrets[record.item.secretRef] = secret;
+    }
+  }
+
+  return exportedSecrets;
+}
+
+function parseVaultImportRecords(payload: unknown): {
+  records: VaultItemRecord[];
+  secretMaterial: VaultSecretMaterial;
+} {
+  if (typeof payload === "string") {
+    return parseVaultImportRecords(JSON.parse(payload));
+  }
+
+  if (Array.isArray(payload)) {
+    return {
+      records: payload.map((value) => parseVaultItemRecord(value)),
+      secretMaterial: {},
+    };
+  }
+
+  if (!isRecord(payload)) {
+    throw new Error(
+      "vault import payload must be a vault item record or vault export JSON",
+    );
+  }
+
+  const secretMaterial =
+    isRecord(payload.secretMaterial)
+      ? Object.fromEntries(
+          Object.entries(payload.secretMaterial).filter(
+            ([, value]) => typeof value === "string",
+          ),
+        )
+      : {};
+
+  if (Array.isArray(payload.items) && payload.items.length > 0) {
+    return {
+      records: payload.items.map((value) => parseVaultItemRecord(value)),
+      secretMaterial,
+    };
+  }
+
+  if ("item" in payload) {
+    return {
+      records: [parseVaultItemRecord(payload.item)],
+      secretMaterial,
+    };
+  }
+
+  return {
+    records: [parseVaultItemRecord(payload)],
+    secretMaterial,
+  };
+}
+
 export function getVaultItemDetail(
   workspace: VaultWorkspace,
   itemId: string,
@@ -698,6 +794,48 @@ export function listDeletedVaultItems(
   return [...deletedById.values()].sort((left, right) =>
     right.deletedAt.localeCompare(left.deletedAt),
   );
+}
+
+export function exportVaultWorkspace(
+  workspace: VaultWorkspace,
+  secretMaterial: VaultSecretMaterial,
+  itemId?: string,
+): VaultExportPayload {
+  if (itemId) {
+    const record = workspace.itemRecords.find(
+      (itemRecord) => itemRecord.item.id === itemId,
+    );
+    if (!record) {
+      throw new Error(`vault item not found: ${itemId}`);
+    }
+
+    const exportedSecrets = collectExportSecretMaterial([record], secretMaterial);
+    return {
+      accountId: workspace.accountConfig.accountId,
+      collectionId: workspace.head.collectionId,
+      latestSeq: workspace.head.latestSeq,
+      item: record,
+      ...(Object.keys(exportedSecrets).length > 0
+        ? { secretMaterial: exportedSecrets }
+        : {}),
+    };
+  }
+
+  const records = sortItemRecords(workspace.itemRecords);
+  const exportedSecrets = collectExportSecretMaterial(records, secretMaterial);
+  return {
+    accountId: workspace.accountConfig.accountId,
+    collectionId: workspace.head.collectionId,
+    latestSeq: workspace.head.latestSeq,
+    items: records,
+    ...(Object.keys(exportedSecrets).length > 0
+      ? { secretMaterial: exportedSecrets }
+      : {}),
+  };
+}
+
+export function serializeVaultExportPayload(payload: VaultExportPayload): string {
+  return JSON.stringify(payload, null, 2);
 }
 
 export async function addLoginToVaultWorkspace(input: {
@@ -976,6 +1114,57 @@ export async function restoreItemToVaultWorkspace(input: {
     }),
     secretMaterial: input.secretMaterial,
     itemId: input.itemId,
+  };
+}
+
+export async function importVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  payload: string | unknown;
+  at?: Date;
+}): Promise<VaultImportResult> {
+  const { records, secretMaterial: importedSecretMaterial } =
+    parseVaultImportRecords(input.payload);
+  if (records.length === 0) {
+    throw new Error("vault import payload is empty");
+  }
+
+  let head = input.workspace.head;
+  const events = [...input.workspace.events];
+  const importedItemIds: string[] = [];
+
+  for (const [index, record] of records.entries()) {
+    const occurredAt = new Date(
+      (input.at ?? new Date()).getTime() + index,
+    ).toISOString();
+    const mutation = buildPutItemMutation(
+      head,
+      input.deviceId,
+      record,
+      occurredAt,
+    );
+
+    head = mutation.newHead;
+    events.push(mutation.event);
+    importedItemIds.push(record.item.id);
+  }
+
+  const secretMaterial = {
+    ...input.secretMaterial,
+    ...importedSecretMaterial,
+  };
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head,
+      events,
+      secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial,
+    importedItemIds,
   };
 }
 

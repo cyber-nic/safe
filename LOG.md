@@ -149,3 +149,9 @@
 - Added replay-backed web edit helpers for active items: `updateLoginInVaultWorkspace` and `updateTotpInVaultWorkspace`, so the local-first web client can modify existing logins and authenticators through normal put-item events instead of replacing state out of band.
 - Refactored web write handling through a shared `persistUpdatedItem` helper, which keeps add and update flows aligned on the same mutation, rebuild, and authenticator-refresh path.
 - Added web tests covering login edits, TOTP metadata and secret rotation, and rejection paths for attempting to update the wrong item kind.
+
+## 2026-04-01T10:52:48Z
+
+- Added consumer-facing web export and import helpers: `exportVaultWorkspace`, `serializeVaultExportPayload`, and `importVaultWorkspace`, so the local-first client can produce deterministic vault payloads and replay them back through normal put-item mutations instead of bypassing the event log.
+- Included TOTP secret-material carry-through in web export and import payloads for matching authenticator items, which keeps portability aligned with the existing built-in authenticator behavior instead of exporting incomplete records.
+- Added web tests covering full-vault export ordering, single-item export, and importing an exported item back into a fresh workspace through replay-backed sequence advancement.

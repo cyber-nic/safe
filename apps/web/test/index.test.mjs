@@ -15,9 +15,12 @@ import {
   createUnlockedVaultWorkspace,
   createVaultWorkspace,
   deleteItemFromVaultWorkspace,
+  exportVaultWorkspace,
   getVaultItemDetail,
+  importVaultWorkspace,
   listDeletedVaultItems,
   restoreItemToVaultWorkspace,
+  serializeVaultExportPayload,
   updateLoginInVaultWorkspace,
   updateTotpInVaultWorkspace,
   unlockVaultWorkspace,
@@ -369,5 +372,74 @@ test("update helpers reject the wrong item kinds", async () => {
         accountName: "alice@example.com",
       }),
     /vault totp update only supports totp items: login-gmail-primary/,
+  );
+});
+
+test("exportVaultWorkspace returns deterministic full-vault payloads", () => {
+  const payload = exportVaultWorkspace(webBootstrap, sampleVaultSecretMaterial);
+
+  assert.equal(payload.accountId, "acct-dev-001");
+  assert.equal(payload.collectionId, "vault-personal");
+  assert.equal(payload.latestSeq, 2);
+  assert.equal(payload.items?.length, 2);
+  assert.deepEqual(
+    payload.items?.map((record) => record.item.id),
+    ["login-gmail-primary", "totp-gmail-primary"],
+  );
+  assert.equal(
+    payload.secretMaterial?.["vault-secret://totp/gmail-primary"],
+    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+  );
+
+  const serialized = serializeVaultExportPayload(payload);
+  assert.equal(serialized.includes('"items"'), true);
+  assert.equal(serialized.includes('"secretMaterial"'), true);
+});
+
+test("exportVaultWorkspace supports single-item exports", () => {
+  const payload = exportVaultWorkspace(
+    webBootstrap,
+    sampleVaultSecretMaterial,
+    "totp-gmail-primary",
+  );
+
+  assert.equal(payload.item?.item.id, "totp-gmail-primary");
+  assert.equal(payload.items, undefined);
+  assert.equal(
+    payload.secretMaterial?.["vault-secret://totp/gmail-primary"],
+    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+  );
+});
+
+test("importVaultWorkspace replays exported payloads back through put-item mutations", async () => {
+  const added = await addLoginToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "GitHub",
+    username: "alice",
+    url: "https://github.com/login",
+    at: new Date("2026-04-01T10:50:00Z"),
+  });
+
+  const exportPayload = exportVaultWorkspace(
+    added.workspace,
+    added.secretMaterial,
+    "login-github-primary",
+  );
+  const imported = await importVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    payload: serializeVaultExportPayload(exportPayload),
+    at: new Date("2026-04-01T10:51:00Z"),
+  });
+
+  assert.deepEqual(imported.importedItemIds, ["login-github-primary"]);
+  assert.equal(imported.workspace.overview.itemCount, 3);
+  assert.equal(imported.workspace.overview.latestSeq, 3);
+  assert.equal(
+    imported.workspace.items.some((item) => item.id === "login-github-primary"),
+    true,
   );
 });
