@@ -95,6 +95,80 @@ func TestReplayCollectionDeletesItems(t *testing.T) {
 	}
 }
 
+func TestReplayCollectionAgainstHead(t *testing.T) {
+	events := domain.StarterVaultEventRecords()
+	head := domain.StarterCollectionHeadRecord()
+
+	projection, err := ReplayCollectionAgainstHead(events, head)
+	if err != nil {
+		t.Fatalf("replay collection against head: %v", err)
+	}
+
+	if projection.LatestSeq != head.LatestSeq || projection.LatestEventID != head.LatestEventID {
+		t.Fatalf("unexpected projection/head alignment: %+v %+v", projection, head)
+	}
+}
+
+func TestReplayCollectionAgainstHeadRejectsLatestSeqMismatch(t *testing.T) {
+	events := domain.StarterVaultEventRecords()
+	head := domain.StarterCollectionHeadRecord()
+	head.LatestSeq = 3
+
+	if _, err := ReplayCollectionAgainstHead(events, head); err == nil {
+		t.Fatal("expected latest sequence mismatch error")
+	}
+}
+
+func TestReplayCollectionAgainstHeadRejectsLatestEventMismatch(t *testing.T) {
+	events := domain.StarterVaultEventRecords()
+	head := domain.StarterCollectionHeadRecord()
+	head.LatestEventID = "evt-mismatch"
+
+	if _, err := ReplayCollectionAgainstHead(events, head); err == nil {
+		t.Fatal("expected latest event mismatch error")
+	}
+}
+
+func TestEnsureMonotonicHeadRejectsRollback(t *testing.T) {
+	trusted := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     "acct-dev-001",
+		CollectionID:  "vault-personal",
+		LatestEventID: "evt-login-github-primary-v3",
+		LatestSeq:     3,
+	}
+	candidate := domain.StarterCollectionHeadRecord()
+
+	if err := EnsureMonotonicHead(trusted, candidate); err == nil {
+		t.Fatal("expected stale head rejection")
+	}
+}
+
+func TestEnsureMonotonicHeadRejectsEqualSeqDifferentEvent(t *testing.T) {
+	trusted := domain.StarterCollectionHeadRecord()
+	candidate := trusted
+	candidate.LatestEventID = "evt-different"
+
+	if err := EnsureMonotonicHead(trusted, candidate); err == nil {
+		t.Fatal("expected equal-sequence different-event rejection")
+	}
+}
+
+func TestEnsureMonotonicHeadAcceptsAdvance(t *testing.T) {
+	trusted := domain.StarterCollectionHeadRecord()
+	candidate := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     trusted.AccountID,
+		CollectionID:  trusted.CollectionID,
+		LatestEventID: "evt-login-github-primary-v3",
+		LatestSeq:     3,
+	}
+
+	if err := EnsureMonotonicHead(trusted, candidate); err != nil {
+		t.Fatalf("expected monotonic head acceptance, got %v", err)
+	}
+}
+
 func TestBuildPutItemMutation(t *testing.T) {
 	head := domain.StarterCollectionHeadRecord()
 	itemRecord := domain.VaultItemRecord{

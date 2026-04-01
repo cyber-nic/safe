@@ -151,12 +151,7 @@ func bootstrapCLIState() (cliState, error) {
 }
 
 func printOverview(out io.Writer, state cliState, options cliOptions) error {
-	storedEvents, err := storage.LoadCollectionEventRecords(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
-	if err != nil {
-		return err
-	}
-
-	projection, err := safesync.ReplayCollection(storedEvents)
+	head, projection, err := loadVerifiedState(state)
 	if err != nil {
 		return err
 	}
@@ -173,12 +168,12 @@ func printOverview(out io.Writer, state cliState, options cliOptions) error {
 			DefaultCollection: state.accountConfig.DefaultCollectionID,
 			LatestSeq:         projection.LatestSeq,
 			ItemCount:         len(projection.Items),
-			HeadEventID:       state.head.LatestEventID,
+			HeadEventID:       head.LatestEventID,
 		})
 	}
 
 	fmt.Fprintln(out, "sync replay:")
-	fmt.Fprintf(out, "- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", state.accountConfig.AccountID, state.accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), state.head.LatestEventID)
+	fmt.Fprintf(out, "- account=%s defaultCollection=%s latestSeq=%d items=%d headEvent=%s\n", state.accountConfig.AccountID, state.accountConfig.DefaultCollectionID, projection.LatestSeq, len(projection.Items), head.LatestEventID)
 	return nil
 }
 
@@ -705,12 +700,31 @@ func writeJSON(out io.Writer, value any) error {
 }
 
 func loadProjection(state cliState) (safesync.Projection, error) {
-	storedEvents, err := loadEvents(state)
+	_, projection, err := loadVerifiedState(state)
 	if err != nil {
 		return safesync.Projection{}, err
 	}
 
-	return safesync.ReplayCollection(storedEvents)
+	return projection, nil
+}
+
+func loadVerifiedState(state cliState) (domain.CollectionHeadRecord, safesync.Projection, error) {
+	head, err := loadHead(state)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, safesync.Projection{}, err
+	}
+
+	storedEvents, err := loadEvents(state)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, safesync.Projection{}, err
+	}
+
+	projection, err := safesync.ReplayCollectionAgainstHead(storedEvents, head)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, safesync.Projection{}, err
+	}
+
+	return head, projection, nil
 }
 
 func loadEvents(state cliState) ([]domain.VaultEventRecord, error) {
@@ -725,6 +739,9 @@ func loadEvents(state cliState) ([]domain.VaultEventRecord, error) {
 func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
 	head, err := loadHead(state)
 	if err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
+	if err := ensureHeadMatchesEvents(state, head); err != nil {
 		return safesync.Projection{}, domain.VaultEventRecord{}, err
 	}
 
@@ -756,6 +773,9 @@ func persistDeleteMutation(state cliState, itemID, occurredAt string) (safesync.
 	if err != nil {
 		return safesync.Projection{}, domain.VaultEventRecord{}, err
 	}
+	if err := ensureHeadMatchesEvents(state, head); err != nil {
+		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	}
 
 	newEvent, newHead, err := safesync.BuildDeleteItemMutation(head, state.session.DeviceID, itemID, occurredAt)
 	if err != nil {
@@ -779,6 +799,16 @@ func persistDeleteMutation(state cliState, itemID, occurredAt string) (safesync.
 
 func loadHead(state cliState) (domain.CollectionHeadRecord, error) {
 	return storage.LoadCollectionHeadRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+}
+
+func ensureHeadMatchesEvents(state cliState, head domain.CollectionHeadRecord) error {
+	events, err := loadEvents(state)
+	if err != nil {
+		return err
+	}
+
+	_, err = safesync.ReplayCollectionAgainstHead(events, head)
+	return err
 }
 
 func matchesSecretQuery(item domain.VaultItem, query string) bool {

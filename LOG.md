@@ -77,3 +77,9 @@
 - Updated `IMPLEMENTATION_PLAN.md` to record the current repository status explicitly: useful CLI and protocol progress, but continued gaps on crypto, encrypted local persistence, signed mutable metadata, and rollback handling.
 - Updated the plan's phase notes to clarify that foundations are mostly in place, data-model work is ahead of crypto, and the local-vault-runtime phase has not started in the sense intended by the docs.
 - Updated `README.md` so the repo status and next steps now point at signer and rollback rules, key hierarchy work, and durable encrypted local persistence instead of the original scaffolding checklist.
+
+## 2026-04-01T09:27:11Z
+
+- Added sync-side head verification so replay can now assert that a collection head's latest sequence and latest event actually match the appended event log instead of trusting mutable head state blindly.
+- Added an explicit monotonic trusted-head helper that rejects stale heads and same-sequence different-event mismatches as the first concrete rollback-detection primitive in the sync package.
+- Wired the CLI through verified head-plus-event loading and added tests covering mismatched head rejection on both read and write paths.

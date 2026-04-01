@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ndelorme/safe/internal/domain"
+	"github.com/ndelorme/safe/internal/storage"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -861,6 +862,56 @@ func TestSecretImportRejectsUnsupportedPayloadShape(t *testing.T) {
 
 		if !strings.Contains(err.Error(), "secret import payload must be a vault item record or secret export JSON") {
 			t.Fatalf("expected unsupported payload shape error, got %v", err)
+		}
+	})
+}
+
+func TestRunSecretListRejectsHeadMismatch(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		badHead := domain.StarterCollectionHeadRecord()
+		badHead.LatestSeq = 3
+		if _, err := storage.StoreCollectionHeadRecord(state.store, badHead); err != nil {
+			t.Fatalf("store mismatched head: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretList(&buffer, state, cliOptions{})
+		if err == nil {
+			t.Fatal("expected head mismatch error")
+		}
+
+		if !strings.Contains(err.Error(), "sync head mismatch: latestSeq expected 3 got 2") {
+			t.Fatalf("expected head mismatch error, got %v", err)
+		}
+	})
+}
+
+func TestSecretAddRejectsHeadMismatch(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		badHead := domain.StarterCollectionHeadRecord()
+		badHead.LatestEventID = "evt-mismatch"
+		if _, err := storage.StoreCollectionHeadRecord(state.store, badHead); err != nil {
+			t.Fatalf("store mismatched head: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretAdd(&buffer, state, cliOptions{}, "GitHub", "alice")
+		if err == nil {
+			t.Fatal("expected head mismatch error")
+		}
+
+		if !strings.Contains(err.Error(), "sync head mismatch: latestEventId expected evt-mismatch got evt-totp-gmail-primary-v1") {
+			t.Fatalf("expected head mismatch error, got %v", err)
 		}
 	})
 }
