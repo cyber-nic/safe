@@ -59,3 +59,9 @@
 - Added `delete_item` support to the TypeScript SDK event model so TS protocol parsing and canonical serialization now match the Go domain and CLI behavior.
 - Added `createDeleteItemEventRecord` plus branching delete-event handling in `parseVaultEventRecord` and `serializeCanonicalVaultEventRecord`.
 - Added a lightweight Node test suite for the TS SDK covering delete-event creation, parsing, canonical serialization, and regression coverage for existing put-item serialization.
+
+## 2026-04-01T09:00:55Z
+
+- Added a shared `delete-event-record.json` protocol fixture under `packages/test-vectors` so delete events now have the same language-neutral fixture coverage as put-item records.
+- Exported parsed and canonicalized delete-event vectors from the test-vectors package for downstream consumers.
+- Updated the Go delete-event canonicalization test to compare against the shared fixture instead of a hardcoded JSON string.

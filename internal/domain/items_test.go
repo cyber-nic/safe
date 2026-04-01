@@ -143,6 +143,13 @@ func TestVaultEventRecordFixtureCanonicalSerialization(t *testing.T) {
 }
 
 func TestDeleteEventRecordCanonicalSerialization(t *testing.T) {
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", "delete-event-record.json")
+
+	rawRecord, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read delete event fixture: %v", err)
+	}
+
 	record := VaultEventRecord{
 		SchemaVersion: 1,
 		EventID:       "evt-login-gmail-primary-delete-v3",
@@ -160,9 +167,13 @@ func TestDeleteEventRecordCanonicalSerialization(t *testing.T) {
 		t.Fatalf("canonicalize delete event: %v", err)
 	}
 
-	expected := `{"schemaVersion":1,"eventId":"evt-login-gmail-primary-delete-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:04:00Z","action":"delete_item","itemId":"login-gmail-primary"}`
-	if string(canonical) != expected {
-		t.Fatalf("delete event canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, rawRecord); err != nil {
+		t.Fatalf("compact delete event fixture: %v", err)
+	}
+
+	if string(canonical) != compact.String() {
+		t.Fatalf("delete event canonical mismatch\nexpected: %s\ngot: %s", compact.String(), string(canonical))
 	}
 
 	parsed, err := ParseVaultEventRecordJSON(canonical)

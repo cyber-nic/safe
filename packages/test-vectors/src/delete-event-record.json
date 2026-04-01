@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "eventId": "evt-login-gmail-primary-delete-v3",
+  "accountId": "acct-dev-001",
+  "deviceId": "dev-web-001",
+  "collectionId": "vault-personal",
+  "sequence": 3,
+  "occurredAt": "2026-03-31T10:04:00Z",
+  "action": "delete_item",
+  "itemId": "login-gmail-primary"
+}

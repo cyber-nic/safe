@@ -1,8 +1,10 @@
 import rawVaultItems from "./vault-items.json";
 import rawEventRecords from "./event-records.json";
 import rawVaultItemRecords from "./vault-item-records.json";
+import rawDeleteEventRecord from "./delete-event-record.json";
 
 import {
+  parseVaultEventRecord,
   parseVaultEventRecords,
   parseVaultItemRecords,
   parseVaultItems,
@@ -24,3 +26,7 @@ export const sampleVaultEventRecords: VaultEventRecord[] =
 export const canonicalVaultEventRecords = sampleVaultEventRecords.map(
   serializeCanonicalVaultEventRecord,
 );
+export const sampleDeleteVaultEventRecord: VaultEventRecord =
+  parseVaultEventRecord(rawDeleteEventRecord);
+export const canonicalDeleteVaultEventRecord =
+  serializeCanonicalVaultEventRecord(sampleDeleteVaultEventRecord);
