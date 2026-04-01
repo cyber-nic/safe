@@ -8,6 +8,8 @@ import {
   createCollectionHeadRecord,
   createDeleteItemEventRecord,
   createPutItemEventRecord,
+  generateTOTP,
+  generateTotpCodeForItem,
   createTotpItem,
   createVaultItemRecord,
   ensureMonotonicHead,
@@ -100,6 +102,51 @@ test("serializeCanonicalVaultEventRecord still supports put_item records", () =>
   assert.equal(
     serializeCanonicalVaultEventRecord(record),
     '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["manual","password"],"username":"alice","urls":["https://github.com/login"]}}}',
+  );
+});
+
+test("generateTOTP matches the RFC SHA1 vector", async () => {
+  const code = await generateTOTP(
+    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    new Date("1970-01-01T00:00:59Z"),
+    8,
+    30,
+    "SHA1",
+  );
+
+  assert.equal(code, "94287082");
+});
+
+test("generateTotpCodeForItem returns code window metadata", async () => {
+  const snapshot = await generateTotpCodeForItem(
+    createTotpItem({
+      id: "totp-gmail-primary",
+      title: "Gmail 2FA",
+      issuer: "Google",
+      accountName: "alice@example.com",
+      secretRef: "vault-secret://totp/gmail-primary",
+    }),
+    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    new Date("1970-01-01T00:00:59Z"),
+  );
+
+  assert.equal(snapshot.code, "287082");
+  assert.equal(snapshot.secondsRemaining, 1);
+  assert.equal(snapshot.validFrom, "1970-01-01T00:00:30.000Z");
+  assert.equal(snapshot.validUntil, "1970-01-01T00:01:00.000Z");
+});
+
+test("generateTOTP rejects unsupported algorithms", async () => {
+  await assert.rejects(
+    () =>
+      generateTOTP(
+        "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        new Date("1970-01-01T00:00:59Z"),
+        6,
+        30,
+        "SHA256",
+      ),
+    /unsupported totp algorithm: SHA256/,
   );
 });
 

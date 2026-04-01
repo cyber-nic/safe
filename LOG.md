@@ -125,3 +125,9 @@
 - Replaced the web app's placeholder bootstrap object with a real replay-backed `createVaultWorkspace` model that exposes overview stats, searchable vault items, authenticator cards, and recent activity derived from account config, collection head, and event records.
 - Added durable consumer-facing web behaviors for text, kind, and tag filtering plus authenticator-to-login linking, so the primary web surface can start gathering product feedback without inventing throw-away demo state outside the existing protocol and sync model.
 - Added a lightweight `@safe/web` Node test suite covering the starter workspace, search and filter behavior, delete-event activity rendering, and collection-head consistency checks.
+
+## 2026-04-01T10:14:12Z
+
+- Added browser-compatible TOTP generation to the TypeScript SDK via Web Crypto, including RFC-style code generation and window metadata helpers for `totp` vault items so the web stack can produce local authenticator codes instead of only listing authenticator records.
+- Exported shared starter secret material from `@safe/test-vectors` and wired the web workspace through `unlockVaultWorkspace` and `createUnlockedVaultWorkspace`, which upgrades authenticator cards from locked metadata to live local codes when secret material is available without introducing server-side or demo-only state.
+- Extended the TS SDK, test-vectors, and web Node test suites with coverage for TOTP generation, starter secret material, unlocked authenticator cards, and locked-without-secret behavior.

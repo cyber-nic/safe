@@ -21,6 +21,7 @@ import {
   sampleVaultEventRecords,
   sampleVaultItemRecords,
   sampleVaultItems,
+  sampleVaultSecretMaterial,
 } from "../src/index.ts";
 
 test("sample vault items and records stay aligned", () => {
@@ -28,6 +29,13 @@ test("sample vault items and records stay aligned", () => {
   assert.deepEqual(
     sampleVaultItems.map((item) => item.id),
     sampleVaultItemRecords.map((record) => record.item.id),
+  );
+});
+
+test("sample vault secret material exports authenticator seeds", () => {
+  assert.equal(
+    sampleVaultSecretMaterial["vault-secret://totp/gmail-primary"],
+    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
   );
 });
 

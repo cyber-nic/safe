@@ -1,9 +1,11 @@
 import {
   describeVaultItem,
+  generateTotpCodeForItem,
   isTotpItem,
   replayCollectionAgainstHead,
   type AccountConfigRecord,
   type CollectionHeadRecord,
+  type TotpCodeSnapshot,
   type VaultEventAction,
   type VaultEventRecord,
   type VaultItem,
@@ -15,6 +17,7 @@ import {
   sampleCollectionHeadRecord,
   sampleVaultEventRecords,
   sampleVaultItemRecords,
+  sampleVaultSecretMaterial,
 } from "../../../packages/test-vectors/src/index.ts";
 
 export type VaultWorkspaceQuery = {
@@ -60,7 +63,15 @@ export type AuthenticatorCard = {
   relatedLoginTitle: string | null;
   relatedLoginURL: string | null;
   summary: string;
+  code: string | null;
+  secondsRemaining: number | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  status: "locked" | "ready" | "error";
+  statusDetail: string;
 };
+
+export type VaultSecretMaterial = Record<string, string>;
 
 export type ActivityEntry = {
   eventId: string;
@@ -80,6 +91,7 @@ export type VaultWorkspace = {
   activity: ActivityEntry[];
   availableKinds: Array<VaultItemKind | "all">;
   availableTags: string[];
+  itemRecords: VaultItemRecord[];
   starterRecords: VaultItemRecord[];
 };
 
@@ -225,8 +237,29 @@ function buildAuthenticatorCards(items: VaultItem[]): AuthenticatorCard[] {
         relatedLoginURL:
           relatedLogin?.kind === "login" ? relatedLogin.urls[0] ?? null : null,
         summary: describeVaultItem(item),
+        code: null,
+        secondsRemaining: null,
+        validFrom: null,
+        validUntil: null,
+        status: "locked",
+        statusDetail: "Unlock to generate a local code",
       };
     });
+}
+
+function applyAuthenticatorSnapshot(
+  card: AuthenticatorCard,
+  snapshot: TotpCodeSnapshot,
+): AuthenticatorCard {
+  return {
+    ...card,
+    code: snapshot.code,
+    secondsRemaining: snapshot.secondsRemaining,
+    validFrom: snapshot.validFrom,
+    validUntil: snapshot.validUntil,
+    status: "ready",
+    statusDetail: `${snapshot.secondsRemaining}s remaining in the current ${snapshot.periodSeconds}s window`,
+  };
 }
 
 function buildActivityEntries(events: VaultEventRecord[]): ActivityEntry[] {
@@ -333,8 +366,84 @@ export function createVaultWorkspace(input: {
     activity: buildActivityEntries(input.events),
     availableKinds: ["all", "login", "note", "apiKey", "sshKey", "totp"],
     availableTags: buildAvailableTags(items),
+    itemRecords: [...projection.items.values()],
     starterRecords: input.starterRecords ?? [],
   };
+}
+
+export async function unlockVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  at?: Date;
+}): Promise<VaultWorkspace> {
+  const at = input.at ?? new Date();
+  const authenticators = await Promise.all(
+    input.workspace.authenticators.map(async (card) => {
+      const record = input.workspace.itemRecords.find(
+        (itemRecord) => itemRecord.item.id === card.id && itemRecord.item.kind === "totp",
+      );
+      const secretRef =
+        record?.item.kind === "totp" ? record.item.secretRef : null;
+
+      if (!secretRef) {
+        return {
+          ...card,
+          status: "error" as const,
+          statusDetail: "Authenticator record is missing a secret reference",
+        };
+      }
+
+      const secret = input.secretMaterial[secretRef];
+      if (!secret) {
+        return card;
+      }
+
+      try {
+        const item =
+          record?.item.kind === "totp" ? record.item : null;
+        if (!item) {
+          return {
+            ...card,
+            status: "error" as const,
+            statusDetail: "Authenticator record is unavailable in the current projection",
+          };
+        }
+
+        return applyAuthenticatorSnapshot(
+          card,
+          await generateTotpCodeForItem(item, secret, at),
+        );
+      } catch (error) {
+        return {
+          ...card,
+          status: "error" as const,
+          statusDetail:
+            error instanceof Error ? error.message : "Failed to generate local code",
+        };
+      }
+    }),
+  );
+
+  return {
+    ...input.workspace,
+    authenticators,
+  };
+}
+
+export async function createUnlockedVaultWorkspace(input: {
+  accountConfig: AccountConfigRecord;
+  head: CollectionHeadRecord;
+  events: VaultEventRecord[];
+  starterRecords?: VaultItemRecord[];
+  query?: VaultWorkspaceQuery;
+  secretMaterial: VaultSecretMaterial;
+  at?: Date;
+}): Promise<VaultWorkspace> {
+  return unlockVaultWorkspace({
+    workspace: createVaultWorkspace(input),
+    secretMaterial: input.secretMaterial,
+    at: input.at,
+  });
 }
 
 export const webBootstrap = createVaultWorkspace({
@@ -343,3 +452,14 @@ export const webBootstrap = createVaultWorkspace({
   events: sampleVaultEventRecords,
   starterRecords: sampleVaultItemRecords,
 });
+
+export function createUnlockedWebBootstrap(at: Date = new Date()): Promise<VaultWorkspace> {
+  return createUnlockedVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: sampleCollectionHeadRecord,
+    events: sampleVaultEventRecords,
+    starterRecords: sampleVaultItemRecords,
+    secretMaterial: sampleVaultSecretMaterial,
+    at,
+  });
+}

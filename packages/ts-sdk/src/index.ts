@@ -47,6 +47,14 @@ export type TotpItem = VaultItemBase & {
   secretRef: string;
 };
 
+export type TotpCodeSnapshot = {
+  code: string;
+  periodSeconds: number;
+  secondsRemaining: number;
+  validFrom: string;
+  validUntil: string;
+};
+
 export type VaultItem =
   | LoginItem
   | NoteItem
@@ -824,4 +832,113 @@ export function describeVaultItem(item: VaultItem): string {
     case "totp":
       return `${item.title} authenticator for ${item.issuer} (${item.accountName})`;
   }
+}
+
+function getSubtleCrypto(): SubtleCrypto {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("web crypto unavailable for totp generation");
+  }
+
+  return subtle;
+}
+
+function decodeBase32Secret(secretBase32: string): Uint8Array {
+  const normalized = secretBase32
+    .toUpperCase()
+    .replaceAll("=", "")
+    .replace(/\s+/g, "");
+
+  if (normalized === "") {
+    throw new Error("decode totp secret: empty secret");
+  }
+
+  let buffer = 0;
+  let bits = 0;
+  const bytes: number[] = [];
+
+  for (const char of normalized) {
+    const code = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(char);
+    if (code === -1) {
+      throw new Error("decode totp secret: invalid base32 input");
+    }
+
+    buffer = (buffer << 5) | code;
+    bits += 5;
+
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+
+  return Uint8Array.from(bytes);
+}
+
+export async function generateTOTP(
+  secretBase32: string,
+  at: Date,
+  digits: number,
+  periodSeconds: number,
+  algorithm: string,
+): Promise<string> {
+  if (algorithm.toUpperCase() !== "SHA1") {
+    throw new Error(`unsupported totp algorithm: ${algorithm}`);
+  }
+  if (!Number.isInteger(digits) || digits < 1 || digits > 10) {
+    throw new Error(`invalid totp digits: ${digits}`);
+  }
+  if (!Number.isInteger(periodSeconds) || periodSeconds < 1) {
+    throw new Error(`invalid totp period: ${periodSeconds}`);
+  }
+
+  const secret = decodeBase32Secret(secretBase32);
+  const counter = Math.floor(at.getTime() / 1000 / periodSeconds);
+  const message = new ArrayBuffer(8);
+  new DataView(message).setBigUint64(0, BigInt(counter), false);
+
+  const key = await getSubtleCrypto().importKey(
+    "raw",
+    secret,
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const signature = new Uint8Array(
+    await getSubtleCrypto().sign("HMAC", key, message),
+  );
+  const offset = signature[signature.length - 1] & 0x0f;
+  const code =
+    ((signature[offset] & 0x7f) << 24) |
+    ((signature[offset + 1] & 0xff) << 16) |
+    ((signature[offset + 2] & 0xff) << 8) |
+    (signature[offset + 3] & 0xff);
+
+  const value = code % 10 ** digits;
+  return String(value).padStart(digits, "0");
+}
+
+export async function generateTotpCodeForItem(
+  item: TotpItem,
+  secretBase32: string,
+  at: Date,
+): Promise<TotpCodeSnapshot> {
+  const epochSeconds = Math.floor(at.getTime() / 1000);
+  const windowStartSeconds =
+    Math.floor(epochSeconds / item.periodSeconds) * item.periodSeconds;
+  const windowEndSeconds = windowStartSeconds + item.periodSeconds;
+
+  return {
+    code: await generateTOTP(
+      secretBase32,
+      at,
+      item.digits,
+      item.periodSeconds,
+      item.algorithm,
+    ),
+    periodSeconds: item.periodSeconds,
+    secondsRemaining: windowEndSeconds - epochSeconds,
+    validFrom: new Date(windowStartSeconds * 1000).toISOString(),
+    validUntil: new Date(windowEndSeconds * 1000).toISOString(),
+  };
 }

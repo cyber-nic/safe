@@ -3,12 +3,18 @@ import assert from "node:assert/strict";
 
 import { createDeleteItemEventRecord } from "../../../packages/ts-sdk/src/index.ts";
 import {
+  sampleVaultSecretMaterial,
   sampleAccountConfigRecord,
   sampleCollectionHeadRecord,
   sampleVaultEventRecords,
   sampleVaultItemRecords,
 } from "../../../packages/test-vectors/src/index.ts";
-import { createVaultWorkspace, webBootstrap } from "../src/index.ts";
+import {
+  createUnlockedVaultWorkspace,
+  createVaultWorkspace,
+  unlockVaultWorkspace,
+  webBootstrap,
+} from "../src/index.ts";
 
 test("web bootstrap exposes a real starter workspace", () => {
   assert.equal(webBootstrap.overview.itemCount, 2);
@@ -96,4 +102,34 @@ test("createVaultWorkspace rejects mismatched default collection heads", () => {
       }),
     /default collection mismatch: expected vault-shared got vault-personal/,
   );
+});
+
+test("unlockVaultWorkspace resolves local authenticator codes", async () => {
+  const workspace = await unlockVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  assert.equal(workspace.authenticators[0].status, "ready");
+  assert.equal(workspace.authenticators[0].code, "287082");
+  assert.equal(workspace.authenticators[0].secondsRemaining, 1);
+  assert.equal(
+    workspace.authenticators[0].validUntil,
+    "1970-01-01T00:01:00.000Z",
+  );
+});
+
+test("createUnlockedVaultWorkspace preserves locked state without secret material", async () => {
+  const workspace = await createUnlockedVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: sampleCollectionHeadRecord,
+    events: sampleVaultEventRecords,
+    starterRecords: sampleVaultItemRecords,
+    secretMaterial: {},
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  assert.equal(workspace.authenticators[0].status, "locked");
+  assert.equal(workspace.authenticators[0].code, null);
 });
