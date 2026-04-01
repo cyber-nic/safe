@@ -4,12 +4,20 @@ import assert from "node:assert/strict";
 import {
   canonicalAccountConfigRecord,
   canonicalCollectionHeadRecord,
+  canonicalDeleteCollectionHeadRecord,
   canonicalDeleteVaultEventRecord,
+  canonicalPutCollectionHeadRecord,
+  canonicalPutVaultEventRecord,
+  canonicalPutVaultItemRecord,
   canonicalVaultEventRecords,
   canonicalVaultItemRecords,
   sampleAccountConfigRecord,
   sampleCollectionHeadRecord,
+  sampleDeleteCollectionHeadRecord,
   sampleDeleteVaultEventRecord,
+  samplePutCollectionHeadRecord,
+  samplePutVaultEventRecord,
+  samplePutVaultItemRecord,
   sampleVaultEventRecords,
   sampleVaultItemRecords,
   sampleVaultItems,
@@ -63,5 +71,32 @@ test("account config vector exports parsed and canonical forms", () => {
   assert.equal(
     canonicalAccountConfigRecord,
     '{"schemaVersion":1,"accountId":"acct-dev-001","defaultCollectionId":"vault-personal","collectionIds":["vault-personal"],"deviceIds":["dev-web-001"]}',
+  );
+});
+
+test("put mutation vectors export parsed and canonical forms", () => {
+  assert.equal(samplePutVaultItemRecord.item.id, "login-github-primary");
+  assert.equal(
+    canonicalPutVaultItemRecord,
+    '{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"]}}',
+  );
+  assert.equal(samplePutVaultEventRecord.eventId, "evt-login-github-primary-v3");
+  assert.equal(
+    canonicalPutVaultEventRecord,
+    '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"]}}}',
+  );
+  assert.equal(samplePutCollectionHeadRecord.latestEventId, "evt-login-github-primary-v3");
+  assert.equal(
+    canonicalPutCollectionHeadRecord,
+    '{"schemaVersion":1,"accountId":"acct-dev-001","collectionId":"vault-personal","latestEventId":"evt-login-github-primary-v3","latestSeq":3}',
+  );
+});
+
+test("delete mutation head vector exports parsed and canonical forms", () => {
+  assert.equal(sampleDeleteCollectionHeadRecord.latestEventId, "evt-login-gmail-primary-delete-v3");
+  assert.equal(sampleDeleteCollectionHeadRecord.latestSeq, 3);
+  assert.equal(
+    canonicalDeleteCollectionHeadRecord,
+    '{"schemaVersion":1,"accountId":"acct-dev-001","collectionId":"vault-personal","latestEventId":"evt-login-gmail-primary-delete-v3","latestSeq":3}',
   );
 });

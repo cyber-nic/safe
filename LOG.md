@@ -101,3 +101,9 @@
 - Added TypeScript SDK replay helpers so clients can sort, validate, and project vault event streams with the same sequence-gap, mixed-collection, delete-item, and head-alignment semantics as the Go sync package.
 - Added `buildPutItemMutation` and `buildDeleteItemMutation` to the TypeScript SDK so TS clients can generate deterministic event IDs and next-head records without reimplementing the sync mutation rules.
 - Extended the TS SDK Node test suite with replay, replay-against-head, and mutation-builder coverage to keep the new sync helpers aligned with Go behavior.
+
+## 2026-04-01T09:39:42Z
+
+- Added shared sync-mutation fixtures under `packages/test-vectors` for the deterministic starter put mutation item/event/head and the corresponding delete-mutation head.
+- Exported parsed and canonicalized mutation fixtures from the test-vectors package and extended its Node tests to validate those new vectors.
+- Updated Go sync tests to consume the shared mutation fixtures for replay-delete and mutation-builder expectations instead of hardcoded event and head literals.

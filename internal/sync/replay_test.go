@@ -1,10 +1,64 @@
 package sync
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/ndelorme/safe/internal/domain"
 )
+
+func mustLoadVaultEventRecordFixture(t *testing.T, name string) domain.VaultEventRecord {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", name)
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read vault event fixture %s: %v", name, err)
+	}
+
+	record, err := domain.ParseVaultEventRecordJSON(payload)
+	if err != nil {
+		t.Fatalf("parse vault event fixture %s: %v", name, err)
+	}
+
+	return record
+}
+
+func mustLoadVaultItemRecordFixture(t *testing.T, name string) domain.VaultItemRecord {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", name)
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read vault item fixture %s: %v", name, err)
+	}
+
+	record, err := domain.ParseVaultItemRecordJSON(payload)
+	if err != nil {
+		t.Fatalf("parse vault item fixture %s: %v", name, err)
+	}
+
+	return record
+}
+
+func mustLoadCollectionHeadRecordFixture(t *testing.T, name string) domain.CollectionHeadRecord {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", name)
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read collection head fixture %s: %v", name, err)
+	}
+
+	record, err := domain.ParseCollectionHeadRecordJSON(payload)
+	if err != nil {
+		t.Fatalf("parse collection head fixture %s: %v", name, err)
+	}
+
+	return record
+}
 
 func TestReplayCollectionBuildsLatestState(t *testing.T) {
 	events := domain.StarterVaultEventRecords()
@@ -69,17 +123,7 @@ func TestReplayCollectionRejectsMixedCollection(t *testing.T) {
 
 func TestReplayCollectionDeletesItems(t *testing.T) {
 	events := append([]domain.VaultEventRecord(nil), domain.StarterVaultEventRecords()...)
-	events = append(events, domain.VaultEventRecord{
-		SchemaVersion: 1,
-		EventID:       "evt-login-gmail-primary-delete-v3",
-		AccountID:     "acct-dev-001",
-		DeviceID:      "dev-web-001",
-		CollectionID:  "vault-personal",
-		Sequence:      3,
-		OccurredAt:    "2026-03-31T10:04:00Z",
-		Action:        domain.VaultEventActionDeleteItem,
-		ItemID:        "login-gmail-primary",
-	})
+	events = append(events, mustLoadVaultEventRecordFixture(t, "delete-event-record.json"))
 
 	projection, err := ReplayCollection(events)
 	if err != nil {
@@ -171,57 +215,39 @@ func TestEnsureMonotonicHeadAcceptsAdvance(t *testing.T) {
 
 func TestBuildPutItemMutation(t *testing.T) {
 	head := domain.StarterCollectionHeadRecord()
-	itemRecord := domain.VaultItemRecord{
-		SchemaVersion: 1,
-		Item: domain.VaultItem{
-			ID:       "login-github-primary",
-			Kind:     domain.VaultItemKindLogin,
-			Title:    "GitHub",
-			Tags:     []string{"dev"},
-			Username: "alice",
-			URLs:     []string{"https://github.com/login"},
-		},
-	}
+	itemRecord := mustLoadVaultItemRecordFixture(t, "put-item-record.json")
+	expectedEvent := mustLoadVaultEventRecordFixture(t, "put-event-record.json")
+	expectedHead := mustLoadCollectionHeadRecordFixture(t, "put-collection-head-record.json")
 
 	event, newHead, err := BuildPutItemMutation(head, "dev-web-001", itemRecord, "2026-03-31T10:02:00Z")
 	if err != nil {
 		t.Fatalf("build mutation: %v", err)
 	}
 
-	if event.Sequence != 3 {
-		t.Fatalf("expected sequence 3, got %d", event.Sequence)
+	if !reflect.DeepEqual(event, expectedEvent) {
+		t.Fatalf("unexpected put event\nexpected: %+v\ngot: %+v", expectedEvent, event)
 	}
 
-	if event.EventID != "evt-login-github-primary-v3" {
-		t.Fatalf("unexpected event ID: %s", event.EventID)
-	}
-
-	if newHead.LatestSeq != 3 || newHead.LatestEventID != event.EventID {
-		t.Fatalf("unexpected head: %+v", newHead)
+	if newHead != expectedHead {
+		t.Fatalf("unexpected put head\nexpected: %+v\ngot: %+v", expectedHead, newHead)
 	}
 }
 
 func TestBuildDeleteItemMutation(t *testing.T) {
 	head := domain.StarterCollectionHeadRecord()
+	expectedEvent := mustLoadVaultEventRecordFixture(t, "delete-event-record.json")
+	expectedHead := mustLoadCollectionHeadRecordFixture(t, "delete-collection-head-record.json")
 
 	event, newHead, err := BuildDeleteItemMutation(head, "dev-web-001", "login-gmail-primary", "2026-03-31T10:04:00Z")
 	if err != nil {
 		t.Fatalf("build delete mutation: %v", err)
 	}
 
-	if event.Sequence != 3 {
-		t.Fatalf("expected sequence 3, got %d", event.Sequence)
+	if !reflect.DeepEqual(event, expectedEvent) {
+		t.Fatalf("unexpected delete event\nexpected: %+v\ngot: %+v", expectedEvent, event)
 	}
 
-	if event.EventID != "evt-login-gmail-primary-delete-v3" {
-		t.Fatalf("unexpected event ID: %s", event.EventID)
-	}
-
-	if event.Action != domain.VaultEventActionDeleteItem || event.ItemID != "login-gmail-primary" {
-		t.Fatalf("unexpected event: %+v", event)
-	}
-
-	if newHead.LatestSeq != 3 || newHead.LatestEventID != event.EventID {
-		t.Fatalf("unexpected head: %+v", newHead)
+	if newHead != expectedHead {
+		t.Fatalf("unexpected delete head\nexpected: %+v\ngot: %+v", expectedHead, newHead)
 	}
 }

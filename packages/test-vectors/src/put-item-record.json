@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "item": {
+    "id": "login-github-primary",
+    "kind": "login",
+    "title": "GitHub",
+    "tags": [
+      "dev"
+    ],
+    "username": "alice",
+    "urls": [
+      "https://github.com/login"
+    ]
+  }
+}

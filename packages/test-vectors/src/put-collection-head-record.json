@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "accountId": "acct-dev-001",
+  "collectionId": "vault-personal",
+  "latestEventId": "evt-login-github-primary-v3",
+  "latestSeq": 3
+}
