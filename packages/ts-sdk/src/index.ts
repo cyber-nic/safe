@@ -75,6 +75,14 @@ export type AccountConfigRecord = {
   deviceIds: string[];
 };
 
+export type CollectionProjection = {
+  accountId: string;
+  collectionId: string;
+  latestSeq: number;
+  latestEventId: string;
+  items: Map<string, VaultItemRecord>;
+};
+
 export type VaultEventAction = "put_item" | "delete_item";
 
 type VaultEventRecordBase = {
@@ -124,6 +132,45 @@ function expectStringArray(value: unknown, field: string): string[] {
   }
 
   return value;
+}
+
+function expectPositiveInteger(value: unknown, message: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
+function assertValidCollectionHeadRecord(record: CollectionHeadRecord): void {
+  if (record.schemaVersion !== 1) {
+    throw new Error("invalid collection head record field: schemaVersion");
+  }
+
+  if (record.accountId === "") {
+    throw new Error("invalid collection head record field: accountId");
+  }
+
+  if (record.collectionId === "") {
+    throw new Error("invalid collection head record field: collectionId");
+  }
+
+  if (record.latestEventId === "") {
+    throw new Error("invalid collection head record field: latestEventId");
+  }
+
+  expectPositiveInteger(
+    record.latestSeq,
+    "invalid collection head record field: latestSeq",
+  );
+}
+
+function assertValidVaultItemRecord(record: VaultItemRecord): void {
+  parseVaultItemRecord(record);
+}
+
+function assertValidVaultEventRecord(record: VaultEventRecord): void {
+  parseVaultEventRecord(record);
 }
 
 export function createTotpItem(input: {
@@ -354,9 +401,10 @@ export function parseVaultEventRecord(value: unknown): VaultEventRecord {
   const collectionId = expectString(value.collectionId, "collectionId");
   const occurredAt = expectString(value.occurredAt, "occurredAt");
 
-  if (typeof value.sequence !== "number" || !Number.isInteger(value.sequence) || value.sequence < 1) {
-    throw new Error("invalid vault event record field: sequence");
-  }
+  const sequence = expectPositiveInteger(
+    value.sequence,
+    "invalid vault event record field: sequence",
+  );
 
   if (value.action === "put_item") {
     return {
@@ -365,7 +413,7 @@ export function parseVaultEventRecord(value: unknown): VaultEventRecord {
       accountId,
       deviceId,
       collectionId,
-      sequence: value.sequence,
+      sequence,
       occurredAt,
       action: "put_item",
       itemRecord: parseVaultItemRecord(value.itemRecord),
@@ -379,7 +427,7 @@ export function parseVaultEventRecord(value: unknown): VaultEventRecord {
       accountId,
       deviceId,
       collectionId,
-      sequence: value.sequence,
+      sequence,
       occurredAt,
       action: "delete_item",
       itemId: expectString(value.itemId, "itemId"),
@@ -406,14 +454,10 @@ export function parseCollectionHeadRecord(value: unknown): CollectionHeadRecord 
     throw new Error("invalid collection head record field: schemaVersion");
   }
 
-  const latestSeq = value.latestSeq;
-  if (
-    typeof latestSeq !== "number" ||
-    !Number.isInteger(latestSeq) ||
-    latestSeq < 1
-  ) {
-    throw new Error("invalid collection head record field: latestSeq");
-  }
+  const latestSeq = expectPositiveInteger(
+    value.latestSeq,
+    "invalid collection head record field: latestSeq",
+  );
 
   return {
     schemaVersion: 1,
@@ -576,6 +620,9 @@ export function ensureMonotonicHead(
   trusted: CollectionHeadRecord,
   candidate: CollectionHeadRecord,
 ): void {
+  assertValidCollectionHeadRecord(trusted);
+  assertValidCollectionHeadRecord(candidate);
+
   if (trusted.accountId !== candidate.accountId) {
     throw new Error("sync replay invariant violated: trustedHead.accountId");
   }
@@ -598,6 +645,170 @@ export function ensureMonotonicHead(
       `sync head mismatch: latestEventId expected ${trusted.latestEventId} got ${candidate.latestEventId}`,
     );
   }
+}
+
+export function replayCollection(
+  events: VaultEventRecord[],
+): CollectionProjection {
+  if (events.length === 0) {
+    return {
+      accountId: "",
+      collectionId: "",
+      latestSeq: 0,
+      latestEventId: "",
+      items: new Map(),
+    };
+  }
+
+  const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
+  const projection: CollectionProjection = {
+    accountId: ordered[0].accountId,
+    collectionId: ordered[0].collectionId,
+    latestSeq: 0,
+    latestEventId: "",
+    items: new Map(),
+  };
+
+  let expectedSequence = 1;
+  for (const event of ordered) {
+    assertValidVaultEventRecord(event);
+
+    if (event.accountId !== projection.accountId) {
+      throw new Error("sync replay invariant violated: accountId");
+    }
+
+    if (event.collectionId !== projection.collectionId) {
+      throw new Error("sync replay invariant violated: collectionId");
+    }
+
+    if (event.sequence !== expectedSequence) {
+      throw new Error(
+        `sync replay sequence gap: expected ${expectedSequence} got ${event.sequence}`,
+      );
+    }
+
+    if (event.action === "put_item") {
+      projection.items.set(event.itemRecord.item.id, event.itemRecord);
+    } else if (event.action === "delete_item") {
+      projection.items.delete(event.itemId);
+    } else {
+      throw new Error("sync replay invariant violated: action");
+    }
+
+    projection.latestSeq = event.sequence;
+    projection.latestEventId = event.eventId;
+    expectedSequence += 1;
+  }
+
+  return projection;
+}
+
+export function replayCollectionAgainstHead(
+  events: VaultEventRecord[],
+  head: CollectionHeadRecord,
+): CollectionProjection {
+  assertValidCollectionHeadRecord(head);
+
+  const projection = replayCollection(events);
+  if (projection.accountId !== head.accountId) {
+    throw new Error("sync replay invariant violated: head.accountId");
+  }
+
+  if (projection.collectionId !== head.collectionId) {
+    throw new Error("sync replay invariant violated: head.collectionId");
+  }
+
+  if (projection.latestSeq !== head.latestSeq) {
+    throw new Error(
+      `sync head mismatch: latestSeq expected ${head.latestSeq} got ${projection.latestSeq}`,
+    );
+  }
+
+  if (projection.latestEventId !== head.latestEventId) {
+    throw new Error(
+      `sync head mismatch: latestEventId expected ${head.latestEventId} got ${projection.latestEventId}`,
+    );
+  }
+
+  return projection;
+}
+
+export function buildPutItemMutation(
+  head: CollectionHeadRecord,
+  deviceId: string,
+  itemRecord: VaultItemRecord,
+  occurredAt: string,
+): { event: PutItemEventRecord; newHead: CollectionHeadRecord } {
+  assertValidCollectionHeadRecord(head);
+  if (deviceId === "") {
+    throw new Error("sync replay invariant violated: deviceId");
+  }
+  assertValidVaultItemRecord(itemRecord);
+  if (occurredAt === "") {
+    throw new Error("sync replay invariant violated: occurredAt");
+  }
+
+  const nextSeq = head.latestSeq + 1;
+  const eventId = `evt-${itemRecord.item.id}-v${nextSeq}`;
+  const event = createPutItemEventRecord({
+    eventId,
+    accountId: head.accountId,
+    deviceId,
+    collectionId: head.collectionId,
+    sequence: nextSeq,
+    occurredAt,
+    itemRecord,
+  });
+
+  return {
+    event,
+    newHead: createCollectionHeadRecord({
+      accountId: head.accountId,
+      collectionId: head.collectionId,
+      latestEventId: eventId,
+      latestSeq: nextSeq,
+    }),
+  };
+}
+
+export function buildDeleteItemMutation(
+  head: CollectionHeadRecord,
+  deviceId: string,
+  itemId: string,
+  occurredAt: string,
+): { event: DeleteItemEventRecord; newHead: CollectionHeadRecord } {
+  assertValidCollectionHeadRecord(head);
+  if (deviceId === "") {
+    throw new Error("sync replay invariant violated: deviceId");
+  }
+  if (itemId === "") {
+    throw new Error("sync replay invariant violated: itemId");
+  }
+  if (occurredAt === "") {
+    throw new Error("sync replay invariant violated: occurredAt");
+  }
+
+  const nextSeq = head.latestSeq + 1;
+  const eventId = `evt-${itemId}-delete-v${nextSeq}`;
+  const event = createDeleteItemEventRecord({
+    eventId,
+    accountId: head.accountId,
+    deviceId,
+    collectionId: head.collectionId,
+    sequence: nextSeq,
+    occurredAt,
+    itemId,
+  });
+
+  return {
+    event,
+    newHead: createCollectionHeadRecord({
+      accountId: head.accountId,
+      collectionId: head.collectionId,
+      latestEventId: eventId,
+      latestSeq: nextSeq,
+    }),
+  };
 }
 
 export function describeVaultItem(item: VaultItem): string {

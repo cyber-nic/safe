@@ -95,3 +95,9 @@
 - Added shared `collection-head-record.json` and `account-config-record.json` fixtures under `packages/test-vectors` so mutable metadata records now have the same language-neutral vector coverage as vault items and events.
 - Exported parsed and canonicalized collection-head and account-config records from the test-vectors package and extended its Node test suite to verify both forms.
 - Updated Go domain canonicalization tests to compare against the shared mutable-metadata fixtures instead of hardcoded JSON literals.
+
+## 2026-04-01T09:36:19Z
+
+- Added TypeScript SDK replay helpers so clients can sort, validate, and project vault event streams with the same sequence-gap, mixed-collection, delete-item, and head-alignment semantics as the Go sync package.
+- Added `buildPutItemMutation` and `buildDeleteItemMutation` to the TypeScript SDK so TS clients can generate deterministic event IDs and next-head records without reimplementing the sync mutation rules.
+- Extended the TS SDK Node test suite with replay, replay-against-head, and mutation-builder coverage to keep the new sync helpers aligned with Go behavior.

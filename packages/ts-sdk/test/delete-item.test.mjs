@@ -2,15 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildDeleteItemMutation,
+  buildPutItemMutation,
   createAccountConfigRecord,
   createCollectionHeadRecord,
   createDeleteItemEventRecord,
   createPutItemEventRecord,
+  createTotpItem,
   createVaultItemRecord,
   ensureMonotonicHead,
   parseAccountConfigRecord,
   parseCollectionHeadRecord,
   parseVaultEventRecord,
+  replayCollection,
+  replayCollectionAgainstHead,
   serializeCanonicalAccountConfigRecord,
   serializeCanonicalCollectionHeadRecord,
   serializeCanonicalVaultEventRecord,
@@ -201,4 +206,192 @@ test("ensureMonotonicHead accepts forward progress", () => {
       }),
     ),
   );
+});
+
+test("replayCollection sorts input and builds the latest state", () => {
+  const loginEvent = createPutItemEventRecord({
+    eventId: "evt-login-gmail-primary-v1",
+    accountId: "acct-dev-001",
+    deviceId: "dev-web-001",
+    collectionId: "vault-personal",
+    sequence: 1,
+    occurredAt: "2026-03-31T10:00:00Z",
+    itemRecord: createVaultItemRecord({
+      id: "login-gmail-primary",
+      kind: "login",
+      title: "Gmail",
+      tags: ["email", "personal"],
+      username: "alice@example.com",
+      urls: ["https://accounts.google.com"],
+    }),
+  });
+  const totpEvent = createPutItemEventRecord({
+    eventId: "evt-totp-gmail-primary-v1",
+    accountId: "acct-dev-001",
+    deviceId: "dev-web-001",
+    collectionId: "vault-personal",
+    sequence: 2,
+    occurredAt: "2026-03-31T10:01:00Z",
+    itemRecord: createVaultItemRecord(createTotpItem({
+      id: "totp-gmail-primary",
+      title: "Gmail OTP",
+      issuer: "Google",
+      accountName: "alice@example.com",
+      secretRef: "secret://gmail/totp",
+      tags: ["2fa", "email"],
+    })),
+  });
+
+  const projection = replayCollection([totpEvent, loginEvent]);
+
+  assert.equal(projection.accountId, "acct-dev-001");
+  assert.equal(projection.collectionId, "vault-personal");
+  assert.equal(projection.latestSeq, 2);
+  assert.equal(projection.latestEventId, "evt-totp-gmail-primary-v1");
+  assert.equal(projection.items.size, 2);
+  assert.equal(projection.items.get("login-gmail-primary")?.item.title, "Gmail");
+});
+
+test("replayCollection deletes items and rejects sequence gaps", () => {
+  const loginEvent = createPutItemEventRecord({
+    eventId: "evt-login-gmail-primary-v1",
+    accountId: "acct-dev-001",
+    deviceId: "dev-web-001",
+    collectionId: "vault-personal",
+    sequence: 1,
+    occurredAt: "2026-03-31T10:00:00Z",
+    itemRecord: createVaultItemRecord({
+      id: "login-gmail-primary",
+      kind: "login",
+      title: "Gmail",
+      tags: ["email", "personal"],
+      username: "alice@example.com",
+      urls: ["https://accounts.google.com"],
+    }),
+  });
+  const deleteEvent = createDeleteItemEventRecord({
+    eventId: "evt-login-gmail-primary-delete-v2",
+    accountId: "acct-dev-001",
+    deviceId: "dev-web-001",
+    collectionId: "vault-personal",
+    sequence: 2,
+    occurredAt: "2026-03-31T10:04:00Z",
+    itemId: "login-gmail-primary",
+  });
+
+  const deletedProjection = replayCollection([loginEvent, deleteEvent]);
+  assert.equal(deletedProjection.latestSeq, 2);
+  assert.equal(deletedProjection.items.has("login-gmail-primary"), false);
+
+  assert.throws(
+    () =>
+      replayCollection([
+        loginEvent,
+        createDeleteItemEventRecord({
+          ...deleteEvent,
+          eventId: "evt-login-gmail-primary-delete-v3",
+          sequence: 3,
+        }),
+      ]),
+    /sync replay sequence gap: expected 2 got 3/,
+  );
+});
+
+test("replayCollectionAgainstHead enforces latest seq and event alignment", () => {
+  const events = [
+    createPutItemEventRecord({
+      eventId: "evt-login-gmail-primary-v1",
+      accountId: "acct-dev-001",
+      deviceId: "dev-web-001",
+      collectionId: "vault-personal",
+      sequence: 1,
+      occurredAt: "2026-03-31T10:00:00Z",
+      itemRecord: createVaultItemRecord({
+        id: "login-gmail-primary",
+        kind: "login",
+        title: "Gmail",
+        tags: ["email", "personal"],
+        username: "alice@example.com",
+        urls: ["https://accounts.google.com"],
+      }),
+    }),
+    createPutItemEventRecord({
+      eventId: "evt-totp-gmail-primary-v1",
+      accountId: "acct-dev-001",
+      deviceId: "dev-web-001",
+      collectionId: "vault-personal",
+      sequence: 2,
+      occurredAt: "2026-03-31T10:01:00Z",
+      itemRecord: createVaultItemRecord(createTotpItem({
+        id: "totp-gmail-primary",
+        title: "Gmail OTP",
+        issuer: "Google",
+        accountName: "alice@example.com",
+        secretRef: "secret://gmail/totp",
+        tags: ["2fa", "email"],
+      })),
+    }),
+  ];
+  const head = createCollectionHeadRecord({
+    accountId: "acct-dev-001",
+    collectionId: "vault-personal",
+    latestEventId: "evt-totp-gmail-primary-v1",
+    latestSeq: 2,
+  });
+
+  const projection = replayCollectionAgainstHead(events, head);
+  assert.equal(projection.latestSeq, 2);
+
+  assert.throws(
+    () =>
+      replayCollectionAgainstHead(
+        events,
+        createCollectionHeadRecord({
+          accountId: "acct-dev-001",
+          collectionId: "vault-personal",
+          latestEventId: "evt-totp-gmail-primary-v1",
+          latestSeq: 3,
+        }),
+      ),
+    /sync head mismatch: latestSeq expected 3 got 2/,
+  );
+});
+
+test("buildPutItemMutation and buildDeleteItemMutation advance the head", () => {
+  const head = createCollectionHeadRecord({
+    accountId: "acct-dev-001",
+    collectionId: "vault-personal",
+    latestEventId: "evt-totp-gmail-primary-v1",
+    latestSeq: 2,
+  });
+
+  const putMutation = buildPutItemMutation(
+    head,
+    "dev-web-001",
+    createVaultItemRecord({
+      id: "login-github-primary",
+      kind: "login",
+      title: "GitHub",
+      tags: ["dev"],
+      username: "alice",
+      urls: ["https://github.com/login"],
+    }),
+    "2026-03-31T10:02:00Z",
+  );
+  assert.equal(putMutation.event.eventId, "evt-login-github-primary-v3");
+  assert.equal(putMutation.event.sequence, 3);
+  assert.equal(putMutation.newHead.latestEventId, putMutation.event.eventId);
+  assert.equal(putMutation.newHead.latestSeq, 3);
+
+  const deleteMutation = buildDeleteItemMutation(
+    head,
+    "dev-web-001",
+    "login-gmail-primary",
+    "2026-03-31T10:04:00Z",
+  );
+  assert.equal(deleteMutation.event.eventId, "evt-login-gmail-primary-delete-v3");
+  assert.equal(deleteMutation.event.sequence, 3);
+  assert.equal(deleteMutation.event.action, "delete_item");
+  assert.equal(deleteMutation.newHead.latestEventId, deleteMutation.event.eventId);
+  assert.equal(deleteMutation.newHead.latestSeq, 3);
 });
