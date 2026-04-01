@@ -261,6 +261,107 @@ func TestRunSecretUpdateMissingItem(t *testing.T) {
 	})
 }
 
+func TestRunSecretCode(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		previousNowFunc := nowFunc
+		nowFunc = func() time.Time { return time.Unix(59, 0).UTC() }
+		defer func() { nowFunc = previousNowFunc }()
+
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "code", "totp-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret code: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret code:") {
+			t.Fatalf("expected secret code output, got %s", output)
+		}
+		if !strings.Contains(output, "code=287082") {
+			t.Fatalf("expected stable totp code, got %s", output)
+		}
+	})
+}
+
+func TestRunSecretCodeJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		previousNowFunc := nowFunc
+		nowFunc = func() time.Time { return time.Unix(59, 0).UTC() }
+		defer func() { nowFunc = previousNowFunc }()
+
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "code", "totp-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret code json: %v", err)
+		}
+
+		var payload struct {
+			ItemID        string `json:"itemId"`
+			Title         string `json:"title"`
+			Code          string `json:"code"`
+			GeneratedAt   string `json:"generatedAt"`
+			ExpiresAt     string `json:"expiresAt"`
+			PeriodSeconds int    `json:"periodSeconds"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode code json: %v", err)
+		}
+
+		if payload.ItemID != "totp-gmail-primary" || payload.Code != "287082" {
+			t.Fatalf("unexpected code payload: %+v", payload)
+		}
+		if payload.GeneratedAt != "1970-01-01T00:00:59Z" || payload.ExpiresAt != "1970-01-01T00:01:00Z" {
+			t.Fatalf("unexpected code timestamps: %+v", payload)
+		}
+	})
+}
+
+func TestSecretCodeRejectsNonTOTPItem(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretCode(&buffer, state, cliOptions{}, "login-gmail-primary", time.Unix(59, 0).UTC())
+		if err == nil {
+			t.Fatal("expected non-totp error")
+		}
+
+		if !strings.Contains(err.Error(), "secret code only supports totp items: login-gmail-primary") {
+			t.Fatalf("unexpected non-totp error: %v", err)
+		}
+	})
+}
+
+func TestSecretCodeRejectsMissingSecretMaterial(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		projection, err := loadProjection(state)
+		if err != nil {
+			t.Fatalf("load projection: %v", err)
+		}
+		record := projection.Items["totp-gmail-primary"]
+		record.Item.SecretRef = "vault-secret://totp/missing"
+		if _, _, err := persistItemMutation(state, record, "2026-03-31T10:03:00Z"); err != nil {
+			t.Fatalf("persist modified totp item: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretCode(&buffer, state, cliOptions{}, "totp-gmail-primary", time.Unix(59, 0).UTC())
+		if err == nil {
+			t.Fatal("expected missing secret material error")
+		}
+
+		if !strings.Contains(err.Error(), "secret code secret material not found: vault-secret://totp/missing") {
+			t.Fatalf("unexpected missing secret material error: %v", err)
+		}
+	})
+}
+
 func TestRunSecretUpdateRejectsNonLoginItem(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer

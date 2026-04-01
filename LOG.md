@@ -107,3 +107,9 @@
 - Added shared sync-mutation fixtures under `packages/test-vectors` for the deterministic starter put mutation item/event/head and the corresponding delete-mutation head.
 - Exported parsed and canonicalized mutation fixtures from the test-vectors package and extended its Node tests to validate those new vectors.
 - Updated Go sync tests to consume the shared mutation fixtures for replay-delete and mutation-builder expectations instead of hardcoded event and head literals.
+
+## 2026-04-01T09:46:48Z
+
+- Added a consumer-facing `safe secret code <item-id>` CLI command for TOTP items so the starter runtime can now generate 6-digit authenticator codes locally instead of only listing authenticator metadata.
+- Added reusable SHA1 TOTP generation under `internal/crypto` plus local secret-material storage helpers under `internal/storage`, which gives the CLI a real seed-resolution path that can later move behind encrypted local persistence instead of hardcoded demo logic.
+- Added Go tests covering RFC-style TOTP generation, secret-material storage, human and JSON code output, and failure cases for missing secret material or non-TOTP items.

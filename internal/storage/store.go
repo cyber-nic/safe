@@ -179,6 +179,24 @@ func LoadAccountConfigRecord(store ObjectStore, accountID string) (domain.Accoun
 	return domain.ParseAccountConfigRecordJSON(payload)
 }
 
+func StoreSecretMaterial(store ObjectStore, accountID, collectionID, secretRef, secret string) (string, error) {
+	key := SecretMaterialKey(accountID, collectionID, secretRef)
+	if err := store.Put(key, []byte(secret)); err != nil {
+		return "", err
+	}
+
+	return key, nil
+}
+
+func LoadSecretMaterial(store ObjectStore, accountID, collectionID, secretRef string) (string, error) {
+	payload, err := store.Get(SecretMaterialKey(accountID, collectionID, secretRef))
+	if err != nil {
+		return "", err
+	}
+
+	return string(payload), nil
+}
+
 type objectNotFoundError string
 
 func (key objectNotFoundError) Error() string {

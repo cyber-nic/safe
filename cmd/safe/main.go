@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	safecrypto "github.com/ndelorme/safe/internal/crypto"
 	"github.com/ndelorme/safe/internal/domain"
 	"github.com/ndelorme/safe/internal/storage"
 	safesync "github.com/ndelorme/safe/internal/sync"
@@ -41,6 +42,8 @@ type cliState struct {
 type cliOptions struct {
 	json bool
 }
+
+var nowFunc = time.Now
 
 func main() {
 	if err := runWithIO(os.Args[1:], os.Stdin, os.Stdout); err != nil {
@@ -129,6 +132,9 @@ func bootstrapCLIState() (cliState, error) {
 		return cliState{}, err
 	}
 	if _, err := storage.StoreCollectionHeadRecord(store, domain.StarterCollectionHeadRecord()); err != nil {
+		return cliState{}, err
+	}
+	if _, err := storage.StoreSecretMaterial(store, session.AccountID, "vault-personal", "vault-secret://totp/gmail-primary", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"); err != nil {
 		return cliState{}, err
 	}
 
@@ -229,6 +235,11 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 			return fmt.Errorf("usage: safe secret show <item-id>")
 		}
 		return secretShow(out, state, options, args[1])
+	case "code":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret code <item-id>")
+		}
+		return secretCode(out, state, options, args[1], nowFunc().UTC())
 	case "add":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: safe secret add <title> <username>")
@@ -364,6 +375,56 @@ func secretShow(out io.Writer, state cliState, options cliOptions, itemID string
 		fmt.Fprintf(out, "- issuer=%s account=%s digits=%d period=%d algorithm=%s secretRef=%s\n", item.Issuer, item.AccountName, item.Digits, item.PeriodSeconds, item.Algorithm, item.SecretRef)
 	}
 
+	return nil
+}
+
+func secretCode(out io.Writer, state cliState, options cliOptions, itemID string, at time.Time) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	record, ok := projection.Items[itemID]
+	if !ok {
+		return fmt.Errorf("secret not found: %s", itemID)
+	}
+	if record.Item.Kind != domain.VaultItemKindTOTP {
+		return fmt.Errorf("secret code only supports totp items: %s", itemID)
+	}
+
+	secret, err := storage.LoadSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, record.Item.SecretRef)
+	if err != nil {
+		return fmt.Errorf("secret code secret material not found: %s", record.Item.SecretRef)
+	}
+
+	code, err := safecrypto.GenerateTOTP(secret, at, record.Item.Digits, record.Item.PeriodSeconds, record.Item.Algorithm)
+	if err != nil {
+		return err
+	}
+
+	generatedAt := at.UTC()
+	expiresAt := generatedAt.Truncate(time.Duration(record.Item.PeriodSeconds) * time.Second).Add(time.Duration(record.Item.PeriodSeconds) * time.Second)
+
+	if options.json {
+		return writeJSON(out, struct {
+			ItemID        string `json:"itemId"`
+			Title         string `json:"title"`
+			Code          string `json:"code"`
+			GeneratedAt   string `json:"generatedAt"`
+			ExpiresAt     string `json:"expiresAt"`
+			PeriodSeconds int    `json:"periodSeconds"`
+		}{
+			ItemID:        itemID,
+			Title:         record.Item.Title,
+			Code:          code,
+			GeneratedAt:   generatedAt.Format(time.RFC3339),
+			ExpiresAt:     expiresAt.Format(time.RFC3339),
+			PeriodSeconds: record.Item.PeriodSeconds,
+		})
+	}
+
+	fmt.Fprintln(out, "secret code:")
+	fmt.Fprintf(out, "- id=%s title=%s code=%s generatedAt=%s expiresAt=%s\n", itemID, record.Item.Title, code, generatedAt.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 	return nil
 }
 

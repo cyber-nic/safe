@@ -193,3 +193,25 @@ func TestStoreAndLoadAccountConfigRecord(t *testing.T) {
 		t.Fatalf("unexpected loaded account config: %+v", loaded)
 	}
 }
+
+func TestStoreAndLoadSecretMaterial(t *testing.T) {
+	store := NewMemoryObjectStore()
+
+	key, err := StoreSecretMaterial(store, "acct-dev-001", "vault-personal", "vault-secret://totp/gmail-primary", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+	if err != nil {
+		t.Fatalf("store secret material: %v", err)
+	}
+
+	if key == "" {
+		t.Fatal("expected secret material key")
+	}
+
+	loaded, err := LoadSecretMaterial(store, "acct-dev-001", "vault-personal", "vault-secret://totp/gmail-primary")
+	if err != nil {
+		t.Fatalf("load secret material: %v", err)
+	}
+
+	if loaded != "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" {
+		t.Fatalf("unexpected loaded secret material: %s", loaded)
+	}
+}
