@@ -83,3 +83,9 @@
 - Added sync-side head verification so replay can now assert that a collection head's latest sequence and latest event actually match the appended event log instead of trusting mutable head state blindly.
 - Added an explicit monotonic trusted-head helper that rejects stale heads and same-sequence different-event mismatches as the first concrete rollback-detection primitive in the sync package.
 - Wired the CLI through verified head-plus-event loading and added tests covering mismatched head rejection on both read and write paths.
+
+## 2026-04-01T09:29:47Z
+
+- Added `CollectionHeadRecord` and `AccountConfigRecord` parsing and canonical serialization helpers to the TypeScript SDK so mutable metadata records now have TS-side protocol support alongside the Go sync package.
+- Added `ensureMonotonicHead` to the TypeScript SDK to mirror the new Go rollback-detection primitive for stale heads and same-sequence divergent heads.
+- Extended the TS SDK Node test suite with coverage for canonical collection-head and account-config records plus monotonic-head acceptance and rejection cases.

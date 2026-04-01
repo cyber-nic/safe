@@ -59,6 +59,22 @@ export type VaultItemRecord = {
   item: VaultItem;
 };
 
+export type CollectionHeadRecord = {
+  schemaVersion: 1;
+  accountId: string;
+  collectionId: string;
+  latestEventId: string;
+  latestSeq: number;
+};
+
+export type AccountConfigRecord = {
+  schemaVersion: 1;
+  accountId: string;
+  defaultCollectionId: string;
+  collectionIds: string[];
+  deviceIds: string[];
+};
+
 export type VaultEventAction = "put_item" | "delete_item";
 
 type VaultEventRecordBase = {
@@ -82,6 +98,13 @@ export type DeleteItemEventRecord = VaultEventRecordBase & {
 };
 
 export type VaultEventRecord = PutItemEventRecord | DeleteItemEventRecord;
+
+export type CollectionHeadValidationErrorField =
+  | "schemaVersion"
+  | "accountId"
+  | "collectionId"
+  | "latestEventId"
+  | "latestSeq";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -133,6 +156,36 @@ export function createVaultItemRecord(item: VaultItem): VaultItemRecord {
   return {
     schemaVersion: 1,
     item,
+  };
+}
+
+export function createCollectionHeadRecord(input: {
+  accountId: string;
+  collectionId: string;
+  latestEventId: string;
+  latestSeq: number;
+}): CollectionHeadRecord {
+  return {
+    schemaVersion: 1,
+    accountId: input.accountId,
+    collectionId: input.collectionId,
+    latestEventId: input.latestEventId,
+    latestSeq: input.latestSeq,
+  };
+}
+
+export function createAccountConfigRecord(input: {
+  accountId: string;
+  defaultCollectionId: string;
+  collectionIds: string[];
+  deviceIds: string[];
+}): AccountConfigRecord {
+  return {
+    schemaVersion: 1,
+    accountId: input.accountId,
+    defaultCollectionId: input.defaultCollectionId,
+    collectionIds: input.collectionIds,
+    deviceIds: input.deviceIds,
   };
 }
 
@@ -344,6 +397,63 @@ export function parseVaultEventRecords(values: unknown): VaultEventRecord[] {
   return values.map(parseVaultEventRecord);
 }
 
+export function parseCollectionHeadRecord(value: unknown): CollectionHeadRecord {
+  if (!isRecord(value)) {
+    throw new Error("invalid collection head record");
+  }
+
+  if (value.schemaVersion !== 1) {
+    throw new Error("invalid collection head record field: schemaVersion");
+  }
+
+  const latestSeq = value.latestSeq;
+  if (
+    typeof latestSeq !== "number" ||
+    !Number.isInteger(latestSeq) ||
+    latestSeq < 1
+  ) {
+    throw new Error("invalid collection head record field: latestSeq");
+  }
+
+  return {
+    schemaVersion: 1,
+    accountId: expectString(value.accountId, "accountId"),
+    collectionId: expectString(value.collectionId, "collectionId"),
+    latestEventId: expectString(value.latestEventId, "latestEventId"),
+    latestSeq,
+  };
+}
+
+export function parseAccountConfigRecord(value: unknown): AccountConfigRecord {
+  if (!isRecord(value)) {
+    throw new Error("invalid account config record");
+  }
+
+  if (value.schemaVersion !== 1) {
+    throw new Error("invalid account config record field: schemaVersion");
+  }
+
+  const collectionIds = expectStringArray(value.collectionIds, "collectionIds");
+  const deviceIds = expectStringArray(value.deviceIds, "deviceIds");
+  if (collectionIds.length === 0) {
+    throw new Error("invalid account config record field: collectionIds");
+  }
+  if (deviceIds.length === 0) {
+    throw new Error("invalid account config record field: deviceIds");
+  }
+
+  return {
+    schemaVersion: 1,
+    accountId: expectString(value.accountId, "accountId"),
+    defaultCollectionId: expectString(
+      value.defaultCollectionId,
+      "defaultCollectionId",
+    ),
+    collectionIds,
+    deviceIds,
+  };
+}
+
 function canonicalVaultItemShape(item: VaultItem): Record<string, unknown> {
   switch (item.kind) {
     case "login":
@@ -436,6 +546,58 @@ export function serializeCanonicalVaultEventRecord(record: VaultEventRecord): st
     action: record.action,
     itemId: record.itemId,
   });
+}
+
+export function serializeCanonicalCollectionHeadRecord(
+  record: CollectionHeadRecord,
+): string {
+  return JSON.stringify({
+    schemaVersion: record.schemaVersion,
+    accountId: record.accountId,
+    collectionId: record.collectionId,
+    latestEventId: record.latestEventId,
+    latestSeq: record.latestSeq,
+  });
+}
+
+export function serializeCanonicalAccountConfigRecord(
+  record: AccountConfigRecord,
+): string {
+  return JSON.stringify({
+    schemaVersion: record.schemaVersion,
+    accountId: record.accountId,
+    defaultCollectionId: record.defaultCollectionId,
+    collectionIds: record.collectionIds,
+    deviceIds: record.deviceIds,
+  });
+}
+
+export function ensureMonotonicHead(
+  trusted: CollectionHeadRecord,
+  candidate: CollectionHeadRecord,
+): void {
+  if (trusted.accountId !== candidate.accountId) {
+    throw new Error("sync replay invariant violated: trustedHead.accountId");
+  }
+
+  if (trusted.collectionId !== candidate.collectionId) {
+    throw new Error("sync replay invariant violated: trustedHead.collectionId");
+  }
+
+  if (candidate.latestSeq < trusted.latestSeq) {
+    throw new Error(
+      `sync stale head rejected: trusted ${trusted.latestSeq} candidate ${candidate.latestSeq}`,
+    );
+  }
+
+  if (
+    candidate.latestSeq === trusted.latestSeq &&
+    candidate.latestEventId !== trusted.latestEventId
+  ) {
+    throw new Error(
+      `sync head mismatch: latestEventId expected ${trusted.latestEventId} got ${candidate.latestEventId}`,
+    );
+  }
 }
 
 export function describeVaultItem(item: VaultItem): string {
