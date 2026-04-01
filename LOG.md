@@ -173,3 +173,9 @@
 - Updated the implementation plan to make the first real user loop explicit: sign in, save a secret, and read that secret back safely in a real client before expanding further surface area.
 - Clarified in the plan that fixture-backed workspace richness and broad starter command coverage do not count as critical-path progress when the save/read loop still depends on starter or in-memory state.
 - Updated `PRODUCT.md` and `README.md` so the product framing and immediate next steps now reinforce that same priority order instead of encouraging more secondary surface work first.
+
+## 2026-04-01T11:32:56Z
+
+- Added replay-backed web snapshot persistence helpers so the client can save and reload a locked vault workspace from browser-style storage across restarts without inventing a separate demo state model.
+- Kept persisted snapshots intentionally narrow by storing only account config, trusted head, event log, and query state while excluding TOTP secret material and generated codes, which preserves the path toward proper encrypted local storage instead of baking in unsafe plaintext persistence.
+- Added web tests covering locked snapshot serialization, save-load-clear behavior, and restart-style rehydration, and wired `make test` to include the web package test suite.
