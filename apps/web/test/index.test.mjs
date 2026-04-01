@@ -10,8 +10,11 @@ import {
   sampleVaultItemRecords,
 } from "../../../packages/test-vectors/src/index.ts";
 import {
+  addLoginToVaultWorkspace,
+  addTotpToVaultWorkspace,
   createUnlockedVaultWorkspace,
   createVaultWorkspace,
+  deleteItemFromVaultWorkspace,
   unlockVaultWorkspace,
   webBootstrap,
 } from "../src/index.ts";
@@ -132,4 +135,74 @@ test("createUnlockedVaultWorkspace preserves locked state without secret materia
 
   assert.equal(workspace.authenticators[0].status, "locked");
   assert.equal(workspace.authenticators[0].code, null);
+});
+
+test("addLoginToVaultWorkspace appends a replay-backed login mutation", async () => {
+  const result = await addLoginToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "GitHub",
+    username: "alice",
+    url: "https://github.com/login",
+    tags: ["dev"],
+    at: new Date("2026-04-01T10:20:00Z"),
+  });
+
+  assert.equal(result.itemId, "login-github-primary");
+  assert.equal(result.workspace.overview.itemCount, 3);
+  assert.equal(result.workspace.overview.latestSeq, 3);
+  assert.equal(result.workspace.items.some((item) => item.id === "login-github-primary"), true);
+  assert.equal(result.workspace.activity[0].eventId, "evt-login-github-primary-v3");
+});
+
+test("addTotpToVaultWorkspace stores secret material and unlocks the new authenticator", async () => {
+  const result = await addTotpToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "GitHub 2FA",
+    issuer: "GitHub",
+    accountName: "alice",
+    secretBase32: "JBSWY3DPEHPK3PXP",
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  assert.equal(result.itemId, "totp-github-primary");
+  assert.equal(
+    result.secretMaterial["vault-secret://totp/github-primary"],
+    "JBSWY3DPEHPK3PXP",
+  );
+  const authenticator = result.workspace.authenticators.find(
+    (card) => card.id === "totp-github-primary",
+  );
+  assert.equal(authenticator?.status, "ready");
+  assert.equal(authenticator?.code, "996554");
+});
+
+test("deleteItemFromVaultWorkspace removes items and totp secret material", async () => {
+  const unlocked = await createUnlockedVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: sampleCollectionHeadRecord,
+    events: sampleVaultEventRecords,
+    starterRecords: sampleVaultItemRecords,
+    secretMaterial: sampleVaultSecretMaterial,
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  const result = await deleteItemFromVaultWorkspace({
+    workspace: unlocked,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    itemId: "totp-gmail-primary",
+    at: new Date("2026-04-01T10:21:00Z"),
+  });
+
+  assert.equal(result.workspace.overview.itemCount, 1);
+  assert.equal(result.workspace.authenticators.length, 0);
+  assert.equal(
+    "vault-secret://totp/gmail-primary" in result.secretMaterial,
+    false,
+  );
+  assert.equal(result.workspace.activity[0].action, "delete_item");
 });

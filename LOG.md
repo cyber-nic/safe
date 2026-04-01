@@ -131,3 +131,9 @@
 - Added browser-compatible TOTP generation to the TypeScript SDK via Web Crypto, including RFC-style code generation and window metadata helpers for `totp` vault items so the web stack can produce local authenticator codes instead of only listing authenticator records.
 - Exported shared starter secret material from `@safe/test-vectors` and wired the web workspace through `unlockVaultWorkspace` and `createUnlockedVaultWorkspace`, which upgrades authenticator cards from locked metadata to live local codes when secret material is available without introducing server-side or demo-only state.
 - Extended the TS SDK, test-vectors, and web Node test suites with coverage for TOTP generation, starter secret material, unlocked authenticator cards, and locked-without-secret behavior.
+
+## 2026-04-01T10:21:37Z
+
+- Added replay-backed web mutation helpers for local-first vault writes: `addLoginToVaultWorkspace`, `addTotpToVaultWorkspace`, and `deleteItemFromVaultWorkspace`, all of which generate normal event-log mutations and rebuild the workspace from the updated head and events instead of mutating ad hoc UI state.
+- Extended the web workspace model to retain the trusted replay inputs it was built from, which gives future UI code a stable path for local writes, filtering continuity, and authenticator refresh after mutations.
+- Added web tests covering login creation, authenticator creation with secret-material carry-forward and immediate code generation, and delete flows that remove TOTP secret material alongside the deleted item.

@@ -1,4 +1,8 @@
 import {
+  buildDeleteItemMutation,
+  buildPutItemMutation,
+  createTotpItem,
+  createVaultItemRecord,
   describeVaultItem,
   generateTotpCodeForItem,
   isTotpItem,
@@ -84,6 +88,10 @@ export type ActivityEntry = {
 };
 
 export type VaultWorkspace = {
+  accountConfig: AccountConfigRecord;
+  head: CollectionHeadRecord;
+  events: VaultEventRecord[];
+  query: VaultWorkspaceQuery;
   overview: VaultOverview;
   spotlight: VaultSpotlightCard[];
   items: VaultListEntry[];
@@ -93,6 +101,12 @@ export type VaultWorkspace = {
   availableTags: string[];
   itemRecords: VaultItemRecord[];
   starterRecords: VaultItemRecord[];
+};
+
+export type VaultWorkspaceUpdate = {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  itemId: string;
 };
 
 function normalizeSearchValue(value: string): string {
@@ -306,6 +320,37 @@ function buildAvailableTags(items: VaultItem[]): string[] {
   );
 }
 
+function normalizeSecretBase32(secretBase32: string): string {
+  const normalized = secretBase32
+    .toUpperCase()
+    .replaceAll("=", "")
+    .replace(/\s+/g, "");
+
+  if (normalized === "") {
+    throw new Error("invalid totp secret: empty secret");
+  }
+
+  if (!/^[A-Z2-7]+$/.test(normalized)) {
+    throw new Error("invalid totp secret: invalid base32 input");
+  }
+
+  return normalized;
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (slug === "") {
+    throw new Error("invalid item slug: empty value");
+  }
+
+  return slug;
+}
+
 export function createVaultWorkspace(input: {
   accountConfig: AccountConfigRecord;
   head: CollectionHeadRecord;
@@ -327,6 +372,10 @@ export function createVaultWorkspace(input: {
   const sortedEvents = sortEvents(input.events);
 
   return {
+    accountConfig: input.accountConfig,
+    head: input.head,
+    events: input.events,
+    query,
     overview: {
       accountId: input.accountConfig.accountId,
       defaultCollectionId: input.accountConfig.defaultCollectionId,
@@ -427,6 +476,180 @@ export async function unlockVaultWorkspace(input: {
   return {
     ...input.workspace,
     authenticators,
+  };
+}
+
+async function rebuildWorkspace(input: {
+  workspace: VaultWorkspace;
+  head: CollectionHeadRecord;
+  events: VaultEventRecord[];
+  secretMaterial: VaultSecretMaterial;
+  at?: Date;
+}): Promise<VaultWorkspace> {
+  return createUnlockedVaultWorkspace({
+    accountConfig: input.workspace.accountConfig,
+    head: input.head,
+    events: input.events,
+    starterRecords: input.workspace.starterRecords,
+    query: input.workspace.query,
+    secretMaterial: input.secretMaterial,
+    at: input.at,
+  });
+}
+
+export async function addLoginToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  title: string;
+  username: string;
+  url: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const title = input.title.trim();
+  const username = input.username.trim();
+  const url = input.url.trim();
+  if (title === "") {
+    throw new Error("invalid login item: title");
+  }
+  if (username === "") {
+    throw new Error("invalid login item: username");
+  }
+  if (url === "") {
+    throw new Error("invalid login item: url");
+  }
+
+  const itemId = `login-${slugify(title)}-primary`;
+  const mutation = buildPutItemMutation(
+    input.workspace.head,
+    input.deviceId,
+    createVaultItemRecord({
+      id: itemId,
+      kind: "login",
+      title,
+      tags: input.tags ?? ["manual"],
+      username,
+      urls: [url],
+    }),
+    (input.at ?? new Date()).toISOString(),
+  );
+  const events = [...input.workspace.events, mutation.event];
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head: mutation.newHead,
+      events,
+      secretMaterial: input.secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial: input.secretMaterial,
+    itemId,
+  };
+}
+
+export async function addTotpToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  title: string;
+  issuer: string;
+  accountName: string;
+  secretBase32: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const title = input.title.trim();
+  const issuer = input.issuer.trim();
+  const accountName = input.accountName.trim();
+  if (title === "") {
+    throw new Error("invalid totp item: title");
+  }
+  if (issuer === "") {
+    throw new Error("invalid totp item: issuer");
+  }
+  if (accountName === "") {
+    throw new Error("invalid totp item: accountName");
+  }
+
+  const slug = slugify(issuer);
+  const itemId = `totp-${slug}-primary`;
+  const secretRef = `vault-secret://totp/${slug}-primary`;
+  const secretMaterial = {
+    ...input.secretMaterial,
+    [secretRef]: normalizeSecretBase32(input.secretBase32),
+  };
+  const mutation = buildPutItemMutation(
+    input.workspace.head,
+    input.deviceId,
+    createVaultItemRecord(
+      createTotpItem({
+        id: itemId,
+        title,
+        issuer,
+        accountName,
+        secretRef,
+        tags: input.tags ?? ["2fa", "authenticator"],
+      }),
+    ),
+    (input.at ?? new Date()).toISOString(),
+  );
+  const events = [...input.workspace.events, mutation.event];
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head: mutation.newHead,
+      events,
+      secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial,
+    itemId,
+  };
+}
+
+export async function deleteItemFromVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+
+  const mutation = buildDeleteItemMutation(
+    input.workspace.head,
+    input.deviceId,
+    input.itemId,
+    (input.at ?? new Date()).toISOString(),
+  );
+  const events = [...input.workspace.events, mutation.event];
+  const secretMaterial =
+    record.item.kind === "totp"
+      ? Object.fromEntries(
+          Object.entries(input.secretMaterial).filter(
+            ([secretRef]) => secretRef !== record.item.secretRef,
+          ),
+        )
+      : input.secretMaterial;
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head: mutation.newHead,
+      events,
+      secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial,
+    itemId: input.itemId,
   };
 }
 
