@@ -314,6 +314,100 @@ func TestRunSecretCodeJSON(t *testing.T) {
 	})
 }
 
+func TestRunSecretAddTOTP(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		previousNowFunc := nowFunc
+		nowFunc = func() time.Time { return time.Unix(59, 0).UTC() }
+		defer func() { nowFunc = previousNowFunc }()
+
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var addBuffer bytes.Buffer
+		if err := secretAddTOTP(&addBuffer, state, cliOptions{}, "GitHub 2FA", "GitHub", "alice", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"); err != nil {
+			t.Fatalf("add totp item: %v", err)
+		}
+
+		addOutput := addBuffer.String()
+		if !strings.Contains(addOutput, "secret add-totp:") {
+			t.Fatalf("expected add-totp output, got %s", addOutput)
+		}
+		if !strings.Contains(addOutput, "added=GitHub 2FA issuer=GitHub account=alice") {
+			t.Fatalf("expected add-totp summary, got %s", addOutput)
+		}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, state, cliOptions{}, "totp-github-2fa-primary"); err != nil {
+			t.Fatalf("show added totp item: %v", err)
+		}
+		if !strings.Contains(showBuffer.String(), "kind=totp title=GitHub 2FA") {
+			t.Fatalf("expected added totp show output, got %s", showBuffer.String())
+		}
+
+		var codeBuffer bytes.Buffer
+		if err := secretCode(&codeBuffer, state, cliOptions{}, "totp-github-2fa-primary", nowFunc().UTC()); err != nil {
+			t.Fatalf("code for added totp item: %v", err)
+		}
+		if !strings.Contains(codeBuffer.String(), "code=287082") {
+			t.Fatalf("expected stable code for added totp item, got %s", codeBuffer.String())
+		}
+	})
+}
+
+func TestRunSecretAddTOTPJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "add-totp", "GitHub 2FA", "GitHub", "alice", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}, &buffer); err != nil {
+			t.Fatalf("run add-totp json: %v", err)
+		}
+
+		var payload struct {
+			Item struct {
+				ID          string `json:"id"`
+				Kind        string `json:"kind"`
+				Title       string `json:"title"`
+				Issuer      string `json:"issuer"`
+				AccountName string `json:"accountName"`
+				SecretRef   string `json:"secretRef"`
+			} `json:"item"`
+			EventID   string `json:"eventId"`
+			LatestSeq int    `json:"latestSeq"`
+			ItemCount int    `json:"itemCount"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode add-totp json: %v", err)
+		}
+
+		if payload.Item.ID != "totp-github-2fa-primary" || payload.Item.Kind != "totp" {
+			t.Fatalf("unexpected add-totp payload: %+v", payload)
+		}
+		if payload.LatestSeq != 3 || payload.ItemCount != 3 {
+			t.Fatalf("unexpected add-totp counts: %+v", payload)
+		}
+	})
+}
+
+func TestSecretAddTOTPRejectsInvalidSecret(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var buffer bytes.Buffer
+		err = secretAddTOTP(&buffer, state, cliOptions{}, "GitHub 2FA", "GitHub", "alice", "not-base32!")
+		if err == nil {
+			t.Fatal("expected invalid secret error")
+		}
+
+		if !strings.Contains(err.Error(), "invalid totp secret") {
+			t.Fatalf("unexpected invalid secret error: %v", err)
+		}
+	})
+}
+
 func TestSecretCodeRejectsNonTOTPItem(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		state, err := bootstrapCLIState()

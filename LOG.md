@@ -113,3 +113,9 @@
 - Added a consumer-facing `safe secret code <item-id>` CLI command for TOTP items so the starter runtime can now generate 6-digit authenticator codes locally instead of only listing authenticator metadata.
 - Added reusable SHA1 TOTP generation under `internal/crypto` plus local secret-material storage helpers under `internal/storage`, which gives the CLI a real seed-resolution path that can later move behind encrypted local persistence instead of hardcoded demo logic.
 - Added Go tests covering RFC-style TOTP generation, secret-material storage, human and JSON code output, and failure cases for missing secret material or non-TOTP items.
+
+## 2026-04-01T09:49:55Z
+
+- Added a consumer-facing `safe secret add-totp <title> <issuer> <account-name> <secret-base32>` command so users can now create authenticator entries through the CLI instead of relying on starter fixtures or raw import payloads.
+- Wired `add-totp` through the same local secret-material storage path and event-log mutation flow as the existing vault commands, so the new authenticator setup path remains aligned with the planned local-vault runtime rather than introducing demo-only state.
+- Added CLI tests covering human and JSON `add-totp` output, immediate `secret show` and `secret code` use of newly added authenticators, and invalid-secret rejection.

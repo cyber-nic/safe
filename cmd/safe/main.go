@@ -240,6 +240,11 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 			return fmt.Errorf("usage: safe secret code <item-id>")
 		}
 		return secretCode(out, state, options, args[1], nowFunc().UTC())
+	case "add-totp":
+		if len(args) < 5 {
+			return fmt.Errorf("usage: safe secret add-totp <title> <issuer> <account-name> <secret-base32>")
+		}
+		return secretAddTOTP(out, state, options, args[1], args[2], args[3], args[4])
 	case "add":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: safe secret add <title> <username>")
@@ -425,6 +430,59 @@ func secretCode(out io.Writer, state cliState, options cliOptions, itemID string
 
 	fmt.Fprintln(out, "secret code:")
 	fmt.Fprintf(out, "- id=%s title=%s code=%s generatedAt=%s expiresAt=%s\n", itemID, record.Item.Title, code, generatedAt.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
+	return nil
+}
+
+func secretAddTOTP(out io.Writer, state cliState, options cliOptions, title, issuer, accountName, secretBase32 string) error {
+	normalizedSecret := strings.ToUpper(strings.ReplaceAll(secretBase32, " ", ""))
+	if _, err := safecrypto.GenerateTOTP(normalizedSecret, time.Unix(0, 0).UTC(), 6, 30, "SHA1"); err != nil {
+		return fmt.Errorf("invalid totp secret: %w", err)
+	}
+
+	slug := slugify(title)
+	itemID := fmt.Sprintf("totp-%s-primary", slug)
+	secretRef := fmt.Sprintf("vault-secret://totp/%s-primary", slug)
+	if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, normalizedSecret); err != nil {
+		return err
+	}
+
+	itemRecord := domain.VaultItemRecord{
+		SchemaVersion: 1,
+		Item: domain.VaultItem{
+			ID:            itemID,
+			Kind:          domain.VaultItemKindTOTP,
+			Title:         title,
+			Tags:          []string{"2fa", "authenticator"},
+			Issuer:        issuer,
+			AccountName:   accountName,
+			Digits:        6,
+			PeriodSeconds: 30,
+			Algorithm:     "SHA1",
+			SecretRef:     secretRef,
+		},
+	}
+
+	projection, newEvent, err := persistItemMutation(state, itemRecord, "2026-03-31T10:02:30Z")
+	if err != nil {
+		return err
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			Item      domain.VaultItem `json:"item"`
+			EventID   string           `json:"eventId"`
+			LatestSeq int              `json:"latestSeq"`
+			ItemCount int              `json:"itemCount"`
+		}{
+			Item:      itemRecord.Item,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
+	fmt.Fprintln(out, "secret add-totp:")
+	fmt.Fprintf(out, "- added=%s issuer=%s account=%s event=%s latestSeq=%d items=%d\n", title, issuer, accountName, newEvent.EventID, projection.LatestSeq, len(projection.Items))
 	return nil
 }
 
