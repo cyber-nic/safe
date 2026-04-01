@@ -53,3 +53,9 @@
 - Extended the Go domain model to validate, summarize, and canonically serialize `note`, `apiKey`, and `sshKey` items so it now matches the broader TypeScript item taxonomy instead of only accepting `login` and `totp`.
 - Updated CLI secret rendering and import parsing so those additional item kinds can round-trip through `safe secret import` and `safe secret show` without being rejected or misparsed.
 - Added domain and CLI tests covering the new item-kind validation paths plus note, API key, and SSH key import/show/search flows.
+
+## 2026-04-01T08:58:27Z
+
+- Added `delete_item` support to the TypeScript SDK event model so TS protocol parsing and canonical serialization now match the Go domain and CLI behavior.
+- Added `createDeleteItemEventRecord` plus branching delete-event handling in `parseVaultEventRecord` and `serializeCanonicalVaultEventRecord`.
+- Added a lightweight Node test suite for the TS SDK covering delete-event creation, parsing, canonical serialization, and regression coverage for existing put-item serialization.

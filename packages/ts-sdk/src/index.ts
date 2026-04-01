@@ -59,9 +59,9 @@ export type VaultItemRecord = {
   item: VaultItem;
 };
 
-export type VaultEventAction = "put_item";
+export type VaultEventAction = "put_item" | "delete_item";
 
-export type VaultEventRecord = {
+type VaultEventRecordBase = {
   schemaVersion: 1;
   eventId: string;
   accountId: string;
@@ -69,9 +69,19 @@ export type VaultEventRecord = {
   collectionId: string;
   sequence: number;
   occurredAt: string;
-  action: VaultEventAction;
+};
+
+export type PutItemEventRecord = VaultEventRecordBase & {
+  action: "put_item";
   itemRecord: VaultItemRecord;
 };
+
+export type DeleteItemEventRecord = VaultEventRecordBase & {
+  action: "delete_item";
+  itemId: string;
+};
+
+export type VaultEventRecord = PutItemEventRecord | DeleteItemEventRecord;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -145,6 +155,28 @@ export function createPutItemEventRecord(input: {
     occurredAt: input.occurredAt,
     action: "put_item",
     itemRecord: input.itemRecord,
+  };
+}
+
+export function createDeleteItemEventRecord(input: {
+  eventId: string;
+  accountId: string;
+  deviceId: string;
+  collectionId: string;
+  sequence: number;
+  occurredAt: string;
+  itemId: string;
+}): DeleteItemEventRecord {
+  return {
+    schemaVersion: 1,
+    eventId: input.eventId,
+    accountId: input.accountId,
+    deviceId: input.deviceId,
+    collectionId: input.collectionId,
+    sequence: input.sequence,
+    occurredAt: input.occurredAt,
+    action: "delete_item",
+    itemId: input.itemId,
   };
 }
 
@@ -273,21 +305,35 @@ export function parseVaultEventRecord(value: unknown): VaultEventRecord {
     throw new Error("invalid vault event record field: sequence");
   }
 
-  if (value.action !== "put_item") {
-    throw new Error("invalid vault event record field: action");
+  if (value.action === "put_item") {
+    return {
+      schemaVersion: 1,
+      eventId,
+      accountId,
+      deviceId,
+      collectionId,
+      sequence: value.sequence,
+      occurredAt,
+      action: "put_item",
+      itemRecord: parseVaultItemRecord(value.itemRecord),
+    };
   }
 
-  return {
-    schemaVersion: 1,
-    eventId,
-    accountId,
-    deviceId,
-    collectionId,
-    sequence: value.sequence,
-    occurredAt,
-    action: "put_item",
-    itemRecord: parseVaultItemRecord(value.itemRecord),
-  };
+  if (value.action === "delete_item") {
+    return {
+      schemaVersion: 1,
+      eventId,
+      accountId,
+      deviceId,
+      collectionId,
+      sequence: value.sequence,
+      occurredAt,
+      action: "delete_item",
+      itemId: expectString(value.itemId, "itemId"),
+    };
+  }
+
+  throw new Error("invalid vault event record field: action");
 }
 
 export function parseVaultEventRecords(values: unknown): VaultEventRecord[] {
@@ -362,6 +408,23 @@ export function serializeCanonicalVaultItemRecord(record: VaultItemRecord): stri
 }
 
 export function serializeCanonicalVaultEventRecord(record: VaultEventRecord): string {
+  if (record.action === "put_item") {
+    return JSON.stringify({
+      schemaVersion: record.schemaVersion,
+      eventId: record.eventId,
+      accountId: record.accountId,
+      deviceId: record.deviceId,
+      collectionId: record.collectionId,
+      sequence: record.sequence,
+      occurredAt: record.occurredAt,
+      action: record.action,
+      itemRecord: {
+        schemaVersion: record.itemRecord.schemaVersion,
+        item: canonicalVaultItemShape(record.itemRecord.item),
+      },
+    });
+  }
+
   return JSON.stringify({
     schemaVersion: record.schemaVersion,
     eventId: record.eventId,
@@ -371,10 +434,7 @@ export function serializeCanonicalVaultEventRecord(record: VaultEventRecord): st
     sequence: record.sequence,
     occurredAt: record.occurredAt,
     action: record.action,
-    itemRecord: {
-      schemaVersion: record.itemRecord.schemaVersion,
-      item: canonicalVaultItemShape(record.itemRecord.item),
-    },
+    itemId: record.itemId,
   });
 }
 
