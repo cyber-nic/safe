@@ -137,3 +137,9 @@
 - Added replay-backed web mutation helpers for local-first vault writes: `addLoginToVaultWorkspace`, `addTotpToVaultWorkspace`, and `deleteItemFromVaultWorkspace`, all of which generate normal event-log mutations and rebuild the workspace from the updated head and events instead of mutating ad hoc UI state.
 - Extended the web workspace model to retain the trusted replay inputs it was built from, which gives future UI code a stable path for local writes, filtering continuity, and authenticator refresh after mutations.
 - Added web tests covering login creation, authenticator creation with secret-material carry-forward and immediate code generation, and delete flows that remove TOTP secret material alongside the deleted item.
+
+## 2026-04-01T10:33:52Z
+
+- Added consumer-facing web item recovery helpers: `getVaultItemDetail`, `listDeletedVaultItems`, and `restoreItemToVaultWorkspace`, so the web client can inspect per-item history, surface deleted records, and replay restores through the normal event log instead of relying on out-of-band state.
+- Extended the web workspace model with reusable item-history and latest-record helpers, which keeps detail views, deleted-item listings, and restore behavior aligned with the same replayed event source that powers the active vault view.
+- Added web tests covering active item detail history, deleted-item discovery, successful restore after delete, and rejection paths for restoring active or unknown items.

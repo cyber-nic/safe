@@ -15,6 +15,9 @@ import {
   createUnlockedVaultWorkspace,
   createVaultWorkspace,
   deleteItemFromVaultWorkspace,
+  getVaultItemDetail,
+  listDeletedVaultItems,
+  restoreItemToVaultWorkspace,
   unlockVaultWorkspace,
   webBootstrap,
 } from "../src/index.ts";
@@ -205,4 +208,76 @@ test("deleteItemFromVaultWorkspace removes items and totp secret material", asyn
     false,
   );
   assert.equal(result.workspace.activity[0].action, "delete_item");
+});
+
+test("getVaultItemDetail returns active item history", () => {
+  const detail = getVaultItemDetail(webBootstrap, "login-gmail-primary");
+
+  assert.equal(detail.status, "active");
+  assert.equal(detail.title, "Gmail");
+  assert.equal(detail.history.length, 1);
+  assert.equal(detail.history[0].action, "put_item");
+  assert.equal(detail.canRestore, false);
+});
+
+test("listDeletedVaultItems surfaces deleted records and restoreItemToVaultWorkspace replays them back", async () => {
+  const deleted = await deleteItemFromVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    itemId: "login-gmail-primary",
+    at: new Date("2026-04-01T10:30:00Z"),
+  });
+
+  const deletedItems = listDeletedVaultItems(deleted.workspace);
+  assert.equal(deletedItems.length, 1);
+  assert.equal(deletedItems[0].id, "login-gmail-primary");
+  assert.equal(deletedItems[0].title, "Gmail");
+
+  const deletedDetail = getVaultItemDetail(
+    deleted.workspace,
+    "login-gmail-primary",
+  );
+  assert.equal(deletedDetail.status, "deleted");
+  assert.equal(deletedDetail.canRestore, true);
+  assert.equal(deletedDetail.history[0].action, "delete_item");
+
+  const restored = await restoreItemToVaultWorkspace({
+    workspace: deleted.workspace,
+    secretMaterial: deleted.secretMaterial,
+    deviceId: "dev-web-001",
+    itemId: "login-gmail-primary",
+    at: new Date("2026-04-01T10:31:00Z"),
+  });
+
+  assert.equal(restored.workspace.overview.itemCount, 2);
+  assert.equal(
+    restored.workspace.items.some((item) => item.id === "login-gmail-primary"),
+    true,
+  );
+  assert.equal(restored.workspace.activity[0].action, "put_item");
+});
+
+test("restoreItemToVaultWorkspace rejects active and unknown items", async () => {
+  await assert.rejects(
+    () =>
+      restoreItemToVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "login-gmail-primary",
+      }),
+    /vault item already active: login-gmail-primary/,
+  );
+
+  await assert.rejects(
+    () =>
+      restoreItemToVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "missing-item",
+      }),
+    /vault item version not found: missing-item/,
+  );
 });

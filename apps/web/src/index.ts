@@ -109,6 +109,38 @@ export type VaultWorkspaceUpdate = {
   itemId: string;
 };
 
+export type VaultItemHistoryEntry = {
+  eventId: string;
+  sequence: number;
+  occurredAt: string;
+  action: VaultEventAction;
+  title: string;
+  kind: VaultItemKind | "deleted";
+  summary: string;
+};
+
+export type VaultDeletedItem = {
+  id: string;
+  title: string;
+  kind: VaultItemKind;
+  summary: string;
+  deletedAt: string;
+  deletedEventId: string;
+  lastActiveEventId: string | null;
+};
+
+export type VaultItemDetail = {
+  id: string;
+  status: "active" | "deleted" | "missing";
+  title: string;
+  kind: VaultItemKind | "deleted";
+  summary: string;
+  tags: string[];
+  matchedFields: string[];
+  history: VaultItemHistoryEntry[];
+  canRestore: boolean;
+};
+
 function normalizeSearchValue(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -320,6 +352,63 @@ function buildAvailableTags(items: VaultItem[]): string[] {
   );
 }
 
+function eventTargetsItem(event: VaultEventRecord, itemId: string): boolean {
+  return event.action === "put_item"
+    ? event.itemRecord.item.id === itemId
+    : event.itemId === itemId;
+}
+
+function findLatestItemRecord(
+  events: VaultEventRecord[],
+  itemId: string,
+): VaultItemRecord | null {
+  const ordered = [...events].sort((left, right) => right.sequence - left.sequence);
+
+  for (const event of ordered) {
+    if (event.action === "put_item" && event.itemRecord.item.id === itemId) {
+      return event.itemRecord;
+    }
+  }
+
+  return null;
+}
+
+function buildItemHistoryEntries(
+  events: VaultEventRecord[],
+  itemId: string,
+): VaultItemHistoryEntry[] {
+  const matches = events
+    .filter((event) => eventTargetsItem(event, itemId))
+    .sort((left, right) => right.sequence - left.sequence);
+
+  return matches.map((event) => {
+    if (event.action === "put_item") {
+      return {
+        eventId: event.eventId,
+        sequence: event.sequence,
+        occurredAt: event.occurredAt,
+        action: event.action,
+        title: event.itemRecord.item.title,
+        kind: event.itemRecord.item.kind,
+        summary: describeVaultItem(event.itemRecord.item),
+      };
+    }
+
+    const latestRecord = findLatestItemRecord(events, itemId);
+    return {
+      eventId: event.eventId,
+      sequence: event.sequence,
+      occurredAt: event.occurredAt,
+      action: event.action,
+      title: latestRecord?.item.title ?? itemId,
+      kind: latestRecord?.item.kind ?? "deleted",
+      summary: latestRecord
+        ? `${describeVaultItem(latestRecord.item)} deleted`
+        : `${itemId} deleted`,
+    };
+  });
+}
+
 function normalizeSecretBase32(secretBase32: string): string {
   const normalized = secretBase32
     .toUpperCase()
@@ -497,6 +586,92 @@ async function rebuildWorkspace(input: {
   });
 }
 
+export function getVaultItemDetail(
+  workspace: VaultWorkspace,
+  itemId: string,
+): VaultItemDetail {
+  const activeRecord = workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === itemId,
+  );
+  const history = buildItemHistoryEntries(workspace.events, itemId);
+
+  if (activeRecord) {
+    return {
+      id: itemId,
+      status: "active",
+      title: activeRecord.item.title,
+      kind: activeRecord.item.kind,
+      summary: describeVaultItem(activeRecord.item),
+      tags: activeRecord.item.tags,
+      matchedFields: matchedFieldsForItem(activeRecord.item, workspace.query),
+      history,
+      canRestore: false,
+    };
+  }
+
+  const latestRecord = findLatestItemRecord(workspace.events, itemId);
+  if (latestRecord) {
+    return {
+      id: itemId,
+      status: "deleted",
+      title: latestRecord.item.title,
+      kind: latestRecord.item.kind,
+      summary: describeVaultItem(latestRecord.item),
+      tags: latestRecord.item.tags,
+      matchedFields: matchedFieldsForItem(latestRecord.item, workspace.query),
+      history,
+      canRestore: true,
+    };
+  }
+
+  return {
+    id: itemId,
+    status: "missing",
+    title: itemId,
+    kind: "deleted",
+    summary: "Vault item not found",
+    tags: [],
+    matchedFields: [],
+    history: [],
+    canRestore: false,
+  };
+}
+
+export function listDeletedVaultItems(
+  workspace: VaultWorkspace,
+): VaultDeletedItem[] {
+  const activeIds = new Set(workspace.itemRecords.map((record) => record.item.id));
+  const deletedById = new Map<string, VaultDeletedItem>();
+
+  for (const event of sortEvents(workspace.events)) {
+    if (event.action !== "delete_item" || activeIds.has(event.itemId)) {
+      continue;
+    }
+
+    const latestRecord = findLatestItemRecord(workspace.events, event.itemId);
+    if (!latestRecord) {
+      continue;
+    }
+
+    deletedById.set(event.itemId, {
+      id: event.itemId,
+      title: latestRecord.item.title,
+      kind: latestRecord.item.kind,
+      summary: describeVaultItem(latestRecord.item),
+      deletedAt: event.occurredAt,
+      deletedEventId: event.eventId,
+      lastActiveEventId:
+        buildItemHistoryEntries(workspace.events, event.itemId).find(
+          (entry) => entry.action === "put_item",
+        )?.eventId ?? null,
+    });
+  }
+
+  return [...deletedById.values()].sort((left, right) =>
+    right.deletedAt.localeCompare(left.deletedAt),
+  );
+}
+
 export async function addLoginToVaultWorkspace(input: {
   workspace: VaultWorkspace;
   secretMaterial: VaultSecretMaterial;
@@ -649,6 +824,46 @@ export async function deleteItemFromVaultWorkspace(input: {
       at: input.at,
     }),
     secretMaterial,
+    itemId: input.itemId,
+  };
+}
+
+export async function restoreItemToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const activeRecord = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (activeRecord) {
+    throw new Error(`vault item already active: ${input.itemId}`);
+  }
+
+  const latestRecord = findLatestItemRecord(input.workspace.events, input.itemId);
+  if (!latestRecord) {
+    throw new Error(`vault item version not found: ${input.itemId}`);
+  }
+
+  const mutation = buildPutItemMutation(
+    input.workspace.head,
+    input.deviceId,
+    latestRecord,
+    (input.at ?? new Date()).toISOString(),
+  );
+  const events = [...input.workspace.events, mutation.event];
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head: mutation.newHead,
+      events,
+      secretMaterial: input.secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial: input.secretMaterial,
     itemId: input.itemId,
   };
 }
