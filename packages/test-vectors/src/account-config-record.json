@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "accountId": "acct-dev-001",
+  "defaultCollectionId": "vault-personal",
+  "collectionIds": [
+    "vault-personal"
+  ],
+  "deviceIds": [
+    "dev-web-001"
+  ]
+}

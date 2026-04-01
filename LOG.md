@@ -89,3 +89,9 @@
 - Added `CollectionHeadRecord` and `AccountConfigRecord` parsing and canonical serialization helpers to the TypeScript SDK so mutable metadata records now have TS-side protocol support alongside the Go sync package.
 - Added `ensureMonotonicHead` to the TypeScript SDK to mirror the new Go rollback-detection primitive for stale heads and same-sequence divergent heads.
 - Extended the TS SDK Node test suite with coverage for canonical collection-head and account-config records plus monotonic-head acceptance and rejection cases.
+
+## 2026-04-01T09:32:19Z
+
+- Added shared `collection-head-record.json` and `account-config-record.json` fixtures under `packages/test-vectors` so mutable metadata records now have the same language-neutral vector coverage as vault items and events.
+- Exported parsed and canonicalized collection-head and account-config records from the test-vectors package and extended its Node test suite to verify both forms.
+- Updated Go domain canonicalization tests to compare against the shared mutable-metadata fixtures instead of hardcoded JSON literals.

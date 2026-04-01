@@ -194,9 +194,19 @@ func TestCollectionHeadRecordCanonicalSerialization(t *testing.T) {
 		t.Fatalf("canonicalize collection head: %v", err)
 	}
 
-	expected := `{"schemaVersion":1,"accountId":"acct-dev-001","collectionId":"vault-personal","latestEventId":"evt-totp-gmail-primary-v1","latestSeq":2}`
-	if string(canonical) != expected {
-		t.Fatalf("collection head canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", "collection-head-record.json")
+	expectedBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read collection head fixture: %v", err)
+	}
+
+	var expected bytes.Buffer
+	if err := json.Compact(&expected, expectedBytes); err != nil {
+		t.Fatalf("compact collection head fixture: %v", err)
+	}
+
+	if string(canonical) != expected.String() {
+		t.Fatalf("collection head canonical mismatch\nexpected: %s\ngot: %s", expected.String(), string(canonical))
 	}
 
 	parsed, err := ParseCollectionHeadRecordJSON(canonical)
@@ -217,9 +227,19 @@ func TestAccountConfigRecordCanonicalSerialization(t *testing.T) {
 		t.Fatalf("canonicalize account config: %v", err)
 	}
 
-	expected := `{"schemaVersion":1,"accountId":"acct-dev-001","defaultCollectionId":"vault-personal","collectionIds":["vault-personal"],"deviceIds":["dev-web-001"]}`
-	if string(canonical) != expected {
-		t.Fatalf("account config canonical mismatch\nexpected: %s\ngot: %s", expected, string(canonical))
+	path := filepath.Join("..", "..", "packages", "test-vectors", "src", "account-config-record.json")
+	expectedBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read account config fixture: %v", err)
+	}
+
+	var expected bytes.Buffer
+	if err := json.Compact(&expected, expectedBytes); err != nil {
+		t.Fatalf("compact account config fixture: %v", err)
+	}
+
+	if string(canonical) != expected.String() {
+		t.Fatalf("account config canonical mismatch\nexpected: %s\ngot: %s", expected.String(), string(canonical))
 	}
 
 	parsed, err := ParseAccountConfigRecordJSON(canonical)
