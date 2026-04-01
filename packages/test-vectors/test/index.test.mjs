@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  canonicalDeleteVaultEventRecord,
+  canonicalVaultEventRecords,
+  canonicalVaultItemRecords,
+  sampleDeleteVaultEventRecord,
+  sampleVaultEventRecords,
+  sampleVaultItemRecords,
+  sampleVaultItems,
+} from "../src/index.ts";
+
+test("sample vault items and records stay aligned", () => {
+  assert.equal(sampleVaultItems.length, sampleVaultItemRecords.length);
+  assert.deepEqual(
+    sampleVaultItems.map((item) => item.id),
+    sampleVaultItemRecords.map((record) => record.item.id),
+  );
+});
+
+test("canonical vault item records preserve starter ordering", () => {
+  assert.equal(canonicalVaultItemRecords.length, sampleVaultItemRecords.length);
+  assert.equal(
+    canonicalVaultItemRecords[0],
+    '{"schemaVersion":1,"item":{"id":"login-gmail-primary","kind":"login","title":"Gmail","tags":["email","personal"],"username":"alice@example.com","urls":["https://accounts.google.com"]}}',
+  );
+});
+
+test("sample vault event records preserve starter ordering", () => {
+  assert.equal(sampleVaultEventRecords.length, 2);
+  assert.equal(sampleVaultEventRecords[0].eventId, "evt-login-gmail-primary-v1");
+  assert.equal(sampleVaultEventRecords[1].eventId, "evt-totp-gmail-primary-v1");
+  assert.equal(canonicalVaultEventRecords.length, sampleVaultEventRecords.length);
+});
+
+test("delete event vector exports parsed and canonical forms", () => {
+  assert.equal(sampleDeleteVaultEventRecord.action, "delete_item");
+  assert.equal(sampleDeleteVaultEventRecord.itemId, "login-gmail-primary");
+  assert.equal(
+    canonicalDeleteVaultEventRecord,
+    '{"schemaVersion":1,"eventId":"evt-login-gmail-primary-delete-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:04:00Z","action":"delete_item","itemId":"login-gmail-primary"}',
+  );
+});

@@ -65,3 +65,9 @@
 - Added a shared `delete-event-record.json` protocol fixture under `packages/test-vectors` so delete events now have the same language-neutral fixture coverage as put-item records.
 - Exported parsed and canonicalized delete-event vectors from the test-vectors package for downstream consumers.
 - Updated the Go delete-event canonicalization test to compare against the shared fixture instead of a hardcoded JSON string.
+
+## 2026-04-01T09:09:53Z
+
+- Added a lightweight Node test suite for `@safe/test-vectors` so the shared vector package now verifies its exported starter items, canonical item records, starter events, and delete-event vector directly.
+- Updated the test-vectors source entrypoint to use Node-compatible JSON import attributes and source-to-source TypeScript imports so the package can be executed from source in local tests.
+- Added a `test` script to `packages/test-vectors/package.json` to make the vector-package checks directly runnable with `pnpm --filter @safe/test-vectors test`.

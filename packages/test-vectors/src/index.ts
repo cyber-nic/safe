@@ -1,7 +1,7 @@
-import rawVaultItems from "./vault-items.json";
-import rawEventRecords from "./event-records.json";
-import rawVaultItemRecords from "./vault-item-records.json";
-import rawDeleteEventRecord from "./delete-event-record.json";
+import rawVaultItems from "./vault-items.json" with { type: "json" };
+import rawEventRecords from "./event-records.json" with { type: "json" };
+import rawVaultItemRecords from "./vault-item-records.json" with { type: "json" };
+import rawDeleteEventRecord from "./delete-event-record.json" with { type: "json" };
 
 import {
   parseVaultEventRecord,
@@ -13,7 +13,7 @@ import {
   type VaultEventRecord,
   type VaultItem,
   type VaultItemRecord,
-} from "../../ts-sdk/src/index.js";
+} from "../../ts-sdk/src/index.ts";
 
 export const sampleVaultItems: VaultItem[] = parseVaultItems(rawVaultItems);
 export const sampleVaultItemRecords: VaultItemRecord[] =
