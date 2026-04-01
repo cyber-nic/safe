@@ -38,6 +38,7 @@ test("web bootstrap exposes a real starter workspace", () => {
   assert.equal(webBootstrap.overview.itemCountByKind.login, 1);
   assert.equal(webBootstrap.overview.itemCountByKind.totp, 1);
   assert.equal(webBootstrap.authenticators.length, 1);
+  assert.equal(webBootstrap.insights.length, 0);
   assert.equal(webBootstrap.authenticators[0].relatedLoginTitle, "Gmail");
   assert.equal(webBootstrap.activity[0].eventId, "evt-totp-gmail-primary-v1");
   assert.deepEqual(webBootstrap.availableTags, [
@@ -46,6 +47,45 @@ test("web bootstrap exposes a real starter workspace", () => {
     "email",
     "personal",
   ]);
+});
+
+test("workspace insights flag missing 2FA and orphan authenticators", async () => {
+  const withOrphanAuthenticator = await addTotpToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "AWS Root 2FA",
+    issuer: "AWS",
+    accountName: "root@example.com",
+    secretBase32: "JBSWY3DPEHPK3PXP",
+  });
+
+  const withUnprotectedLogin = await addLoginToVaultWorkspace({
+    workspace: withOrphanAuthenticator.workspace,
+    secretMaterial: withOrphanAuthenticator.secretMaterial,
+    deviceId: "dev-web-001",
+    title: "Linear",
+    username: "alice@linear.example",
+    url: "https://linear.app/login",
+  });
+
+  assert.equal(withUnprotectedLogin.workspace.insights.length, 2);
+  assert.equal(
+    withUnprotectedLogin.workspace.insights.some(
+      (insight) =>
+        insight.id === "logins-missing-totp" &&
+        insight.itemIds.includes("login-linear-primary"),
+    ),
+    true,
+  );
+  assert.equal(
+    withUnprotectedLogin.workspace.insights.some(
+      (insight) =>
+        insight.id === "orphan-authenticators" &&
+        insight.itemIds.includes("totp-aws-primary"),
+    ),
+    true,
+  );
 });
 
 test("createVaultWorkspace supports text search and kind filtering", () => {
@@ -554,6 +594,51 @@ test("exportVaultWorkspace returns deterministic full-vault payloads", () => {
   const serialized = serializeVaultExportPayload(payload);
   assert.equal(serialized.includes('"items"'), true);
   assert.equal(serialized.includes('"secretMaterial"'), true);
+});
+
+test("workspace insights flag duplicate logins and API keys", async () => {
+  const withDuplicateLogin = await addLoginToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Gmail Backup",
+    username: "alice@example.com",
+    url: "https://accounts.google.com",
+  });
+
+  const withDuplicateApiKeys = await addApiKeyToVaultWorkspace({
+    workspace: withDuplicateLogin.workspace,
+    secretMaterial: withDuplicateLogin.secretMaterial,
+    deviceId: "dev-web-001",
+    title: "Stripe Primary",
+    service: "Stripe",
+  });
+  const withSecondApiKey = await addApiKeyToVaultWorkspace({
+    workspace: withDuplicateApiKeys.workspace,
+    secretMaterial: withDuplicateApiKeys.secretMaterial,
+    deviceId: "dev-web-001",
+    title: "Stripe Backup",
+    service: "Stripe",
+  });
+
+  assert.equal(
+    withSecondApiKey.workspace.insights.some(
+      (insight) =>
+        insight.title === "Duplicate Login Candidates" &&
+        insight.itemIds.includes("login-gmail-primary") &&
+        insight.itemIds.includes("login-gmail-backup-primary"),
+    ),
+    true,
+  );
+  assert.equal(
+    withSecondApiKey.workspace.insights.some(
+      (insight) =>
+        insight.title === "Multiple API Keys For One Service" &&
+        insight.itemIds.includes("api-key-stripe-primary-primary") &&
+        insight.itemIds.includes("api-key-stripe-backup-primary"),
+    ),
+    true,
+  );
 });
 
 test("exportVaultWorkspace supports single-item exports", () => {

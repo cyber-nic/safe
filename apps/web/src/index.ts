@@ -88,6 +88,14 @@ export type ActivityEntry = {
   itemKind: VaultItemKind | "deleted";
 };
 
+export type VaultInsight = {
+  id: string;
+  title: string;
+  detail: string;
+  severity: "info" | "warning";
+  itemIds: string[];
+};
+
 export type VaultWorkspace = {
   accountConfig: AccountConfigRecord;
   head: CollectionHeadRecord;
@@ -95,6 +103,7 @@ export type VaultWorkspace = {
   query: VaultWorkspaceQuery;
   overview: VaultOverview;
   spotlight: VaultSpotlightCard[];
+  insights: VaultInsight[];
   items: VaultListEntry[];
   authenticators: AuthenticatorCard[];
   activity: ActivityEntry[];
@@ -372,6 +381,84 @@ function buildAvailableTags(items: VaultItem[]): string[] {
   );
 }
 
+function buildVaultInsights(items: VaultItem[]): VaultInsight[] {
+  const logins = sortItems(items).filter(
+    (item): item is Extract<VaultItem, { kind: "login" }> => item.kind === "login",
+  );
+  const totpItems = sortItems(items).filter(
+    (item): item is Extract<VaultItem, { kind: "totp" }> => item.kind === "totp",
+  );
+  const insights: VaultInsight[] = [];
+
+  const loginsWithoutTotp = logins.filter(
+    (login) => !totpItems.some((totpItem) => matchesLogin(totpItem, login)),
+  );
+  if (loginsWithoutTotp.length > 0) {
+    insights.push({
+      id: "logins-missing-totp",
+      title: "Logins Missing 2FA Coverage",
+      detail: `${loginsWithoutTotp.length} login${loginsWithoutTotp.length === 1 ? "" : "s"} do not have a linked built-in authenticator`,
+      severity: "warning",
+      itemIds: loginsWithoutTotp.map((item) => item.id),
+    });
+  }
+
+  const orphanAuthenticators = totpItems.filter(
+    (totpItem) => !logins.some((login) => matchesLogin(totpItem, login)),
+  );
+  if (orphanAuthenticators.length > 0) {
+    insights.push({
+      id: "orphan-authenticators",
+      title: "Authenticators Without Linked Logins",
+      detail: `${orphanAuthenticators.length} authenticator${orphanAuthenticators.length === 1 ? "" : "s"} cannot be matched back to an active login`,
+      severity: "info",
+      itemIds: orphanAuthenticators.map((item) => item.id),
+    });
+  }
+
+  const loginGroups = new Map<string, string[]>();
+  for (const login of logins) {
+    const groupKey = normalizeSearchValue(
+      `${login.username}|${login.urls[0] ?? login.title}`,
+    );
+    loginGroups.set(groupKey, [...(loginGroups.get(groupKey) ?? []), login.id]);
+  }
+  for (const itemIds of loginGroups.values()) {
+    if (itemIds.length > 1) {
+      insights.push({
+        id: `duplicate-logins-${itemIds[0]}`,
+        title: "Duplicate Login Candidates",
+        detail: `${itemIds.length} login records appear to share the same username and primary URL`,
+        severity: "info",
+        itemIds,
+      });
+    }
+  }
+
+  const apiKeyGroups = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.kind !== "apiKey") {
+      continue;
+    }
+
+    const groupKey = normalizeSearchValue(item.service);
+    apiKeyGroups.set(groupKey, [...(apiKeyGroups.get(groupKey) ?? []), item.id]);
+  }
+  for (const itemIds of apiKeyGroups.values()) {
+    if (itemIds.length > 1) {
+      insights.push({
+        id: `duplicate-api-keys-${itemIds[0]}`,
+        title: "Multiple API Keys For One Service",
+        detail: `${itemIds.length} API-key records target the same service`,
+        severity: "info",
+        itemIds,
+      });
+    }
+  }
+
+  return insights;
+}
+
 function eventTargetsItem(event: VaultEventRecord, itemId: string): boolean {
   return event.action === "put_item"
     ? event.itemRecord.item.id === itemId
@@ -519,6 +606,7 @@ export function createVaultWorkspace(input: {
         detail: `${input.accountConfig.collectionIds.length} synced collection${input.accountConfig.collectionIds.length === 1 ? "" : "s"}`,
       },
     ],
+    insights: buildVaultInsights(items),
     items: buildListEntries(filteredItems, query),
     authenticators: buildAuthenticatorCards(items),
     activity: buildActivityEntries(input.events),

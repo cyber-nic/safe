@@ -161,3 +161,9 @@
 - Added replay-backed web create and update helpers for the remaining shared item kinds: notes, API keys, and SSH keys, so the local-first client now covers the full current vault taxonomy instead of only logins and authenticators.
 - Reused the same workspace mutation pipeline for those item kinds, which keeps note, API-key, and SSH-key writes aligned with the existing event-log, history, restore, export, and import behavior rather than introducing separate item-specific state handling.
 - Added web tests covering note, API-key, and SSH-key creation and editing flows plus rejection paths when those update helpers are called against the wrong item kinds.
+
+## 2026-04-01T11:10:06Z
+
+- Added consumer-facing vault insights to the replay-backed web workspace so the client can flag logins missing built-in 2FA coverage, orphan authenticators, duplicate login candidates, and multiple API keys for one service from the actual projected vault state.
+- Kept the new insight layer purely derived from existing replayed items and matching rules, which makes it durable product logic for future UI work rather than demo-only presentation state.
+- Added web tests covering the starter no-insights case plus insight detection for missing 2FA coverage, orphan authenticators, duplicate logins, and duplicate API-key service groups.
