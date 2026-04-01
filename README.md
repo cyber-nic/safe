@@ -32,12 +32,30 @@ The following decisions are considered frozen enough to start scaffolding:
 - collection-based sharing
 - authenticated mutable metadata and rollback protection as release requirements
 
+## Current Status
+
+The repository is no longer at pure scaffold stage.
+
+Useful progress already landed:
+
+- monorepo structure and local Compose development workflow
+- starter control-plane and CLI binaries
+- shared Go and TypeScript protocol models plus canonical fixture coverage
+- a script-friendly CLI prototype for local secret CRUD, history, import/export, and JSON output
+
+But the project is still behind the plan's actual critical path:
+
+- cryptographic key hierarchy and recovery flows are still missing
+- local encrypted persistence and unlock or lock lifecycle are still missing
+- signed mutable metadata and rollback detection are still missing
+- object-store sync is still a starter model, not the intended v1 storage protocol
+
 ## Immediate Next Steps
 
-1. Scaffold the monorepo structure described in [IMPLEMENTATION_PLAN.md](./instructions/IMPLEMENTATION_PLAN.md) around the web app, CLI, and shared packages.
-2. Freeze canonical schemas and signing fixtures from [PROTOCOL.md](./instructions/PROTOCOL.md).
-3. Create the Go and TypeScript test-vector harnesses.
-4. Stand up the initial containerized local development environment.
+1. Finish freezing signer ownership, authenticated mutable metadata, and rollback rules from [PROTOCOL.md](./instructions/PROTOCOL.md).
+2. Implement the first real cryptographic key hierarchy slice: password derivation, KEK/AMK wrapping, and recovery-key fixtures.
+3. Replace the CLI's starter in-memory vault model with durable encrypted local persistence aligned with the Phase 2 local-runtime plan.
+4. Start the real object-storage sync path only after the local encrypted-state and signed-metadata groundwork is in place.
 
 ## Local Development
 

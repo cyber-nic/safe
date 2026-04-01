@@ -14,6 +14,30 @@ It is intended to answer:
 
 This plan assumes a small team optimizing for correctness, speed of iteration, and low operational complexity.
 
+## 1.1 Current Repository Status
+
+The repository has made useful progress on shared protocol scaffolding, canonical serialization, CLI surface area, and fixture or harness coverage.
+
+That progress is real, but it should not be mistaken for critical-path completion.
+
+Current state in practical terms:
+
+- the monorepo shape, local dev environment, starter control-plane skeleton, and cross-language fixture work are in place
+- the CLI has a broad starter command surface for local secret CRUD, history, import/export, and automation-friendly JSON output
+- Go and TypeScript protocol models are converging on shared item and event semantics
+
+Current gaps relative to the plan:
+
+- cryptographic key hierarchy, password derivation, and recovery flows are not yet implemented
+- local encrypted persistence and unlock or lock lifecycle are not yet implemented
+- signed mutable metadata, rollback detection, and trusted-head handling are not yet implemented
+- object-store sync is still a starter in-memory model rather than the v1 storage protocol
+
+Interpretation:
+
+- this means the repo is still in foundations plus data-model work
+- it is not yet at the phase-2 exit criteria even if some CLI surface area looks product-like
+
 ## 2. Delivery Strategy
 
 The delivery strategy for v1 is:
@@ -32,6 +56,8 @@ The critical path is not UI. The critical path is:
 - Correct object-store semantics
 - Rollback detection and integrity protection for mutable metadata
 - Safe device and sharing flows
+
+The repo should treat any work outside that list as supporting work, not as evidence that the critical path is complete.
 
 ## 3. v1 Scope
 
@@ -324,6 +350,12 @@ Exit criteria:
 - Shared protocol fixtures are consumable from Go and TypeScript
 - Terraform can provision a non-production bucket and control-plane skeleton
 
+Status note:
+
+- Mostly on track.
+- Repository shape, local Compose development, starter services, and shared fixture harnesses are present.
+- Remaining gaps are CI, reliable typecheck execution in a fresh workspace, and clearer freezing of signer and rollback rules.
+
 ### Phase 1: Crypto and Data Model Core
 
 Goal:
@@ -358,6 +390,13 @@ Exit criteria:
 - Password rotation can re-wrap the AMK without rewriting item data
 - Recovery and device enrollment work end to end against real account fixtures
 
+Status note:
+
+- Partially started, but unevenly.
+- Data-model and canonical-serialization work has progressed meaningfully.
+- Crypto, signing, recovery, and device-enrollment flows remain the major unfinished pieces.
+- This phase should be treated as incomplete until signer ownership, mutable-metadata authentication, and recovery flows exist in code.
+
 ### Phase 2: Local Vault Runtime
 
 Goal:
@@ -386,6 +425,12 @@ Exit criteria:
 - The web app and CLI can create and manage secrets from durable local state
 - Local cache remains inaccessible while locked
 - Local search works across supported fields
+
+Status note:
+
+- Not yet started in the sense intended by the plan.
+- The CLI currently exercises an in-memory starter state and replay model, which is useful for domain iteration but is not a substitute for durable encrypted local storage.
+- Unlock or lock lifecycle, encrypted cache handling, and durable local persistence still need to become the next concrete implementation focus.
 
 ### Phase 3: Object Storage and Sync
 

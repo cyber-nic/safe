@@ -71,3 +71,9 @@
 - Added a lightweight Node test suite for `@safe/test-vectors` so the shared vector package now verifies its exported starter items, canonical item records, starter events, and delete-event vector directly.
 - Updated the test-vectors source entrypoint to use Node-compatible JSON import attributes and source-to-source TypeScript imports so the package can be executed from source in local tests.
 - Added a `test` script to `packages/test-vectors/package.json` to make the vector-package checks directly runnable with `pnpm --filter @safe/test-vectors test`.
+
+## 2026-04-01T09:23:24Z
+
+- Updated `IMPLEMENTATION_PLAN.md` to record the current repository status explicitly: useful CLI and protocol progress, but continued gaps on crypto, encrypted local persistence, signed mutable metadata, and rollback handling.
+- Updated the plan's phase notes to clarify that foundations are mostly in place, data-model work is ahead of crypto, and the local-vault-runtime phase has not started in the sense intended by the docs.
+- Updated `README.md` so the repo status and next steps now point at signer and rollback rules, key hierarchy work, and durable encrypted local persistence instead of the original scaffolding checklist.
