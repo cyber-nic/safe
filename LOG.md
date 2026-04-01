@@ -119,3 +119,9 @@
 - Added a consumer-facing `safe secret add-totp <title> <issuer> <account-name> <secret-base32>` command so users can now create authenticator entries through the CLI instead of relying on starter fixtures or raw import payloads.
 - Wired `add-totp` through the same local secret-material storage path and event-log mutation flow as the existing vault commands, so the new authenticator setup path remains aligned with the planned local-vault runtime rather than introducing demo-only state.
 - Added CLI tests covering human and JSON `add-totp` output, immediate `secret show` and `secret code` use of newly added authenticators, and invalid-secret rejection.
+
+## 2026-04-01T10:02:31Z
+
+- Replaced the web app's placeholder bootstrap object with a real replay-backed `createVaultWorkspace` model that exposes overview stats, searchable vault items, authenticator cards, and recent activity derived from account config, collection head, and event records.
+- Added durable consumer-facing web behaviors for text, kind, and tag filtering plus authenticator-to-login linking, so the primary web surface can start gathering product feedback without inventing throw-away demo state outside the existing protocol and sync model.
+- Added a lightweight `@safe/web` Node test suite covering the starter workspace, search and filter behavior, delete-event activity rendering, and collection-head consistency checks.
