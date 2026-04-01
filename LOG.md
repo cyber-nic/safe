@@ -155,3 +155,9 @@
 - Added consumer-facing web export and import helpers: `exportVaultWorkspace`, `serializeVaultExportPayload`, and `importVaultWorkspace`, so the local-first client can produce deterministic vault payloads and replay them back through normal put-item mutations instead of bypassing the event log.
 - Included TOTP secret-material carry-through in web export and import payloads for matching authenticator items, which keeps portability aligned with the existing built-in authenticator behavior instead of exporting incomplete records.
 - Added web tests covering full-vault export ordering, single-item export, and importing an exported item back into a fresh workspace through replay-backed sequence advancement.
+
+## 2026-04-01T11:01:24Z
+
+- Added replay-backed web create and update helpers for the remaining shared item kinds: notes, API keys, and SSH keys, so the local-first client now covers the full current vault taxonomy instead of only logins and authenticators.
+- Reused the same workspace mutation pipeline for those item kinds, which keeps note, API-key, and SSH-key writes aligned with the existing event-log, history, restore, export, and import behavior rather than introducing separate item-specific state handling.
+- Added web tests covering note, API-key, and SSH-key creation and editing flows plus rejection paths when those update helpers are called against the wrong item kinds.

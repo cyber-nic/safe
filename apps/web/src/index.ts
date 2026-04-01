@@ -927,6 +927,114 @@ export async function addTotpToVaultWorkspace(input: {
   });
 }
 
+export async function addNoteToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  title: string;
+  bodyPreview: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const title = input.title.trim();
+  const bodyPreview = input.bodyPreview.trim();
+  if (title === "") {
+    throw new Error("invalid note item: title");
+  }
+  if (bodyPreview === "") {
+    throw new Error("invalid note item: bodyPreview");
+  }
+
+  const itemId = `note-${slugify(title)}-primary`;
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      id: itemId,
+      kind: "note",
+      title,
+      tags: input.tags ?? ["note"],
+      bodyPreview,
+    }),
+    at: input.at,
+  });
+}
+
+export async function addApiKeyToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  title: string;
+  service: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const title = input.title.trim();
+  const service = input.service.trim();
+  if (title === "") {
+    throw new Error("invalid api key item: title");
+  }
+  if (service === "") {
+    throw new Error("invalid api key item: service");
+  }
+
+  const itemId = `api-key-${slugify(title)}-primary`;
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      id: itemId,
+      kind: "apiKey",
+      title,
+      tags: input.tags ?? ["api", "key"],
+      service,
+    }),
+    at: input.at,
+  });
+}
+
+export async function addSshKeyToVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  title: string;
+  username: string;
+  host: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const title = input.title.trim();
+  const username = input.username.trim();
+  const host = input.host.trim();
+  if (title === "") {
+    throw new Error("invalid ssh key item: title");
+  }
+  if (username === "") {
+    throw new Error("invalid ssh key item: username");
+  }
+  if (host === "") {
+    throw new Error("invalid ssh key item: host");
+  }
+
+  const itemId = `ssh-key-${slugify(title)}-primary`;
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      id: itemId,
+      kind: "sshKey",
+      title,
+      tags: input.tags ?? ["ssh"],
+      username,
+      host,
+    }),
+    at: input.at,
+  });
+}
+
 export async function deleteItemFromVaultWorkspace(input: {
   workspace: VaultWorkspace;
   secretMaterial: VaultSecretMaterial;
@@ -1071,6 +1179,141 @@ export async function updateTotpInVaultWorkspace(input: {
       title,
       issuer,
       accountName,
+      tags: input.tags ?? record.item.tags,
+    }),
+    at: input.at,
+  });
+}
+
+export async function updateNoteInVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  title: string;
+  bodyPreview: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "note") {
+    throw new Error(`vault note update only supports note items: ${input.itemId}`);
+  }
+
+  const title = input.title.trim();
+  const bodyPreview = input.bodyPreview.trim();
+  if (title === "") {
+    throw new Error("invalid note item: title");
+  }
+  if (bodyPreview === "") {
+    throw new Error("invalid note item: bodyPreview");
+  }
+
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      ...record.item,
+      title,
+      bodyPreview,
+      tags: input.tags ?? record.item.tags,
+    }),
+    at: input.at,
+  });
+}
+
+export async function updateApiKeyInVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  title: string;
+  service: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "apiKey") {
+    throw new Error(`vault api key update only supports api key items: ${input.itemId}`);
+  }
+
+  const title = input.title.trim();
+  const service = input.service.trim();
+  if (title === "") {
+    throw new Error("invalid api key item: title");
+  }
+  if (service === "") {
+    throw new Error("invalid api key item: service");
+  }
+
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      ...record.item,
+      title,
+      service,
+      tags: input.tags ?? record.item.tags,
+    }),
+    at: input.at,
+  });
+}
+
+export async function updateSshKeyInVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  title: string;
+  username: string;
+  host: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "sshKey") {
+    throw new Error(`vault ssh key update only supports ssh key items: ${input.itemId}`);
+  }
+
+  const title = input.title.trim();
+  const username = input.username.trim();
+  const host = input.host.trim();
+  if (title === "") {
+    throw new Error("invalid ssh key item: title");
+  }
+  if (username === "") {
+    throw new Error("invalid ssh key item: username");
+  }
+  if (host === "") {
+    throw new Error("invalid ssh key item: host");
+  }
+
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      ...record.item,
+      title,
+      username,
+      host,
       tags: input.tags ?? record.item.tags,
     }),
     at: input.at,

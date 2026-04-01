@@ -10,7 +10,10 @@ import {
   sampleVaultItemRecords,
 } from "../../../packages/test-vectors/src/index.ts";
 import {
+  addApiKeyToVaultWorkspace,
   addLoginToVaultWorkspace,
+  addNoteToVaultWorkspace,
+  addSshKeyToVaultWorkspace,
   addTotpToVaultWorkspace,
   createUnlockedVaultWorkspace,
   createVaultWorkspace,
@@ -21,7 +24,10 @@ import {
   listDeletedVaultItems,
   restoreItemToVaultWorkspace,
   serializeVaultExportPayload,
+  updateApiKeyInVaultWorkspace,
   updateLoginInVaultWorkspace,
+  updateNoteInVaultWorkspace,
+  updateSshKeyInVaultWorkspace,
   updateTotpInVaultWorkspace,
   unlockVaultWorkspace,
   webBootstrap,
@@ -186,6 +192,51 @@ test("addTotpToVaultWorkspace stores secret material and unlocks the new authent
   );
   assert.equal(authenticator?.status, "ready");
   assert.equal(authenticator?.code, "996554");
+});
+
+test("addNoteToVaultWorkspace, addApiKeyToVaultWorkspace, and addSshKeyToVaultWorkspace add the remaining item kinds", async () => {
+  const withNote = await addNoteToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Server Notes",
+    bodyPreview: "Rotate staging credentials before Friday",
+    at: new Date("2026-04-01T10:55:00Z"),
+  });
+  assert.equal(withNote.itemId, "note-server-notes-primary");
+  assert.equal(
+    withNote.workspace.items.some((item) => item.id === "note-server-notes-primary"),
+    true,
+  );
+
+  const withApiKey = await addApiKeyToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Stripe Prod",
+    service: "Stripe",
+    at: new Date("2026-04-01T10:56:00Z"),
+  });
+  assert.equal(withApiKey.itemId, "api-key-stripe-prod-primary");
+  assert.equal(
+    withApiKey.workspace.items.some((item) => item.id === "api-key-stripe-prod-primary"),
+    true,
+  );
+
+  const withSshKey = await addSshKeyToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Prod Root",
+    username: "root",
+    host: "prod-01.internal",
+    at: new Date("2026-04-01T10:57:00Z"),
+  });
+  assert.equal(withSshKey.itemId, "ssh-key-prod-root-primary");
+  assert.equal(
+    withSshKey.workspace.items.some((item) => item.id === "ssh-key-prod-root-primary"),
+    true,
+  );
 });
 
 test("deleteItemFromVaultWorkspace removes items and totp secret material", async () => {
@@ -372,6 +423,115 @@ test("update helpers reject the wrong item kinds", async () => {
         accountName: "alice@example.com",
       }),
     /vault totp update only supports totp items: login-gmail-primary/,
+  );
+});
+
+test("updateNoteInVaultWorkspace, updateApiKeyInVaultWorkspace, and updateSshKeyInVaultWorkspace replay edits for the remaining item kinds", async () => {
+  const noteAdded = await addNoteToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Server Notes",
+    bodyPreview: "Initial preview",
+  });
+  const noteUpdated = await updateNoteInVaultWorkspace({
+    workspace: noteAdded.workspace,
+    secretMaterial: noteAdded.secretMaterial,
+    deviceId: "dev-web-001",
+    itemId: noteAdded.itemId,
+    title: "Server Notes Updated",
+    bodyPreview: "Rotated on-call credentials",
+    tags: ["note", "ops"],
+  });
+  assert.equal(
+    getVaultItemDetail(noteUpdated.workspace, noteAdded.itemId).title,
+    "Server Notes Updated",
+  );
+
+  const apiKeyAdded = await addApiKeyToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Stripe Prod",
+    service: "Stripe",
+  });
+  const apiKeyUpdated = await updateApiKeyInVaultWorkspace({
+    workspace: apiKeyAdded.workspace,
+    secretMaterial: apiKeyAdded.secretMaterial,
+    deviceId: "dev-web-001",
+    itemId: apiKeyAdded.itemId,
+    title: "Stripe Prod Primary",
+    service: "Stripe Billing",
+    tags: ["api", "billing"],
+  });
+  assert.equal(
+    getVaultItemDetail(apiKeyUpdated.workspace, apiKeyAdded.itemId).title,
+    "Stripe Prod Primary",
+  );
+
+  const sshAdded = await addSshKeyToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Prod Root",
+    username: "root",
+    host: "prod-01.internal",
+  });
+  const sshUpdated = await updateSshKeyInVaultWorkspace({
+    workspace: sshAdded.workspace,
+    secretMaterial: sshAdded.secretMaterial,
+    deviceId: "dev-web-001",
+    itemId: sshAdded.itemId,
+    title: "Prod Root Bastion",
+    username: "deploy",
+    host: "bastion-01.internal",
+    tags: ["ssh", "ops"],
+  });
+  assert.equal(
+    getVaultItemDetail(sshUpdated.workspace, sshAdded.itemId).title,
+    "Prod Root Bastion",
+  );
+});
+
+test("remaining item-kind update helpers reject the wrong item kinds", async () => {
+  await assert.rejects(
+    () =>
+      updateNoteInVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "login-gmail-primary",
+        title: "Invalid",
+        bodyPreview: "Invalid",
+      }),
+    /vault note update only supports note items: login-gmail-primary/,
+  );
+
+  await assert.rejects(
+    () =>
+      updateApiKeyInVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "login-gmail-primary",
+        title: "Invalid",
+        service: "Invalid",
+      }),
+    /vault api key update only supports api key items: login-gmail-primary/,
+  );
+
+  await assert.rejects(
+    () =>
+      updateSshKeyInVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "login-gmail-primary",
+        title: "Invalid",
+        username: "root",
+        host: "invalid",
+      }),
+    /vault ssh key update only supports ssh key items: login-gmail-primary/,
   );
 });
 
