@@ -6,6 +6,9 @@
     "build": "pnpm -r build",
     "check": "pnpm -r check"
   },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
