@@ -143,3 +143,9 @@
 - Added consumer-facing web item recovery helpers: `getVaultItemDetail`, `listDeletedVaultItems`, and `restoreItemToVaultWorkspace`, so the web client can inspect per-item history, surface deleted records, and replay restores through the normal event log instead of relying on out-of-band state.
 - Extended the web workspace model with reusable item-history and latest-record helpers, which keeps detail views, deleted-item listings, and restore behavior aligned with the same replayed event source that powers the active vault view.
 - Added web tests covering active item detail history, deleted-item discovery, successful restore after delete, and rejection paths for restoring active or unknown items.
+
+## 2026-04-01T10:43:16Z
+
+- Added replay-backed web edit helpers for active items: `updateLoginInVaultWorkspace` and `updateTotpInVaultWorkspace`, so the local-first web client can modify existing logins and authenticators through normal put-item events instead of replacing state out of band.
+- Refactored web write handling through a shared `persistUpdatedItem` helper, which keeps add and update flows aligned on the same mutation, rebuild, and authenticator-refresh path.
+- Added web tests covering login edits, TOTP metadata and secret rotation, and rejection paths for attempting to update the wrong item kind.

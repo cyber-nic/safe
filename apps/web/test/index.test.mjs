@@ -18,6 +18,8 @@ import {
   getVaultItemDetail,
   listDeletedVaultItems,
   restoreItemToVaultWorkspace,
+  updateLoginInVaultWorkspace,
+  updateTotpInVaultWorkspace,
   unlockVaultWorkspace,
   webBootstrap,
 } from "../src/index.ts";
@@ -279,5 +281,93 @@ test("restoreItemToVaultWorkspace rejects active and unknown items", async () =>
         itemId: "missing-item",
       }),
     /vault item version not found: missing-item/,
+  );
+});
+
+test("updateLoginInVaultWorkspace replays login edits into the workspace", async () => {
+  const result = await updateLoginInVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    itemId: "login-gmail-primary",
+    title: "Gmail Personal",
+    username: "alice+safe@example.com",
+    url: "https://mail.google.com",
+    tags: ["email", "personal", "updated"],
+    at: new Date("2026-04-01T10:40:00Z"),
+  });
+
+  const detail = getVaultItemDetail(result.workspace, "login-gmail-primary");
+  assert.equal(detail.title, "Gmail Personal");
+  assert.equal(detail.history[0].action, "put_item");
+  assert.equal(result.workspace.overview.latestSeq, 3);
+  assert.equal(
+    result.workspace.items.find((item) => item.id === "login-gmail-primary")?.title,
+    "Gmail Personal",
+  );
+});
+
+test("updateTotpInVaultWorkspace rotates authenticator metadata and secret material", async () => {
+  const unlocked = await createUnlockedVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: sampleCollectionHeadRecord,
+    events: sampleVaultEventRecords,
+    starterRecords: sampleVaultItemRecords,
+    secretMaterial: sampleVaultSecretMaterial,
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  const result = await updateTotpInVaultWorkspace({
+    workspace: unlocked,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    itemId: "totp-gmail-primary",
+    title: "Gmail Primary 2FA",
+    issuer: "Google Workspace",
+    accountName: "alice@example.com",
+    secretBase32: "JBSWY3DPEHPK3PXP",
+    tags: ["2fa", "workspace"],
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+
+  const authenticator = result.workspace.authenticators.find(
+    (card) => card.id === "totp-gmail-primary",
+  );
+  assert.equal(authenticator?.title, "Gmail Primary 2FA");
+  assert.equal(authenticator?.issuer, "Google Workspace");
+  assert.equal(authenticator?.status, "ready");
+  assert.equal(authenticator?.code, "996554");
+  assert.equal(
+    result.secretMaterial["vault-secret://totp/gmail-primary"],
+    "JBSWY3DPEHPK3PXP",
+  );
+});
+
+test("update helpers reject the wrong item kinds", async () => {
+  await assert.rejects(
+    () =>
+      updateLoginInVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "totp-gmail-primary",
+        title: "Invalid",
+        username: "alice",
+      }),
+    /vault login update only supports login items: totp-gmail-primary/,
+  );
+
+  await assert.rejects(
+    () =>
+      updateTotpInVaultWorkspace({
+        workspace: webBootstrap,
+        secretMaterial: sampleVaultSecretMaterial,
+        deviceId: "dev-web-001",
+        itemId: "login-gmail-primary",
+        title: "Invalid",
+        issuer: "Google",
+        accountName: "alice@example.com",
+      }),
+    /vault totp update only supports totp items: login-gmail-primary/,
   );
 });

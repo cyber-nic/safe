@@ -586,6 +586,34 @@ async function rebuildWorkspace(input: {
   });
 }
 
+async function persistUpdatedItem(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemRecord: VaultItemRecord;
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const mutation = buildPutItemMutation(
+    input.workspace.head,
+    input.deviceId,
+    input.itemRecord,
+    (input.at ?? new Date()).toISOString(),
+  );
+  const events = [...input.workspace.events, mutation.event];
+
+  return {
+    workspace: await rebuildWorkspace({
+      workspace: input.workspace,
+      head: mutation.newHead,
+      events,
+      secretMaterial: input.secretMaterial,
+      at: input.at,
+    }),
+    secretMaterial: input.secretMaterial,
+    itemId: input.itemRecord.item.id,
+  };
+}
+
 export function getVaultItemDetail(
   workspace: VaultWorkspace,
   itemId: string,
@@ -696,10 +724,11 @@ export async function addLoginToVaultWorkspace(input: {
   }
 
   const itemId = `login-${slugify(title)}-primary`;
-  const mutation = buildPutItemMutation(
-    input.workspace.head,
-    input.deviceId,
-    createVaultItemRecord({
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
       id: itemId,
       kind: "login",
       title,
@@ -707,21 +736,8 @@ export async function addLoginToVaultWorkspace(input: {
       username,
       urls: [url],
     }),
-    (input.at ?? new Date()).toISOString(),
-  );
-  const events = [...input.workspace.events, mutation.event];
-
-  return {
-    workspace: await rebuildWorkspace({
-      workspace: input.workspace,
-      head: mutation.newHead,
-      events,
-      secretMaterial: input.secretMaterial,
-      at: input.at,
-    }),
-    secretMaterial: input.secretMaterial,
-    itemId,
-  };
+    at: input.at,
+  });
 }
 
 export async function addTotpToVaultWorkspace(input: {
@@ -755,10 +771,11 @@ export async function addTotpToVaultWorkspace(input: {
     ...input.secretMaterial,
     [secretRef]: normalizeSecretBase32(input.secretBase32),
   };
-  const mutation = buildPutItemMutation(
-    input.workspace.head,
-    input.deviceId,
-    createVaultItemRecord(
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord(
       createTotpItem({
         id: itemId,
         title,
@@ -768,21 +785,8 @@ export async function addTotpToVaultWorkspace(input: {
         tags: input.tags ?? ["2fa", "authenticator"],
       }),
     ),
-    (input.at ?? new Date()).toISOString(),
-  );
-  const events = [...input.workspace.events, mutation.event];
-
-  return {
-    workspace: await rebuildWorkspace({
-      workspace: input.workspace,
-      head: mutation.newHead,
-      events,
-      secretMaterial,
-      at: input.at,
-    }),
-    secretMaterial,
-    itemId,
-  };
+    at: input.at,
+  });
 }
 
 export async function deleteItemFromVaultWorkspace(input: {
@@ -826,6 +830,113 @@ export async function deleteItemFromVaultWorkspace(input: {
     secretMaterial,
     itemId: input.itemId,
   };
+}
+
+export async function updateLoginInVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  title: string;
+  username: string;
+  url?: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "login") {
+    throw new Error(`vault login update only supports login items: ${input.itemId}`);
+  }
+
+  const title = input.title.trim();
+  const username = input.username.trim();
+  const url = (input.url ?? record.item.urls[0] ?? "").trim();
+  if (title === "") {
+    throw new Error("invalid login item: title");
+  }
+  if (username === "") {
+    throw new Error("invalid login item: username");
+  }
+  if (url === "") {
+    throw new Error("invalid login item: url");
+  }
+
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial: input.secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      ...record.item,
+      title,
+      username,
+      urls: [url],
+      tags: input.tags ?? record.item.tags,
+    }),
+    at: input.at,
+  });
+}
+
+export async function updateTotpInVaultWorkspace(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  deviceId: string;
+  itemId: string;
+  title: string;
+  issuer: string;
+  accountName: string;
+  secretBase32?: string;
+  tags?: string[];
+  at?: Date;
+}): Promise<VaultWorkspaceUpdate> {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "totp") {
+    throw new Error(`vault totp update only supports totp items: ${input.itemId}`);
+  }
+
+  const title = input.title.trim();
+  const issuer = input.issuer.trim();
+  const accountName = input.accountName.trim();
+  if (title === "") {
+    throw new Error("invalid totp item: title");
+  }
+  if (issuer === "") {
+    throw new Error("invalid totp item: issuer");
+  }
+  if (accountName === "") {
+    throw new Error("invalid totp item: accountName");
+  }
+
+  const secretMaterial =
+    input.secretBase32 === undefined
+      ? input.secretMaterial
+      : {
+          ...input.secretMaterial,
+          [record.item.secretRef]: normalizeSecretBase32(input.secretBase32),
+        };
+
+  return persistUpdatedItem({
+    workspace: input.workspace,
+    secretMaterial,
+    deviceId: input.deviceId,
+    itemRecord: createVaultItemRecord({
+      ...record.item,
+      title,
+      issuer,
+      accountName,
+      tags: input.tags ?? record.item.tags,
+    }),
+    at: input.at,
+  });
 }
 
 export async function restoreItemToVaultWorkspace(input: {
