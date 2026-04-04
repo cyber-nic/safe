@@ -130,6 +130,14 @@ func LoadCollectionEventRecords(store ObjectStore, accountID, collectionID strin
 		records = append(records, record)
 	}
 
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Sequence == records[j].Sequence {
+			return records[i].EventID < records[j].EventID
+		}
+
+		return records[i].Sequence < records[j].Sequence
+	})
+
 	return records, nil
 }
 
@@ -179,17 +187,48 @@ func LoadAccountConfigRecord(store ObjectStore, accountID string) (domain.Accoun
 	return domain.ParseAccountConfigRecordJSON(payload)
 }
 
-func StoreSecretMaterial(store ObjectStore, accountID, collectionID, secretRef, secret string) (string, error) {
-	key := SecretMaterialKey(accountID, collectionID, secretRef)
-	if err := store.Put(key, []byte(secret)); err != nil {
+func StoreLocalUnlockRecord(store ObjectStore, record domain.LocalUnlockRecord) (string, error) {
+	payload, err := record.CanonicalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	key := LocalUnlockKey(record.AccountID)
+	if err := store.Put(key, payload); err != nil {
 		return "", err
 	}
 
 	return key, nil
 }
 
+func LoadLocalUnlockRecord(store ObjectStore, accountID string) (domain.LocalUnlockRecord, error) {
+	payload, err := store.Get(LocalUnlockKey(accountID))
+	if err != nil {
+		return domain.LocalUnlockRecord{}, err
+	}
+
+	return domain.ParseLocalUnlockRecordJSON(payload)
+}
+
+func StoreSecretMaterialBytes(store ObjectStore, accountID, collectionID, secretRef string, secret []byte) (string, error) {
+	key := SecretMaterialKey(accountID, collectionID, secretRef)
+	if err := store.Put(key, secret); err != nil {
+		return "", err
+	}
+
+	return key, nil
+}
+
+func LoadSecretMaterialBytes(store ObjectStore, accountID, collectionID, secretRef string) ([]byte, error) {
+	return store.Get(SecretMaterialKey(accountID, collectionID, secretRef))
+}
+
+func StoreSecretMaterial(store ObjectStore, accountID, collectionID, secretRef, secret string) (string, error) {
+	return StoreSecretMaterialBytes(store, accountID, collectionID, secretRef, []byte(secret))
+}
+
 func LoadSecretMaterial(store ObjectStore, accountID, collectionID, secretRef string) (string, error) {
-	payload, err := store.Get(SecretMaterialKey(accountID, collectionID, secretRef))
+	payload, err := LoadSecretMaterialBytes(store, accountID, collectionID, secretRef)
 	if err != nil {
 		return "", err
 	}

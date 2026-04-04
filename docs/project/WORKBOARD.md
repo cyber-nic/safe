@@ -178,7 +178,7 @@ Owner:
 
 Status:
 
-- ready
+- completed (`refs #5`)
 
 Write scope:
 
@@ -244,7 +244,7 @@ Owner:
 
 Status:
 
-- queued
+- ready
 
 Write scope:
 

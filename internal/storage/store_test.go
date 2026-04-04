@@ -149,6 +149,49 @@ func TestLoadCollectionEventRecords(t *testing.T) {
 	}
 }
 
+func TestLoadCollectionEventRecordsSortsBySequence(t *testing.T) {
+	store := NewMemoryObjectStore()
+	records := []domain.VaultEventRecord{
+		{
+			SchemaVersion: 1,
+			EventID:       "evt-seq-2",
+			AccountID:     "acct-dev-001",
+			DeviceID:      "dev-web-001",
+			CollectionID:  "vault-personal",
+			Sequence:      2,
+			OccurredAt:    "2026-03-31T10:01:00Z",
+			Action:        domain.VaultEventActionPutItem,
+			ItemRecord:    domain.StarterVaultItemRecords()[0],
+		},
+		{
+			SchemaVersion: 1,
+			EventID:       "evt-seq-1",
+			AccountID:     "acct-dev-001",
+			DeviceID:      "dev-web-001",
+			CollectionID:  "vault-personal",
+			Sequence:      1,
+			OccurredAt:    "2026-03-31T10:00:00Z",
+			Action:        domain.VaultEventActionPutItem,
+			ItemRecord:    domain.StarterVaultItemRecords()[1],
+		},
+	}
+
+	for _, record := range records {
+		if _, err := StoreEventRecord(store, record); err != nil {
+			t.Fatalf("store event record: %v", err)
+		}
+	}
+
+	loaded, err := LoadCollectionEventRecords(store, "acct-dev-001", "vault-personal")
+	if err != nil {
+		t.Fatalf("load collection event records: %v", err)
+	}
+
+	if loaded[0].Sequence != 1 || loaded[1].Sequence != 2 {
+		t.Fatalf("expected sequence order, got %+v", loaded)
+	}
+}
+
 func TestStoreAndLoadCollectionHeadRecord(t *testing.T) {
 	store := NewMemoryObjectStore()
 	record := domain.StarterCollectionHeadRecord()
