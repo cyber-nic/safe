@@ -84,7 +84,7 @@ Role:
 
 Status:
 
-- W2 completed; awaiting next assignment
+- W4 PR open (refs #3); awaiting merge and next assignment
 
 Current owner:
 
@@ -244,7 +244,7 @@ Owner:
 
 Status:
 
-- ready
+- completed (`refs #3`)
 
 Write scope:
 
