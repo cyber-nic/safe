@@ -84,7 +84,7 @@ Role:
 
 Status:
 
-- W4 PR open (refs #3); awaiting merge and next assignment
+- W2 complete (`refs #4`); W4 merged (`refs #3`); awaiting next assignment
 
 Current owner:
 
@@ -98,7 +98,7 @@ Role:
 
 Status:
 
-- not yet assigned
+- unassigned
 
 ## Ownership Map
 
@@ -215,7 +215,7 @@ Owner:
 
 Status:
 
-- ready
+- completed (`refs #5`)
 
 Write scope:
 
@@ -287,37 +287,20 @@ Dependencies:
 - W1
 - W2
 - W3
+- W4
 
 GitHub issue:
 
 - `#2`
 
-## Engineer2 Assignment
+## Next Assignment
 
-Engineer2 is assigned `W2 - Implement durable local persistence adapter`.
+No new slice is assigned yet.
 
-Task boundaries:
+Current focus:
 
-- do not edit `cmd/safe/**`
-- do not edit `apps/web/**`
-- do not change protocol schemas unless blocked
-- if a contract change is required, stop and record the request in `docs/project/HANDOFFS.md`
-
-Suggested branch:
-
-- `w2-local-persistence`
-
-Commit shape:
-
-1. adapter and key layout
-2. persistence tests
-3. cleanup or naming pass if needed
-
-Definition of done:
-
-- tests prove persistence across process recreation
-- write scope stays within owned files
-- no in-memory-only assumptions remain in the adapter itself
+- close out `M1 - First Trustworthy Local Loop`
+- capture any post-W5 polish as explicit follow-up work instead of reopening completed milestone tasks
 
 ## Merge Order
 

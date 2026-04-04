@@ -176,7 +176,8 @@ Owner:
 
 Current gap:
 
-- web workspace helpers currently operate on replay inputs and optional secret material provided by the caller
+- W5 moved the web runtime toward the same account-local concepts as the CLI path
+- browser-specific storage adapter details and unlock UX remain thinner than the CLI path
 
 Target:
 
@@ -186,6 +187,7 @@ Rules:
 
 - do not invent a separate unlock model in `apps/web`
 - persisted workspace snapshots are transitional and should not become the final runtime API
+- runtime persistence should prefer account config, collection head, replayable events, and opaque secret-material boundaries over derived UI state
 
 ## I5 - Handoff Protocol
 
