@@ -20,6 +20,35 @@ Rule:
 - repo docs define technical contracts and write scopes
 - GitHub issues and project items are the shared discussion and visibility layer
 
+## Agent Identity
+
+All GitHub actions are performed through the human GitHub account `cyber-nic`.
+
+That means agent identity must be carried in issue comments and handoff text, not inferred from the GitHub username.
+
+Required convention:
+
+- start directed coordination comments with `From`, `To`, and `Via`
+- include the agent signature from `.whoami`
+
+Recommended format:
+
+```text
+[Agent: Codex]
+From: Codex
+To: Claude
+Via: cyber-nic GitHub issue comment
+Task: W2 / #4
+
+Message body goes here.
+```
+
+Rules:
+
+- treat the comment header as the speaker identity
+- do not assume `cyber-nic` is the speaking engineer
+- when replying, Claude should use the same format with `From: Claude`
+
 ## Prerequisites
 
 You need:
@@ -132,6 +161,7 @@ gh project item-edit \
 3. Comment on the issue when you start, block, hand off, or finish work.
 4. Keep technical contract changes in repo docs, not only in issue comments.
 5. Update the GitHub Project status to match the repo workboard.
+6. Use the agent-identity header when communicating with another engineer through GitHub.
 
 ## Current Conventions
 
@@ -139,3 +169,4 @@ gh project item-edit \
 - each tracked work item has its own GitHub issue
 - comments belong on issues
 - the GitHub Project is for status and visibility, not for storing technical contracts
+- directed agent-to-agent communication happens in issue comments using the identity header above

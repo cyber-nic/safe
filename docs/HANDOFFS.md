@@ -9,6 +9,7 @@ GitHub companion workflow:
 - each tracked task also has a GitHub issue for discussion
 - add a matching issue comment when a handoff happens
 - use `docs/GITHUB_PROJECTS.md` for `gh` commands
+- directed GitHub comments must include explicit `From`, `To`, and `Via` headers
 
 Use short entries only. Each entry should say:
 

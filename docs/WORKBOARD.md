@@ -59,6 +59,7 @@ Non-goals for this milestone:
 - Keep commits single-purpose and small enough to revert cleanly.
 - Update the matching GitHub issue when task status changes.
 - Keep technical contract decisions in repo docs, not only in issue comments.
+- When coordinating through GitHub, identify the speaking agent explicitly because all comments are posted via `cyber-nic`.
 
 ## Team
 
@@ -82,6 +83,10 @@ Role:
 Status:
 
 - active
+
+Current owner:
+
+- Claude
 
 ### Engineer3
 
