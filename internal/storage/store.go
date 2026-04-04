@@ -197,6 +197,45 @@ func LoadSecretMaterial(store ObjectStore, accountID, collectionID, secretRef st
 	return string(payload), nil
 }
 
+// VaultMutation describes the records that must become durable together as
+// one logical vault mutation. HeadRecord and EventRecord are always required.
+// SecretRef and SecretMaterial are optional (both must be non-empty to write a
+// secret). ItemRecord is optional (nil means no item write).
+type VaultMutation struct {
+	AccountID      string
+	CollectionID   string
+	SecretRef      string
+	SecretMaterial string
+	ItemRecord     *domain.VaultItemRecord
+	EventRecord    domain.VaultEventRecord
+	HeadRecord     domain.CollectionHeadRecord
+}
+
+// CommitVaultMutation writes all records in m in dependency order: optional
+// secret material first, then optional item record, then event record, and
+// finally the collection head. Writing the head last ensures that a new head
+// is never observable before its supporting records are durable, even if the
+// process crashes mid-commit.
+func CommitVaultMutation(store ObjectStore, m VaultMutation) error {
+	if m.SecretRef != "" && m.SecretMaterial != "" {
+		if _, err := StoreSecretMaterial(store, m.AccountID, m.CollectionID, m.SecretRef, m.SecretMaterial); err != nil {
+			return err
+		}
+	}
+	if m.ItemRecord != nil {
+		if _, err := StoreItemRecord(store, m.AccountID, m.CollectionID, *m.ItemRecord); err != nil {
+			return err
+		}
+	}
+	if _, err := StoreEventRecord(store, m.EventRecord); err != nil {
+		return err
+	}
+	if _, err := StoreCollectionHeadRecord(store, m.HeadRecord); err != nil {
+		return err
+	}
+	return nil
+}
+
 type objectNotFoundError string
 
 func (key objectNotFoundError) Error() string {
