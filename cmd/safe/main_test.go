@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,44 @@ func TestRunOverviewJSON(t *testing.T) {
 	})
 }
 
+func TestBootstrapCLIStateInitializesEmptyDurableRuntime(t *testing.T) {
+	withEmptyBootstrap(t, func(runtimeDir string) {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap empty runtime: %v", err)
+		}
+
+		if state.accountConfig.AccountID != "acct-dev-001" || state.accountConfig.DefaultCollectionID != "vault-personal" {
+			t.Fatalf("unexpected empty-runtime account config: %+v", state.accountConfig)
+		}
+
+		var buffer bytes.Buffer
+		if err := run([]string{"--json"}, &buffer); err != nil {
+			t.Fatalf("run empty overview json: %v", err)
+		}
+
+		var payload struct {
+			AccountID         string `json:"accountId"`
+			DefaultCollection string `json:"defaultCollection"`
+			LatestSeq         int    `json:"latestSeq"`
+			ItemCount         int    `json:"itemCount"`
+			HeadEventID       string `json:"headEventId"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode empty overview json: %v", err)
+		}
+
+		if payload.LatestSeq != 0 || payload.ItemCount != 0 || payload.HeadEventID != "" {
+			t.Fatalf("expected empty runtime overview, got %+v", payload)
+		}
+
+		unlockPath := filepath.Join(runtimeDir, "acct-dev-001", filepath.FromSlash(storage.LocalUnlockKey("acct-dev-001")))
+		if _, err := os.Stat(unlockPath); err != nil {
+			t.Fatalf("expected unlock record on disk at %s: %v", unlockPath, err)
+		}
+	})
+}
+
 func TestRunSecretListJSON(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
@@ -223,6 +262,44 @@ func TestRunSecretAddJSON(t *testing.T) {
 		}
 		if payload.LatestSeq != 3 || payload.ItemCount != 3 {
 			t.Fatalf("unexpected add counts: %+v", payload)
+		}
+	})
+}
+
+func TestRunSecretAddPersistsAcrossRestartAndEncryptsSecret(t *testing.T) {
+	withEmptyBootstrap(t, func(runtimeDir string) {
+		var addBuffer bytes.Buffer
+		if err := run([]string{"secret", "add", "GitHub", "alice", "ghp-secret-123"}, &addBuffer); err != nil {
+			t.Fatalf("run secret add on empty runtime: %v", err)
+		}
+
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap after add: %v", err)
+		}
+
+		var passwordBuffer bytes.Buffer
+		if err := secretPassword(&passwordBuffer, state, cliOptions{}, "login-github-primary"); err != nil {
+			t.Fatalf("reveal persisted password after restart: %v", err)
+		}
+		if !strings.Contains(passwordBuffer.String(), "password=ghp-secret-123") {
+			t.Fatalf("expected persisted password after restart, got %s", passwordBuffer.String())
+		}
+
+		secretPath := filepath.Join(
+			runtimeDir,
+			"acct-dev-001",
+			filepath.FromSlash(storage.SecretMaterialKey("acct-dev-001", "vault-personal", "vault-secret://login/github-primary")),
+		)
+		payload, err := os.ReadFile(secretPath)
+		if err != nil {
+			t.Fatalf("read encrypted secret payload: %v", err)
+		}
+		if strings.Contains(string(payload), "ghp-secret-123") {
+			t.Fatalf("expected encrypted secret payload, got plaintext %s", string(payload))
+		}
+		if !strings.Contains(string(payload), `"algorithm":"aes-256-gcm"`) {
+			t.Fatalf("expected encrypted secret envelope, got %s", string(payload))
 		}
 	})
 }
@@ -490,7 +567,7 @@ func TestSecretCodeRejectsMissingSecretMaterial(t *testing.T) {
 		}
 		record := projection.Items["totp-gmail-primary"]
 		record.Item.SecretRef = "vault-secret://totp/missing"
-		if _, _, err := persistItemMutation(state, record, "2026-03-31T10:03:00Z"); err != nil {
+		if _, _, err := persistItemMutation(state, record, "", "2026-03-31T10:03:00Z"); err != nil {
 			t.Fatalf("persist modified totp item: %v", err)
 		}
 
@@ -1197,7 +1274,7 @@ func TestSecretAddRejectsHeadMismatch(t *testing.T) {
 			t.Fatal("expected head mismatch error")
 		}
 
-		if !strings.Contains(err.Error(), "sync head mismatch: latestEventId expected evt-mismatch got evt-totp-gmail-primary-v1") {
+		if !strings.Contains(err.Error(), "sync head mismatch: latestEventId expected evt-mismatch got evt-totp-gmail-primary-v2") {
 			t.Fatalf("expected head mismatch error, got %v", err)
 		}
 	})
@@ -1351,6 +1428,20 @@ func TestEventTargetsItem(t *testing.T) {
 func withFakeBootstrap(t *testing.T, fn func()) {
 	t.Helper()
 
+	withBootstrapRuntime(t, true, func(string) {
+		fn()
+	})
+}
+
+func withEmptyBootstrap(t *testing.T, fn func(runtimeDir string)) {
+	t.Helper()
+
+	withBootstrapRuntime(t, false, fn)
+}
+
+func withBootstrapRuntime(t *testing.T, seedStarter bool, fn func(runtimeDir string)) {
+	t.Helper()
+
 	originalTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
@@ -1376,8 +1467,17 @@ func withFakeBootstrap(t *testing.T, fn func()) {
 	}()
 
 	previousURL := os.Getenv("SAFE_CONTROL_PLANE_URL")
+	previousPassword := os.Getenv(localPasswordEnv)
+	previousRuntimeDir := os.Getenv(localRuntimeDirEnv)
+	runtimeDir := t.TempDir()
 	if err := os.Setenv("SAFE_CONTROL_PLANE_URL", "http://control-plane.test"); err != nil {
 		t.Fatalf("set env: %v", err)
+	}
+	if err := os.Setenv(localPasswordEnv, "test-password-123"); err != nil {
+		t.Fatalf("set password env: %v", err)
+	}
+	if err := os.Setenv(localRuntimeDirEnv, runtimeDir); err != nil {
+		t.Fatalf("set runtime dir env: %v", err)
 	}
 	defer func() {
 		if previousURL == "" {
@@ -1385,7 +1485,56 @@ func withFakeBootstrap(t *testing.T, fn func()) {
 		} else {
 			_ = os.Setenv("SAFE_CONTROL_PLANE_URL", previousURL)
 		}
+		if previousPassword == "" {
+			_ = os.Unsetenv(localPasswordEnv)
+		} else {
+			_ = os.Setenv(localPasswordEnv, previousPassword)
+		}
+		if previousRuntimeDir == "" {
+			_ = os.Unsetenv(localRuntimeDirEnv)
+		} else {
+			_ = os.Setenv(localRuntimeDirEnv, previousRuntimeDir)
+		}
 	}()
 
-	fn()
+	if seedStarter {
+		seedStarterRuntime(t)
+	}
+
+	fn(runtimeDir)
+}
+
+func seedStarterRuntime(t *testing.T) {
+	t.Helper()
+
+	store, err := openLocalObjectStore("acct-dev-001")
+	if err != nil {
+		t.Fatalf("open local object store: %v", err)
+	}
+
+	session := devSessionResponse{
+		AccountID: "acct-dev-001",
+		DeviceID:  "dev-web-001",
+		Env:       "test",
+	}
+
+	accountConfig, accountKey, err := initializeLocalRuntime(store, session, os.Getenv(localPasswordEnv))
+	if err != nil {
+		t.Fatalf("initialize local runtime: %v", err)
+	}
+
+	state := cliState{
+		session:       session,
+		accountConfig: accountConfig,
+		store:         store,
+		accountKey:    accountKey,
+	}
+
+	starterItems := domain.StarterVaultItemRecords()
+	if _, _, err := persistItemMutation(state, starterItems[0], "correct-horse-battery-staple", "2026-03-31T10:00:00Z"); err != nil {
+		t.Fatalf("seed login starter item: %v", err)
+	}
+	if _, _, err := persistItemMutation(state, starterItems[1], "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "2026-03-31T10:01:00Z"); err != nil {
+		t.Fatalf("seed totp starter item: %v", err)
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -36,7 +37,8 @@ type cliState struct {
 	storageConfig storageConfigResponse
 	accountConfig domain.AccountConfigRecord
 	head          domain.CollectionHeadRecord
-	store         *storage.MemoryObjectStore
+	store         storage.ObjectStore
+	accountKey    []byte
 }
 
 type cliOptions struct {
@@ -44,6 +46,12 @@ type cliOptions struct {
 }
 
 var nowFunc = time.Now
+
+const (
+	defaultCollectionID = "vault-personal"
+	localPasswordEnv    = "SAFE_LOCAL_PASSWORD"
+	localRuntimeDirEnv  = "SAFE_LOCAL_RUNTIME_DIR"
+)
 
 func main() {
 	if err := runWithIO(os.Args[1:], os.Stdin, os.Stdout); err != nil {
@@ -117,36 +125,18 @@ func bootstrapCLIState() (cliState, error) {
 		return cliState{}, err
 	}
 
-	store := storage.NewMemoryObjectStore()
-	for _, record := range domain.StarterVaultItemRecords() {
-		if _, err := storage.StoreItemRecord(store, session.AccountID, "vault-personal", record); err != nil {
-			return cliState{}, err
-		}
-	}
-	for _, record := range domain.StarterVaultEventRecords() {
-		if _, err := storage.StoreEventRecord(store, record); err != nil {
-			return cliState{}, err
-		}
-	}
-	if _, err := storage.StoreAccountConfigRecord(store, domain.StarterAccountConfigRecord()); err != nil {
-		return cliState{}, err
-	}
-	if _, err := storage.StoreCollectionHeadRecord(store, domain.StarterCollectionHeadRecord()); err != nil {
-		return cliState{}, err
-	}
-	if _, err := storage.StoreSecretMaterial(store, session.AccountID, "vault-personal", "vault-secret://totp/gmail-primary", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"); err != nil {
-		return cliState{}, err
-	}
-	if _, err := storage.StoreSecretMaterial(store, session.AccountID, "vault-personal", "vault-secret://login/gmail-primary", "correct-horse-battery-staple"); err != nil {
+	store, err := openLocalObjectStore(session.AccountID)
+	if err != nil {
 		return cliState{}, err
 	}
 
-	accountConfig, err := storage.LoadAccountConfigRecord(store, session.AccountID)
+	accountConfig, accountKey, err := openLocalRuntime(store, session)
 	if err != nil {
 		return cliState{}, err
 	}
-	head, err := storage.LoadCollectionHeadRecord(store, session.AccountID, accountConfig.DefaultCollectionID)
-	if err != nil {
+
+	head, err := loadCollectionHead(store, accountConfig.AccountID, accountConfig.DefaultCollectionID)
+	if err != nil && !isObjectNotFound(err) {
 		return cliState{}, err
 	}
 
@@ -156,7 +146,74 @@ func bootstrapCLIState() (cliState, error) {
 		accountConfig: accountConfig,
 		head:          head,
 		store:         store,
+		accountKey:    accountKey,
 	}, nil
+}
+
+func openLocalObjectStore(accountID string) (storage.ObjectStore, error) {
+	rootDir := os.Getenv(localRuntimeDirEnv)
+	if rootDir == "" {
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			rootDir = filepath.Join(".safe", "local-runtime")
+		} else {
+			rootDir = filepath.Join(configDir, "safe", "local-runtime")
+		}
+	}
+
+	return storage.NewFileObjectStore(filepath.Join(rootDir, accountID))
+}
+
+func openLocalRuntime(store storage.ObjectStore, session devSessionResponse) (domain.AccountConfigRecord, []byte, error) {
+	password := os.Getenv(localPasswordEnv)
+	if password == "" {
+		return domain.AccountConfigRecord{}, nil, fmt.Errorf("%s is required for local unlock", localPasswordEnv)
+	}
+
+	accountConfig, err := storage.LoadAccountConfigRecord(store, session.AccountID)
+	if err != nil {
+		if !isObjectNotFound(err) {
+			return domain.AccountConfigRecord{}, nil, err
+		}
+
+		return initializeLocalRuntime(store, session, password)
+	}
+
+	unlockRecord, err := storage.LoadLocalUnlockRecord(store, session.AccountID)
+	if err != nil {
+		return domain.AccountConfigRecord{}, nil, err
+	}
+
+	accountKey, err := safecrypto.OpenLocalUnlockRecord(unlockRecord, password)
+	if err != nil {
+		return domain.AccountConfigRecord{}, nil, err
+	}
+
+	return accountConfig, accountKey, nil
+}
+
+func initializeLocalRuntime(store storage.ObjectStore, session devSessionResponse, password string) (domain.AccountConfigRecord, []byte, error) {
+	unlockRecord, accountKey, err := safecrypto.CreateLocalUnlockRecord(session.AccountID, password)
+	if err != nil {
+		return domain.AccountConfigRecord{}, nil, err
+	}
+
+	accountConfig := domain.AccountConfigRecord{
+		SchemaVersion:       1,
+		AccountID:           session.AccountID,
+		DefaultCollectionID: defaultCollectionID,
+		CollectionIDs:       []string{defaultCollectionID},
+		DeviceIDs:           []string{session.DeviceID},
+	}
+
+	if _, err := storage.StoreLocalUnlockRecord(store, unlockRecord); err != nil {
+		return domain.AccountConfigRecord{}, nil, err
+	}
+	if _, err := storage.StoreAccountConfigRecord(store, accountConfig); err != nil {
+		return domain.AccountConfigRecord{}, nil, err
+	}
+
+	return accountConfig, accountKey, nil
 }
 
 func printOverview(out io.Writer, state cliState, options cliOptions) error {
@@ -418,12 +475,7 @@ func secretPassword(out io.Writer, state cliState, options cliOptions, itemID st
 		return fmt.Errorf("secret password not configured: %s", itemID)
 	}
 
-	password, err := storage.LoadSecretMaterial(
-		state.store,
-		state.session.AccountID,
-		state.accountConfig.DefaultCollectionID,
-		record.Item.SecretRef,
-	)
+	password, err := loadSecretMaterial(state, record.Item.SecretRef)
 	if err != nil {
 		return fmt.Errorf("secret password secret material not found: %s", record.Item.SecretRef)
 	}
@@ -461,7 +513,7 @@ func secretCode(out io.Writer, state cliState, options cliOptions, itemID string
 		return fmt.Errorf("secret code only supports totp items: %s", itemID)
 	}
 
-	secret, err := storage.LoadSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, record.Item.SecretRef)
+	secret, err := loadSecretMaterial(state, record.Item.SecretRef)
 	if err != nil {
 		return fmt.Errorf("secret code secret material not found: %s", record.Item.SecretRef)
 	}
@@ -506,10 +558,6 @@ func secretAddTOTP(out io.Writer, state cliState, options cliOptions, title, iss
 	slug := slugify(title)
 	itemID := fmt.Sprintf("totp-%s-primary", slug)
 	secretRef := fmt.Sprintf("vault-secret://totp/%s-primary", slug)
-	if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, normalizedSecret); err != nil {
-		return err
-	}
-
 	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
 		Item: domain.VaultItem{
@@ -526,7 +574,7 @@ func secretAddTOTP(out io.Writer, state cliState, options cliOptions, title, iss
 		},
 	}
 
-	projection, newEvent, err := persistItemMutation(state, itemRecord, "2026-03-31T10:02:30Z")
+	projection, newEvent, err := persistItemMutation(state, itemRecord, normalizedSecret, "2026-03-31T10:02:30Z")
 	if err != nil {
 		return err
 	}
@@ -561,16 +609,10 @@ func secretImport(in io.Reader, out io.Writer, state cliState, options cliOption
 		return err
 	}
 
-	for secretRef, secret := range secretMaterial {
-		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, secret); err != nil {
-			return err
-		}
-	}
-
 	projection := safesync.Projection{}
 	for index, record := range records {
 		occurredAt := fmt.Sprintf("2026-03-31T10:06:%02dZ", index)
-		projection, _, err = persistItemMutation(state, record, occurredAt)
+		projection, _, err = persistItemMutation(state, record, secretMaterial[record.Item.SecretRef], occurredAt)
 		if err != nil {
 			return err
 		}
@@ -616,10 +658,10 @@ func secretExport(out io.Writer, state cliState, itemID string) error {
 			Item           domain.VaultItemRecord `json:"item"`
 			SecretMaterial map[string]string      `json:"secretMaterial,omitempty"`
 		}{
-			AccountID:    projection.AccountID,
-			CollectionID: projection.CollectionID,
-			LatestSeq:    projection.LatestSeq,
-			Item:         record,
+			AccountID:      projection.AccountID,
+			CollectionID:   projection.CollectionID,
+			LatestSeq:      projection.LatestSeq,
+			Item:           record,
 			SecretMaterial: exportedSecrets,
 		}
 
@@ -644,10 +686,10 @@ func secretExport(out io.Writer, state cliState, itemID string) error {
 		Items          []domain.VaultItemRecord `json:"items"`
 		SecretMaterial map[string]string        `json:"secretMaterial,omitempty"`
 	}{
-		AccountID:    projection.AccountID,
-		CollectionID: projection.CollectionID,
-		LatestSeq:    projection.LatestSeq,
-		Items:        items,
+		AccountID:      projection.AccountID,
+		CollectionID:   projection.CollectionID,
+		LatestSeq:      projection.LatestSeq,
+		Items:          items,
 		SecretMaterial: collectExportSecretMaterial(state, items),
 	}
 
@@ -672,12 +714,7 @@ func collectExportSecretMaterial(state cliState, records []domain.VaultItemRecor
 			continue
 		}
 
-		secret, err := storage.LoadSecretMaterial(
-			state.store,
-			state.session.AccountID,
-			state.accountConfig.DefaultCollectionID,
-			secretRef,
-		)
+		secret, err := loadSecretMaterial(state, secretRef)
 		if err == nil {
 			exportedSecrets[secretRef] = secret
 		}
@@ -697,8 +734,8 @@ func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, map[str
 	}
 
 	type listImportPayload struct {
-		Items          []json.RawMessage   `json:"items"`
-		SecretMaterial map[string]string   `json:"secretMaterial"`
+		Items          []json.RawMessage `json:"items"`
+		SecretMaterial map[string]string `json:"secretMaterial"`
 	}
 	type singleImportPayload struct {
 		Item           json.RawMessage   `json:"item"`
@@ -779,24 +816,21 @@ func secretAdd(out io.Writer, state cliState, options cliOptions, title, usernam
 	secretRef := ""
 	if password != "" {
 		secretRef = fmt.Sprintf("vault-secret://login/%s-primary", slugify(title))
-		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, password); err != nil {
-			return err
-		}
 	}
 	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
 		Item: domain.VaultItem{
-			ID:       itemID,
-			Kind:     domain.VaultItemKindLogin,
-			Title:    title,
-			Tags:     []string{"manual", "password"},
-			Username: username,
-			URLs:     []string{"https://example.invalid/login"},
+			ID:        itemID,
+			Kind:      domain.VaultItemKindLogin,
+			Title:     title,
+			Tags:      []string{"manual", "password"},
+			Username:  username,
+			URLs:      []string{"https://example.invalid/login"},
 			SecretRef: secretRef,
 		},
 	}
 
-	projection, newEvent, err := persistItemMutation(state, itemRecord, "2026-03-31T10:02:00Z")
+	projection, newEvent, err := persistItemMutation(state, itemRecord, password, "2026-03-31T10:02:00Z")
 	if err != nil {
 		return err
 	}
@@ -837,16 +871,15 @@ func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, tit
 	updated := record
 	updated.Item.Title = title
 	updated.Item.Username = username
+	newSecretMaterial := ""
 	if len(password) > 0 && password[0] != "" {
 		if updated.Item.SecretRef == "" {
 			updated.Item.SecretRef = fmt.Sprintf("vault-secret://login/%s-primary", slugify(title))
 		}
-		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, updated.Item.SecretRef, password[0]); err != nil {
-			return err
-		}
+		newSecretMaterial = password[0]
 	}
 
-	projection, newEvent, err := persistItemMutation(state, updated, "2026-03-31T10:03:00Z")
+	projection, newEvent, err := persistItemMutation(state, updated, newSecretMaterial, "2026-03-31T10:03:00Z")
 	if err != nil {
 		return err
 	}
@@ -917,7 +950,7 @@ func secretRestore(out io.Writer, state cliState, options cliOptions, itemID str
 		return fmt.Errorf("secret version not found: %s", itemID)
 	}
 
-	projection, newEvent, err := persistItemMutation(state, record, "2026-03-31T10:05:00Z")
+	projection, newEvent, err := persistItemMutation(state, record, "", "2026-03-31T10:05:00Z")
 	if err != nil {
 		return err
 	}
@@ -959,6 +992,16 @@ func loadProjection(state cliState) (safesync.Projection, error) {
 func loadVerifiedState(state cliState) (domain.CollectionHeadRecord, safesync.Projection, error) {
 	head, err := loadHead(state)
 	if err != nil {
+		if isObjectNotFound(err) {
+			events, err := loadEvents(state)
+			if err != nil {
+				return domain.CollectionHeadRecord{}, safesync.Projection{}, err
+			}
+			if len(events) != 0 {
+				return domain.CollectionHeadRecord{}, safesync.Projection{}, fmt.Errorf("local runtime missing collection head for existing events")
+			}
+			return domain.CollectionHeadRecord{}, emptyProjection(state), nil
+		}
 		return domain.CollectionHeadRecord{}, safesync.Projection{}, err
 	}
 
@@ -984,27 +1027,54 @@ func loadEvents(state cliState) ([]domain.VaultEventRecord, error) {
 	return storedEvents, nil
 }
 
-func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
+func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, secretMaterial string, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
 	head, err := loadHead(state)
 	if err != nil {
-		return safesync.Projection{}, domain.VaultEventRecord{}, err
-	}
-	if err := ensureHeadMatchesEvents(state, head); err != nil {
-		return safesync.Projection{}, domain.VaultEventRecord{}, err
-	}
-
-	newEvent, newHead, err := safesync.BuildPutItemMutation(head, state.session.DeviceID, itemRecord, occurredAt)
-	if err != nil {
-		return safesync.Projection{}, domain.VaultEventRecord{}, err
+		if !isObjectNotFound(err) {
+			return safesync.Projection{}, domain.VaultEventRecord{}, err
+		}
+	} else {
+		if err := ensureHeadMatchesEvents(state, head); err != nil {
+			return safesync.Projection{}, domain.VaultEventRecord{}, err
+		}
 	}
 
-	if _, err := storage.StoreItemRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, itemRecord); err != nil {
-		return safesync.Projection{}, domain.VaultEventRecord{}, err
+	var newEvent domain.VaultEventRecord
+	var newHead domain.CollectionHeadRecord
+	if isObjectNotFound(err) {
+		newEvent, newHead, err = buildInitialPutItemMutation(state, itemRecord, occurredAt)
+		if err != nil {
+			return safesync.Projection{}, domain.VaultEventRecord{}, err
+		}
+	} else {
+		newEvent, newHead, err = safesync.BuildPutItemMutation(head, state.session.DeviceID, itemRecord, occurredAt)
+		if err != nil {
+			return safesync.Projection{}, domain.VaultEventRecord{}, err
+		}
 	}
-	if _, err := storage.StoreEventRecord(state.store, newEvent); err != nil {
-		return safesync.Projection{}, domain.VaultEventRecord{}, err
+
+	encryptedSecretMaterial := ""
+	if secretMaterial != "" {
+		if itemRecord.Item.SecretRef == "" {
+			return safesync.Projection{}, domain.VaultEventRecord{}, fmt.Errorf("secret material requires secretRef for item %s", itemRecord.Item.ID)
+		}
+
+		payload, err := safecrypto.EncryptSecretMaterial(state.accountKey, []byte(secretMaterial))
+		if err != nil {
+			return safesync.Projection{}, domain.VaultEventRecord{}, err
+		}
+		encryptedSecretMaterial = string(payload)
 	}
-	if _, err := storage.StoreCollectionHeadRecord(state.store, newHead); err != nil {
+
+	if err := storage.CommitVaultMutation(state.store, storage.VaultMutation{
+		AccountID:      state.session.AccountID,
+		CollectionID:   state.accountConfig.DefaultCollectionID,
+		SecretRef:      itemRecord.Item.SecretRef,
+		SecretMaterial: encryptedSecretMaterial,
+		ItemRecord:     &itemRecord,
+		EventRecord:    newEvent,
+		HeadRecord:     newHead,
+	}); err != nil {
 		return safesync.Projection{}, domain.VaultEventRecord{}, err
 	}
 
@@ -1046,7 +1116,7 @@ func persistDeleteMutation(state cliState, itemID, occurredAt string) (safesync.
 }
 
 func loadHead(state cliState) (domain.CollectionHeadRecord, error) {
-	return storage.LoadCollectionHeadRecord(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	return loadCollectionHead(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID)
 }
 
 func ensureHeadMatchesEvents(state cliState, head domain.CollectionHeadRecord) error {
@@ -1116,6 +1186,71 @@ func slugify(value string) string {
 	}
 
 	return string(buffer)
+}
+
+func emptyProjection(state cliState) safesync.Projection {
+	return safesync.Projection{
+		AccountID:    state.accountConfig.AccountID,
+		CollectionID: state.accountConfig.DefaultCollectionID,
+		Items:        make(map[string]domain.VaultItemRecord),
+	}
+}
+
+func loadCollectionHead(store storage.ObjectStore, accountID, collectionID string) (domain.CollectionHeadRecord, error) {
+	return storage.LoadCollectionHeadRecord(store, accountID, collectionID)
+}
+
+func buildInitialPutItemMutation(state cliState, itemRecord domain.VaultItemRecord, occurredAt string) (domain.VaultEventRecord, domain.CollectionHeadRecord, error) {
+	if state.session.DeviceID == "" {
+		return domain.VaultEventRecord{}, domain.CollectionHeadRecord{}, fmt.Errorf("deviceID is required")
+	}
+	if occurredAt == "" {
+		return domain.VaultEventRecord{}, domain.CollectionHeadRecord{}, fmt.Errorf("occurredAt is required")
+	}
+	if err := itemRecord.Validate(); err != nil {
+		return domain.VaultEventRecord{}, domain.CollectionHeadRecord{}, err
+	}
+
+	eventID := fmt.Sprintf("evt-%s-v1", itemRecord.Item.ID)
+	event := domain.VaultEventRecord{
+		SchemaVersion: 1,
+		EventID:       eventID,
+		AccountID:     state.session.AccountID,
+		DeviceID:      state.session.DeviceID,
+		CollectionID:  state.accountConfig.DefaultCollectionID,
+		Sequence:      1,
+		OccurredAt:    occurredAt,
+		Action:        domain.VaultEventActionPutItem,
+		ItemRecord:    itemRecord,
+	}
+
+	head := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     state.session.AccountID,
+		CollectionID:  state.accountConfig.DefaultCollectionID,
+		LatestEventID: eventID,
+		LatestSeq:     1,
+	}
+
+	return event, head, nil
+}
+
+func loadSecretMaterial(state cliState, secretRef string) (string, error) {
+	payload, err := storage.LoadSecretMaterialBytes(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef)
+	if err != nil {
+		return "", err
+	}
+
+	plaintext, err := safecrypto.DecryptSecretMaterial(state.accountKey, payload)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}
+
+func isObjectNotFound(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "object not found: ")
 }
 
 func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {
