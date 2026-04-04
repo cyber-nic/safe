@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document turns [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
+This document turns [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
 
 It is intended to answer:
 
@@ -589,6 +589,7 @@ Goal:
 - Close the highest-risk gaps before public release.
 
 Build:
+
 - Recovery flow UX refinements
 - Password change flow
 - Device management UI

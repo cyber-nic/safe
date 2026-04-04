@@ -4,9 +4,9 @@
 
 This document is a security assessment of the current Safe product definition, system design, and implementation plan in:
 
-- [PRODUCT.md](./instructions/PRODUCT.md)
-- [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md)
-- [IMPLEMENTATION_PLAN.md](./instructions/IMPLEMENTATION_PLAN.md)
+- [PRODUCT.md](./architecture/PRODUCT.md)
+- [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md)
+- [IMPLEMENTATION_PLAN.md](./architecture/IMPLEMENTATION_PLAN.md)
 
 It evaluates whether the proposed design can plausibly deliver a zero-knowledge secret manager for individuals and small trusted groups, identifies the major security strengths and weaknesses, and defines the controls and release gates required for a safe v1.
 

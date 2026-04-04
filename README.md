@@ -4,13 +4,13 @@ Safe is a zero-knowledge secret manager for individuals and small trusted groups
 
 ## Current Docs
 
-- [PRODUCT.md](./instructions/PRODUCT.md)
-- [SYSTEM_DESIGN.md](./instructions/SYSTEM_DESIGN.md)
-- [IMPLEMENTATION_PLAN.md](./instructions/IMPLEMENTATION_PLAN.md)
-- [SECURITY.md](./instructions/SECURITY.md)
-- [ENGINEERING.md](./instructions/ENGINEERING.md)
-- [PROTOCOL.md](./instructions/PROTOCOL.md)
-- [ARCHITECTURE.md](./instructions/ARCHITECTURE.md)
+- [PRODUCT.md](./architecture/PRODUCT.md)
+- [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md)
+- [IMPLEMENTATION_PLAN.md](./architecture/IMPLEMENTATION_PLAN.md)
+- [SECURITY.md](./architecture/SECURITY.md)
+- [ENGINEERING.md](./architecture/ENGINEERING.md)
+- [PROTOCOL.md](./architecture/PROTOCOL.md)
+- [ARCHITECTURE.md](./architecture/ARCHITECTURE.md)
 
 ## Stack
 
