@@ -165,3 +165,24 @@ Next action:
 
 - W4 is unblocked (W2 + W3 complete)
 - Engineer2 awaits next assignment
+
+### 2026-04-04 - Engineer2 contribution to W4
+
+Task:
+
+- `W4 - Replace CLI starter bootstrapping on the save/read path`
+
+Status:
+
+- PR open; refs #3 — https://github.com/cyber-nic/safe/pull/15
+
+Files touched:
+
+- `cmd/safe/main.go` (durable bootstrap, encrypted secrets, CommitVaultMutation, genesis head handling)
+- `cmd/safe/main_test.go` (withBootstrapRuntime, withFakeBootstrap, withEmptyBootstrap, restart and encryption tests)
+- `internal/storage/store.go` (added IsObjectNotFound — type-safe helper replacing local string-prefix check)
+
+Next action:
+
+- W5 is unblocked once W4 merges
+- Engineer2 awaits next assignment

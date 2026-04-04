@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -283,4 +284,14 @@ func (key objectNotFoundError) Error() string {
 
 func ErrObjectNotFound(key string) error {
 	return objectNotFoundError(key)
+}
+
+// IsObjectNotFound reports whether err is an object-not-found error returned
+// by Get or any Load helper in this package.
+func IsObjectNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var notFound objectNotFoundError
+	return errors.As(err, &notFound)
 }

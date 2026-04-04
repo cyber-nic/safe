@@ -136,7 +136,7 @@ func bootstrapCLIState() (cliState, error) {
 	}
 
 	head, err := loadCollectionHead(store, accountConfig.AccountID, accountConfig.DefaultCollectionID)
-	if err != nil && !isObjectNotFound(err) {
+	if err != nil && !storage.IsObjectNotFound(err) {
 		return cliState{}, err
 	}
 
@@ -172,7 +172,7 @@ func openLocalRuntime(store storage.ObjectStore, session devSessionResponse) (do
 
 	accountConfig, err := storage.LoadAccountConfigRecord(store, session.AccountID)
 	if err != nil {
-		if !isObjectNotFound(err) {
+		if !storage.IsObjectNotFound(err) {
 			return domain.AccountConfigRecord{}, nil, err
 		}
 
@@ -992,7 +992,7 @@ func loadProjection(state cliState) (safesync.Projection, error) {
 func loadVerifiedState(state cliState) (domain.CollectionHeadRecord, safesync.Projection, error) {
 	head, err := loadHead(state)
 	if err != nil {
-		if isObjectNotFound(err) {
+		if storage.IsObjectNotFound(err) {
 			events, err := loadEvents(state)
 			if err != nil {
 				return domain.CollectionHeadRecord{}, safesync.Projection{}, err
@@ -1030,7 +1030,7 @@ func loadEvents(state cliState) ([]domain.VaultEventRecord, error) {
 func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, secretMaterial string, occurredAt string) (safesync.Projection, domain.VaultEventRecord, error) {
 	head, err := loadHead(state)
 	if err != nil {
-		if !isObjectNotFound(err) {
+		if !storage.IsObjectNotFound(err) {
 			return safesync.Projection{}, domain.VaultEventRecord{}, err
 		}
 	} else {
@@ -1041,7 +1041,7 @@ func persistItemMutation(state cliState, itemRecord domain.VaultItemRecord, secr
 
 	var newEvent domain.VaultEventRecord
 	var newHead domain.CollectionHeadRecord
-	if isObjectNotFound(err) {
+	if storage.IsObjectNotFound(err) {
 		newEvent, newHead, err = buildInitialPutItemMutation(state, itemRecord, occurredAt)
 		if err != nil {
 			return safesync.Projection{}, domain.VaultEventRecord{}, err
@@ -1249,9 +1249,6 @@ func loadSecretMaterial(state cliState, secretRef string) (string, error) {
 	return string(plaintext), nil
 }
 
-func isObjectNotFound(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "object not found: ")
-}
 
 func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {
 	request, err := http.NewRequest(http.MethodPost, baseURL+"/v1/dev/session", bytes.NewReader([]byte("{}")))
