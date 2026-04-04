@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-04-04T11:00:00Z
+
+- Added in-repo execution docs under `docs/` so the repository now carries its own workboard, decisions log, interface-contract notes, and handoff log for multi-engineer coordination.
+- Added `WORKBOARD.md`, `DECISIONS.md`, `INTERFACES.md`, and `HANDOFFS.md` covering the current milestone, ownership boundaries, write scopes, merge order, and handoff protocol.
+- Assigned Engineer2 the first durable local-persistence implementation slice with an explicit write scope designed to avoid conflicts with ongoing CLI, web, sync, and control-plane work.
+
 ## 2026-03-31T12:04:45Z
 
 - Added `safe secret search <query>` to the CLI with case-insensitive matching across IDs, titles, usernames, tags, URLs, issuer, and account fields.
