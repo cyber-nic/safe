@@ -174,7 +174,7 @@ Task:
 
 Status:
 
-- PR open; refs #3 — https://github.com/cyber-nic/safe/pull/15
+- merged on `main`; refs #3 — https://github.com/cyber-nic/safe/pull/15
 
 Files touched:
 
@@ -184,7 +184,7 @@ Files touched:
 
 Next action:
 
-- W5 is unblocked once W4 merges
+- W5 is unblocked
 - Engineer2 awaits next assignment
 
 ### 2026-04-04 - Engineer1 internal note

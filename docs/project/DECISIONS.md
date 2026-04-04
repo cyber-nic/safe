@@ -190,7 +190,7 @@ Impact:
 - W2 must provide a write path that can commit related records without exposing a partial new head after failure
 - W4 should wire CLI mutations through that commit boundary instead of calling raw `Put` operations ad hoc
 
-## Pending Decisions
+## Accepted Decisions
 
 ### D7 - Local unlock uses an account-scoped Argon2id record plus AES-GCM envelopes
 
@@ -228,6 +228,8 @@ Refs:
 
 - `#5`
 
+## Open Questions
+
 ### P3 - Web local runtime storage boundary
 
 Status:
@@ -245,3 +247,5 @@ Question:
 Decision driver:
 
 - avoid inventing a second runtime model
+- W5 aligned the web runtime around account config, optional head state, replayable events, and locked secret-material boundaries
+- remaining decisions should focus on browser-specific adapter details and post-M1 polish, not on inventing a second runtime model

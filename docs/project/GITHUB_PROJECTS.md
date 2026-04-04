@@ -130,6 +130,7 @@ List items:
 
 ```bash
 gh project item-list 1 --owner "@me"
+gh project item-list 1 --owner "@me" --format json
 ```
 
 Add an existing repo issue to the project:
@@ -153,6 +154,14 @@ gh project item-edit \
   --field-id <status-field-id> \
   --single-select-option-id <option-id>
 ```
+
+Recommended audit step:
+
+```bash
+gh project item-list 1 --owner "@me" --format json
+```
+
+Use the JSON output to compare project `status` and issue `state` against `docs/project/WORKBOARD.md`. If they disagree, update the docs first, then fix the GitHub item.
 
 ## Recommended Workflow
 

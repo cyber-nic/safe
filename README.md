@@ -42,19 +42,20 @@ Useful progress already landed:
 - starter control-plane and CLI binaries
 - shared Go and TypeScript protocol models plus canonical fixture coverage
 - a script-friendly CLI prototype for local secret CRUD, history, import/export, and JSON output
+- durable file-backed local runtime wiring in the CLI, including password-derived unlock and encrypted secret-material storage
+- web local runtime persistence aligned around account config, optional head state, replayable events, and locked-at-rest secret handling
 
 But the project is still behind the plan's actual critical path:
 
 - cryptographic key hierarchy and recovery flows are still missing
-- local encrypted persistence and unlock or lock lifecycle are still missing
 - signed mutable metadata and rollback detection are still missing
 - object-store sync is still a starter model, not the intended v1 storage protocol
 
 ## Immediate Next Steps
 
 1. Finish the first real user loop in a client surface: sign in, save a secret, and read it back.
-2. Replace the current starter in-memory vault behavior with durable encrypted local persistence aligned with the local-runtime plan.
-3. Implement the minimum unlock path needed to reopen and read a saved secret safely.
+2. Validate the M1 local-runtime loop end to end across the shipped CLI and web surfaces.
+3. Pull the next milestone boundary forward only after any remaining M1 polish is explicit and scoped.
 4. Continue signer, rollback, and sync-hardening work only insofar as it supports that first trustworthy save/read loop, then expand outward.
 
 ## Local Development
