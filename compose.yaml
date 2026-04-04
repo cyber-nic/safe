@@ -1,8 +1,8 @@
-name: safe
+name: safe-${SAFE_STACK_NAME:-stack}
 
 services:
   control-plane:
-    container_name: safe-ctrl
+    container_name: safe-${SAFE_STACK_NAME:-stack}-control-plane
     build:
       context: .
       dockerfile: docker/control-plane/Dockerfile.dev
@@ -39,7 +39,7 @@ services:
           target: /workspace/go.work
 
   localstack:
-    container_name: safe-stack
+    container_name: safe-${SAFE_STACK_NAME:-stack}-localstack
     image: localstack/localstack:4.4.0
     environment:
       SERVICES: s3,sts
@@ -63,3 +63,4 @@ services:
 
 volumes:
   localstack-data:
+    name: safe-${SAFE_STACK_NAME:-stack}-localstack-data

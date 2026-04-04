@@ -1,48 +1,60 @@
 COMPOSE ?= docker compose
 COMPOSE_FILE ?= compose.yaml
+COMPOSE_OVERRIDE_FILE ?= compose.override.yaml
+COMPOSE_ENV_FILE ?= .env
 LOCALSTACK ?= localstack
 CONTROL_PLANE ?= control-plane
+
+COMPOSE_ARGS := -f $(COMPOSE_FILE)
+
+ifneq ($(wildcard $(COMPOSE_OVERRIDE_FILE)),)
+COMPOSE_ARGS += -f $(COMPOSE_OVERRIDE_FILE)
+endif
+
+ifneq ($(wildcard $(COMPOSE_ENV_FILE)),)
+COMPOSE_ARGS += --env-file $(COMPOSE_ENV_FILE)
+endif
 
 .PHONY: up down restart build watch logs ps cli shell-control-plane shell-localstack s3-ls s3-mb s3-rb test test-go test-ts-sdk test-test-vectors test-web clean
 
 up:
-	$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
+	$(COMPOSE) $(COMPOSE_ARGS) up -d --build
 
 down:
-	$(COMPOSE) -f $(COMPOSE_FILE) down --remove-orphans
+	$(COMPOSE) $(COMPOSE_ARGS) down --remove-orphans
 
 cli:
 	GOCACHE=$(CURDIR)/.cache/go-build go run ./cmd/safe $(ARGS)
 
 restart:
-	$(COMPOSE) -f $(COMPOSE_FILE) restart
+	$(COMPOSE) $(COMPOSE_ARGS) restart
 
 build:
-	$(COMPOSE) -f $(COMPOSE_FILE) build
+	$(COMPOSE) $(COMPOSE_ARGS) build
 
 watch:
-	$(COMPOSE) -f $(COMPOSE_FILE) watch
+	$(COMPOSE) $(COMPOSE_ARGS) watch
 
 logs:
-	$(COMPOSE) -f $(COMPOSE_FILE) logs -f
+	$(COMPOSE) $(COMPOSE_ARGS) logs -f
 
 ps:
-	$(COMPOSE) -f $(COMPOSE_FILE) ps
+	$(COMPOSE) $(COMPOSE_ARGS) ps
 
 shell-control-plane:
-	$(COMPOSE) -f $(COMPOSE_FILE) exec $(CONTROL_PLANE) sh
+	$(COMPOSE) $(COMPOSE_ARGS) exec $(CONTROL_PLANE) sh
 
 shell-localstack:
-	$(COMPOSE) -f $(COMPOSE_FILE) exec $(LOCALSTACK) sh
+	$(COMPOSE) $(COMPOSE_ARGS) exec $(LOCALSTACK) sh
 
 s3-ls:
-	$(COMPOSE) -f $(COMPOSE_FILE) exec $(LOCALSTACK) awslocal s3 ls
+	$(COMPOSE) $(COMPOSE_ARGS) exec $(LOCALSTACK) awslocal s3 ls
 
 s3-mb:
-	$(COMPOSE) -f $(COMPOSE_FILE) exec $(LOCALSTACK) awslocal s3 mb s3://$${BUCKET:-safe-dev}
+	$(COMPOSE) $(COMPOSE_ARGS) exec $(LOCALSTACK) awslocal s3 mb s3://$${BUCKET:-safe-dev}
 
 s3-rb:
-	$(COMPOSE) -f $(COMPOSE_FILE) exec $(LOCALSTACK) awslocal s3 rb s3://$${BUCKET:-safe-dev} --force
+	$(COMPOSE) $(COMPOSE_ARGS) exec $(LOCALSTACK) awslocal s3 rb s3://$${BUCKET:-safe-dev} --force
 
 test: test-go test-ts-sdk test-test-vectors test-web
 

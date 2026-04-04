@@ -1,0 +1,15 @@
+# Local-only Compose overrides.
+#
+# Keep host-port assignments in `.env`:
+#   CONTROL_PLANE_PORT=18080
+#   LOCALSTACK_PORT=14566
+#
+# `make up` and related targets load this file automatically when it exists.
+# Compose merges `ports:` lists across files, so overriding ports here would
+# append extra mappings instead of replacing the base ones.
+
+name: safe-codex
+
+volumes:
+  localstack-data:
+    name: safe-codex-localstack-data

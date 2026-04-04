@@ -67,9 +67,42 @@ The initial local development stack is Compose-first:
 Quick start:
 
 1. Copy `.env.example` to `.env` if you need to override defaults or set `LOCALSTACK_AUTH_TOKEN`.
-2. Run `make up`.
-3. Run `make logs` to follow service output.
-4. Run `make watch` if you want Compose-managed restart behavior on Go file changes.
+2. Optionally copy `compose.override.yaml.example` to `compose.override.yaml` for local-only stack naming overrides.
+3. Run `make up`.
+4. Run `make logs` to follow service output.
+5. Run `make watch` if you want Compose-managed restart behavior on Go file changes.
+
+When multiple engineers or agents run the stack on the same machine, each one needs a unique Compose namespace as well as unique host ports. Set the shared identity in your local `.env`:
+
+- `SAFE_STACK_NAME=safe-<engineer>`
+
+Then, if you want the stack name to live outside shared repo config, copy `compose.override.yaml.example` to `compose.override.yaml` and edit the explicit local names there. Keep the actual port numbers in `.env`. The `make` targets now pass `.env` explicitly and automatically include `compose.override.yaml` when that file exists.
+
+Example `.env`:
+
+```env
+SAFE_STACK_NAME=safe-codex
+```
+
+Example `compose.override.yaml`:
+
+```yaml
+name: safe-codex
+
+volumes:
+  localstack-data:
+    name: safe-codex-localstack-data
+```
+
+Example matching local port values:
+
+```env
+CONTROL_PLANE_PORT=18080
+LOCALSTACK_PORT=14566
+```
+
+Using a unique `SAFE_STACK_NAME` avoids collisions on the Compose project name and the LocalStack data volume; changing only the ports is not enough.
+Keep the port values in `.env`: Compose merges `ports:` arrays across override files, so a `compose.override.yaml` is not a clean place to replace the base port mappings.
 
 Useful targets:
 
