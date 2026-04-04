@@ -118,6 +118,7 @@ The following interfaces are considered active contracts for this milestone. Do 
 1. Local runtime save or load contract
    Output needed:
    - initialize account-local storage
+   - persist account config, collection head, vault item records, vault event records, and secret material
    - save encrypted secret material
    - load encrypted secret material after restart
    - lock and unlock boundaries
@@ -142,7 +143,7 @@ Owner:
 
 Status:
 
-- in progress
+- completed
 
 Write scope:
 
@@ -190,7 +191,9 @@ Output:
 
 Acceptance:
 
-- can persist account config, collection head, event records, and secret material
+- can persist account config, collection head, vault item records, event records, and secret material
+- event loading is deterministic by record sequence, not backend listing accidents
+- related record writes do not expose a partial new head after failure
 - survives process restart in tests
 - does not require network or control-plane access
 
@@ -210,7 +213,7 @@ Owner:
 
 Status:
 
-- queued
+- ready
 
 Write scope:
 

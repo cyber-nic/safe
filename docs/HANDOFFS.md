@@ -75,8 +75,41 @@ Task:
 
 Status:
 
-- in progress
+- completed
 
 Next action:
 
-- finalize the first persistence and unlock decisions before wiring `cmd/safe`
+- hand the accepted persistence and unlock contract to Engineer2 for W2 and to Engineer1 for W3 or W4
+
+### 2026-04-04 - Engineer1 to Engineer2
+
+Task:
+
+- `W2 - Implement durable local persistence adapter`
+
+Status:
+
+- contract frozen
+
+Write scope reminder:
+
+- `internal/storage/**`
+- optional new package under `internal/**` if required by the adapter
+
+Contract updates:
+
+- persist five durable units: account config, collection head, vault item records, vault event records, and secret material
+- keep the existing logical key layout from `internal/storage`
+- do not depend on backend filename ordering for event load order; return events in ascending `sequence`
+- provide a durable mutation boundary so a new collection head is not exposed without its matching records
+- do not synthesize starter fixtures during initialization
+
+Files:
+
+- `docs/INTERFACES.md`
+- `docs/DECISIONS.md`
+- `docs/WORKBOARD.md`
+
+Next action:
+
+- implement the durable adapter and restart-survival tests against the frozen contract

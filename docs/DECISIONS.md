@@ -130,25 +130,65 @@ Impact:
 
 - `docs/INTERFACES.md` should be updated before implementation starts on a new shared seam
 
-## Pending Decisions
-
-### P1 - Local persistence backend format
+### D5 - The first durable local runtime keeps the existing object-key record model
 
 Status:
 
-- pending
+- accepted
+
+Date:
+
+- 2026-04-04
 
 Owner:
 
 - Engineer1
 
-Question:
+Decision:
 
-- use a simple file-backed format first or introduce SQLite immediately for the CLI local runtime
+- the M1 durable local runtime will keep the current account and collection object-key layout already exposed by `internal/storage`
 
-Decision driver:
+Rationale:
 
-- fastest path to a trustworthy restart-safe loop with low migration cost
+- the repo already has canonical record types and key helpers for account config, collection head, item records, event records, and secret material
+- freezing that shape lets W2 implement restart-safe durability without waiting for a second schema design
+- this keeps W4 focused on replacing the CLI bootstrap path rather than translating between two local models
+
+Impact:
+
+- W2 should implement a durable adapter that preserves the existing logical keys
+- the backend may be file-backed for M1 as long as higher-level consumers stay backend-agnostic
+- item records are part of the durable runtime contract, not an optional cache
+
+### D6 - Local runtime mutations require a durable commit boundary
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-04
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- the local runtime must treat a vault mutation as one logical durable commit instead of a sequence of unrelated writes
+
+Rationale:
+
+- `cmd/safe` mutates secret material, item state, event history, and collection head together
+- exposing a new head before the matching records are durable would break restart-safety and make later sync semantics harder to trust
+
+Impact:
+
+- W2 must provide a write path that can commit related records without exposing a partial new head after failure
+- W4 should wire CLI mutations through that commit boundary instead of calling raw `Put` operations ad hoc
+
+## Pending Decisions
 
 ### P2 - Local encryption payload format
 
