@@ -15,7 +15,7 @@ Each decision should include:
 
 ## Active Decisions
 
-### D1 - Coordination lives in the repo
+### D1 - GitHub is the communication layer; repo docs are the technical source of truth
 
 Status:
 
@@ -31,21 +31,23 @@ Owner:
 
 Decision:
 
-- the repo is the primary coordination system for technical execution
+- GitHub issues and the project board are the primary communication layer for progress, blockers, handoffs, and discussion
+- repo docs are the canonical technical record for contracts, interfaces, ownership, and decisions
 
 Rationale:
 
-- the team is still small
-- the critical path is mostly code and interfaces
-- keeping planning next to code reduces drift
+- the team is still small but spans human and agent contributors who cannot share a chat channel
+- GitHub provides a shared, asynchronous, auditable surface for all contributors
+- keeping contracts next to code in repo docs reduces drift and avoids stale issue threads becoming canonical
 
 Impact:
 
-- `docs/WORKBOARD.md` is the active work queue
-- `docs/INTERFACES.md` is the contract source of truth
-- external PM tools are optional mirrors, not canonical state
-- GitHub issues and the GitHub Project are the shared discussion and visibility layer
-- `docs/GITHUB_PROJECTS.md` is the CLI access guide
+- post a GitHub issue comment at every state transition: start, block, hand off, complete
+- update the GitHub Project item status to match the current task state
+- `docs/project/WORKBOARD.md` is the active work queue and write-scope authority
+- `docs/project/INTERFACES.md` is the contract source of truth
+- every repo doc change that affects a tracked task must reference the matching GitHub issue number
+- `docs/project/GITHUB_PROJECTS.md` is the CLI access guide
 
 ### D2 - Optimize for the first trustworthy local loop
 
@@ -128,7 +130,7 @@ Rationale:
 
 Impact:
 
-- `docs/INTERFACES.md` should be updated before implementation starts on a new shared seam
+- `docs/project/INTERFACES.md` should be updated before implementation starts on a new shared seam
 
 ### D5 - The first durable local runtime keeps the existing object-key record model
 

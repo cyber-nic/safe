@@ -4,9 +4,9 @@
 
 This document is a security assessment of the current Safe product definition, system design, and implementation plan in:
 
-- [PRODUCT.md](./architecture/PRODUCT.md)
-- [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md)
-- [IMPLEMENTATION_PLAN.md](./architecture/IMPLEMENTATION_PLAN.md)
+- [PRODUCT.md](./docs/architecture/PRODUCT.md)
+- [SYSTEM_DESIGN.md](./docs/architecture/SYSTEM_DESIGN.md)
+- [IMPLEMENTATION_PLAN.md](./docs/architecture/IMPLEMENTATION_PLAN.md)
 
 It evaluates whether the proposed design can plausibly deliver a zero-knowledge secret manager for individuals and small trusted groups, identifies the major security strengths and weaknesses, and defines the controls and release gates required for a safe v1.
 
@@ -543,7 +543,7 @@ Viable for v1 if invite and membership state transitions are tightly specified a
 
 Assessment:
 
-The recovery model is consistent with zero knowledge and should be part of the core architecture, not a late-stage UX feature.
+The recovery model is consistent with zero knowledge and should be part of the core docs/architecture, not a late-stage UX feature.
 
 Concern:
 
@@ -713,7 +713,7 @@ Before web MVP and any future extension release, review:
 
 ## 15. Final Assessment
 
-Safe has a credible security architecture for a zero-knowledge secret manager. The design makes several disciplined choices that many systems avoid: explicit device enrollment, client-only key access, forward-looking revocation semantics, and a thin control plane.
+Safe has a credible security docs/architecture for a zero-knowledge secret manager. The design makes several disciplined choices that many systems avoid: explicit device enrollment, client-only key access, forward-looking revocation semantics, and a thin control plane.
 
 The biggest unresolved risk is not whether the service can decrypt data. The biggest unresolved risk is whether the system can preserve integrity and authorization in the face of an untrusted control plane and object store while still delivering offline sync and sharing without weakening the client boundary.
 

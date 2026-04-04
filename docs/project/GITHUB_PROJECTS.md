@@ -11,7 +11,7 @@ Do not store credentials in this repo.
 Use both of these:
 
 - repo-side technical source of truth:
-  `docs/WORKBOARD.md`, `docs/INTERFACES.md`, `docs/DECISIONS.md`, `docs/HANDOFFS.md`
+  `docs/project/WORKBOARD.md`, `docs/project/INTERFACES.md`, `docs/project/DECISIONS.md`, `docs/project/HANDOFFS.md`
 - GitHub-side collaboration surface:
   GitHub issues plus the GitHub Project board
 
@@ -156,7 +156,7 @@ gh project item-edit \
 
 ## Recommended Workflow
 
-1. Read `docs/WORKBOARD.md` before starting work.
+1. Read `docs/project/WORKBOARD.md` before starting work.
 2. Find the matching GitHub issue for your task.
 3. Comment on the issue when you start, block, hand off, or finish work.
 4. Keep technical contract changes in repo docs, not only in issue comments.

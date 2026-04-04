@@ -6,14 +6,14 @@ This file defines the current shared contracts between workstreams.
 
 Related planning artifacts:
 
-- `docs/WORKBOARD.md`
-- `docs/HANDOFFS.md`
-- `docs/GITHUB_PROJECTS.md`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+- `docs/project/GITHUB_PROJECTS.md`
 
 If you need to change one of these contracts:
 
 1. update this file first
-2. note the change in `docs/HANDOFFS.md`
+2. note the change in `docs/project/HANDOFFS.md`
 3. comment on the matching GitHub issue
 4. then update consumers
 
@@ -182,6 +182,6 @@ Status:
 
 Rules:
 
-- implementation owner updates `docs/HANDOFFS.md` when a task is ready for another engineer
-- receiver acknowledges by updating the relevant task status in `docs/WORKBOARD.md`
+- implementation owner updates `docs/project/HANDOFFS.md` when a task is ready for another engineer
+- receiver acknowledges by updating the relevant task status in `docs/project/WORKBOARD.md`
 - if a task blocks on an interface question, stop and record the exact blocker instead of guessing

@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document turns [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
+This document turns [SYSTEM_DESIGN.md](./docs/architecture/SYSTEM_DESIGN.md) into an execution plan for building v1 of the secret manager.
 
 It is intended to answer:
 

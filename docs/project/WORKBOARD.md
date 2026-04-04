@@ -18,12 +18,13 @@ GitHub companion artifacts:
 
 - project board: `https://github.com/users/cyber-nic/projects/1`
 - planning issues: `https://github.com/cyber-nic/safe/issues`
-- CLI guide: `docs/GITHUB_PROJECTS.md`
+- CLI guide: `docs/project/GITHUB_PROJECTS.md`
 
 Important:
 
-- this file is the canonical technical workboard
-- GitHub issues and the project board are the collaboration and visibility layer
+- GitHub issues and the project board are the primary communication layer for progress, blockers, handoffs, and discussion
+- this file is the canonical technical workboard — contracts, ownership, and write scopes live here
+- every update to this file that affects a task or contract should reference the matching GitHub issue number
 
 ## Current Milestone
 
@@ -57,8 +58,9 @@ Non-goals for this milestone:
 - Shared interfaces must land before downstream wiring.
 - Do not combine protocol changes and multiple consumer integrations in one commit unless required.
 - Keep commits single-purpose and small enough to revert cleanly.
-- Update the matching GitHub issue when task status changes.
-- Keep technical contract decisions in repo docs, not only in issue comments.
+- Post a GitHub issue comment when work starts, blocks, hands off, or completes — this is required, not optional.
+- Keep technical contract decisions in repo docs; issue comments are for communication, not canonical state.
+- Every repo doc change that affects a tracked task must include the GitHub issue number (e.g. `refs #4`).
 - When coordinating through GitHub, identify the speaking agent explicitly because all comments are posted via `cyber-nic`.
 
 ## Team
@@ -100,16 +102,16 @@ Status:
 
 ## Ownership Map
 
-These are default owners. Cross-boundary edits require a note in `docs/HANDOFFS.md`.
+These are default owners. Cross-boundary edits require a note in `docs/project/HANDOFFS.md`.
 
-| Area | Owner | Write Scope |
-| --- | --- | --- |
-| Planning and sequencing | Engineer1 | `docs/WORKBOARD.md`, `docs/DECISIONS.md`, `docs/INTERFACES.md`, `docs/HANDOFFS.md` |
-| Local runtime contract and integration | Engineer1 | `cmd/safe/**`, `apps/web/**`, interface wiring only |
-| Durable local persistence implementation | Engineer2 | `internal/storage/**`, new local-runtime packages under `internal/**` |
-| Crypto and password unlock primitives | Engineer1 | `internal/crypto/**`, protocol-facing account/unlock records |
-| Sync protocol hardening | Engineer1 | `internal/sync/**`, `packages/ts-sdk/**`, `packages/test-vectors/**` |
-| Control plane | Engineer1 | `cmd/control-plane/**`, `internal/auth/**` |
+| Area                                     | Owner     | Write Scope                                                                                                        |
+| ---------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------ |
+| Planning and sequencing                  | Engineer1 | `docs/project/WORKBOARD.md`, `docs/project/DECISIONS.md`, `docs/project/INTERFACES.md`, `docs/project/HANDOFFS.md` |
+| Local runtime contract and integration   | Engineer1 | `cmd/safe/**`, `apps/web/**`, interface wiring only                                                                |
+| Durable local persistence implementation | Engineer2 | `internal/storage/**`, new local-runtime packages under `internal/**`                                              |
+| Crypto and password unlock primitives    | Engineer1 | `internal/crypto/**`, protocol-facing account/unlock records                                                       |
+| Sync protocol hardening                  | Engineer1 | `internal/sync/**`, `packages/ts-sdk/**`, `packages/test-vectors/**`                                               |
+| Control plane                            | Engineer1 | `cmd/control-plane/**`, `internal/auth/**`                                                                         |
 
 ## Interface Locks
 
@@ -131,7 +133,7 @@ The following interfaces are considered active contracts for this milestone. Do 
    Output needed:
    - web model can hydrate from a durable local snapshot only after the runtime contract is defined
 
-If one of these contracts changes, update `docs/INTERFACES.md` and record the handoff.
+If one of these contracts changes, update `docs/project/INTERFACES.md` and record the handoff.
 
 ## Active Tasks
 
@@ -147,8 +149,8 @@ Status:
 
 Write scope:
 
-- `docs/INTERFACES.md`
-- `docs/DECISIONS.md`
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
 - integration notes only in `cmd/safe/**` and `apps/web/**`
 
 Output:
@@ -199,7 +201,7 @@ Acceptance:
 
 Dependencies:
 
-- `docs/INTERFACES.md` local persistence contract
+- `docs/project/INTERFACES.md` local persistence contract
 
 GitHub issue:
 
@@ -299,11 +301,11 @@ Task boundaries:
 - do not edit `cmd/safe/**`
 - do not edit `apps/web/**`
 - do not change protocol schemas unless blocked
-- if a contract change is required, stop and record the request in `docs/HANDOFFS.md`
+- if a contract change is required, stop and record the request in `docs/project/HANDOFFS.md`
 
 Suggested branch:
 
-- `engineer2/w2-local-persistence`
+- `w2-local-persistence`
 
 Commit shape:
 
@@ -338,9 +340,10 @@ Every PR should include:
 
 ## Daily Coordination
 
-- update `Status` in this file when work starts or finishes
-- append handoffs to `docs/HANDOFFS.md`
-- record durable decisions in `docs/DECISIONS.md`
-- update `docs/INTERFACES.md` before implementing against a new shared contract
-- comment on the matching GitHub issue when work starts, blocks, hands off, or completes
-- use `docs/GITHUB_PROJECTS.md` for `gh` commands
+- comment on the matching GitHub issue when work starts, blocks, hands off, or completes — do this first
+- update the GitHub Project item status to match the current task state
+- update `Status` in this file when work starts or finishes; include the GitHub issue number in the entry
+- append handoffs to `docs/project/HANDOFFS.md`; post a matching comment on the GitHub issue
+- record durable decisions in `docs/project/DECISIONS.md`; reference the GitHub issue that drove the decision
+- update `docs/project/INTERFACES.md` before implementing against a new shared contract
+- use `docs/project/GITHUB_PROJECTS.md` for `gh` commands

@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document defines the v1 architecture for a zero-knowledge secret manager for personal and family use.
+This document defines the v1 docs/architecture for a zero-knowledge secret manager for personal and family use.
 
 The product goal is:
 
@@ -603,6 +603,7 @@ The implementation stack for v1 should be:
 - AWS as the primary cloud target, with S3 as the initial object store
 
 Shared protocol schemas, canonical serialization rules, and test vectors must be defined independent of implementation language so Go and TypeScript implementations remain interoperable.
+
 ## 18. Recovery Model
 
 Recovery needs more precision than "master password + recovery key".
@@ -839,4 +840,4 @@ The critical implementation areas are:
 - Safe collection sharing and revocation
 - Browser storage and client-boundary hardening
 
-If those areas are implemented rigorously, the architecture is viable. If they are hand-waved, the product will look simple on paper and fail in production.
+If those areas are implemented rigorously, the docs/architecture is viable. If they are hand-waved, the product will look simple on paper and fail in production.

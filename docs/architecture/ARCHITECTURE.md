@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document is the top-level architecture map for Safe. It explains the major runtime components, the implementation split between Go and TypeScript, the core trust boundaries, the main data flows, and where to go next for deeper detail.
+This document is the top-level docs/architecture map for Safe. It explains the major runtime components, the implementation split between Go and TypeScript, the core trust boundaries, the main data flows, and where to go next for deeper detail.
 
-It is intentionally shorter than [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md). The system design document is the deep specification. This document is the entry point.
+It is intentionally shorter than [SYSTEM_DESIGN.md](./docs/architecture/SYSTEM_DESIGN.md). The system design document is the deep specification. This document is the entry point.
 
 ## System Shape
 
@@ -163,8 +163,8 @@ Shared protocol schemas, canonical serialization rules, and fixture vectors must
 
 ## Read Next
 
-- Read [PRODUCT.md](./architecture/PRODUCT.md) for scope and user outcomes.
-- Read [SYSTEM_DESIGN.md](./architecture/SYSTEM_DESIGN.md) for the full architecture and object model.
-- Read [PROTOCOL.md](./architecture/PROTOCOL.md) for canonical serialization, signing, rollback, and capability rules.
-- Read [SECURITY.md](./architecture/SECURITY.md) for the design assessment and release blockers.
-- Read [IMPLEMENTATION_PLAN.md](./architecture/IMPLEMENTATION_PLAN.md) for sequencing and workstreams.
+- Read [PRODUCT.md](./docs/architecture/PRODUCT.md) for scope and user outcomes.
+- Read [SYSTEM_DESIGN.md](./docs/architecture/SYSTEM_DESIGN.md) for the full docs/architecture and object model.
+- Read [PROTOCOL.md](./docs/architecture/PROTOCOL.md) for canonical serialization, signing, rollback, and capability rules.
+- Read [SECURITY.md](./docs/architecture/SECURITY.md) for the design assessment and release blockers.
+- Read [IMPLEMENTATION_PLAN.md](./docs/architecture/IMPLEMENTATION_PLAN.md) for sequencing and workstreams.

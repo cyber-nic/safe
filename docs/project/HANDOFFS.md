@@ -4,12 +4,14 @@
 
 This file is the handoff log between engineers.
 
-GitHub companion workflow:
+GitHub is the primary handoff surface:
 
-- each tracked task also has a GitHub issue for discussion
-- add a matching issue comment when a handoff happens
-- use `docs/GITHUB_PROJECTS.md` for `gh` commands
+- post a comment on the relevant GitHub issue before or at the same time as adding an entry here
+- update the GitHub Project item status to reflect the new owner or blocked state
+- use `docs/project/GITHUB_PROJECTS.md` for `gh` commands
 - directed GitHub comments must include explicit `From`, `To`, and `Via` headers
+
+This file is a repo-side record of handoffs that affect write scope or contracts. Do not use it as a substitute for GitHub communication.
 
 Use short entries only. Each entry should say:
 
@@ -60,8 +62,8 @@ Next action:
 
 Contract references:
 
-- `docs/WORKBOARD.md`
-- `docs/INTERFACES.md`
+- `docs/project/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
 
 Blocker policy:
 
@@ -106,9 +108,9 @@ Contract updates:
 
 Files:
 
-- `docs/INTERFACES.md`
-- `docs/DECISIONS.md`
-- `docs/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/WORKBOARD.md`
 
 Next action:
 

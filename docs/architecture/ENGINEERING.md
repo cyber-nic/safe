@@ -36,7 +36,7 @@
 - Write unit tests for core logic, security-sensitive code, domain rules, and regressions.
 - Use domain-driven design to keep the code organized around core business concepts and bounded contexts.
 - Keep the code DRY. Eliminate duplication when it improves clarity and maintainability.
-- Keep the system lean. Prefer simple architecture, narrow interfaces, and minimal operational overhead.
+- Keep the system lean. Prefer simple docs/architecture, narrow interfaces, and minimal operational overhead.
 - Favor clean code: readable names, small focused modules, explicit boundaries, and predictable behavior.
 
 ## Delivery Rules

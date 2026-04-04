@@ -32,8 +32,8 @@ At the moment, that is the PM contact for:
 Use these in order:
 
 1. Comment on the milestone issue or the relevant planning issue in GitHub.
-2. Add a short note to `docs/HANDOFFS.md` if the issue affects ownership or handoff flow.
-3. Update `docs/WORKBOARD.md` only if the PM has agreed the plan should change.
+2. Add a short note to `docs/project/HANDOFFS.md` if the issue affects ownership or handoff flow.
+3. Update `docs/project/WORKBOARD.md` only if the PM has agreed the plan should change.
 
 Do not use `LOG.md` for coordination feedback.
 
@@ -67,7 +67,7 @@ Raise PM feedback immediately if:
 
 - two engineers need the same files
 - a task depends on an undefined interface
-- the GitHub issue and `docs/WORKBOARD.md` disagree
+- the GitHub issue and `docs/project/WORKBOARD.md` disagree
 - ownership is ambiguous
 - the current milestone no longer matches reality
 - a task should be split, merged, or reassigned
@@ -78,10 +78,10 @@ Raise PM feedback immediately if:
 The PM should respond by doing one or more of these:
 
 - clarify ownership
-- update `docs/WORKBOARD.md`
-- update `docs/INTERFACES.md`
-- record a decision in `docs/DECISIONS.md`
-- add a handoff note in `docs/HANDOFFS.md`
+- update `docs/project/WORKBOARD.md`
+- update `docs/project/INTERFACES.md`
+- record a decision in `docs/project/DECISIONS.md`
+- add a handoff note in `docs/project/HANDOFFS.md`
 - change the GitHub Project or issue status
 
 ## Scope Boundary
