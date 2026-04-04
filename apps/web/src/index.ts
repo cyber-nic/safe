@@ -102,7 +102,7 @@ export type VaultInsight = {
 
 export type VaultWorkspace = {
   accountConfig: AccountConfigRecord;
-  head: CollectionHeadRecord;
+  head: CollectionHeadRecord | null;
   events: VaultEventRecord[];
   query: VaultWorkspaceQuery;
   overview: VaultOverview;
@@ -191,15 +191,15 @@ export type VaultWorkspaceStorage = Pick<
   "getItem" | "setItem" | "removeItem"
 >;
 
-export type PersistedVaultWorkspaceSnapshot = {
+export type PersistedVaultRuntimeSnapshot = {
   schemaVersion: 1;
   savedAt: string;
   accountConfig: AccountConfigRecord;
-  head: CollectionHeadRecord;
+  head: CollectionHeadRecord | null;
   events: VaultEventRecord[];
-  query: VaultWorkspaceQuery;
-  starterRecords?: VaultItemRecord[];
 };
+
+export type PersistedVaultWorkspaceSnapshot = PersistedVaultRuntimeSnapshot;
 
 function normalizeSearchValue(value: string): string {
   return value.trim().toLowerCase();
@@ -594,63 +594,125 @@ function slugify(value: string): string {
   return slug;
 }
 
-function parsePersistedVaultWorkspaceSnapshot(
+function parsePersistedVaultRuntimeSnapshot(
   value: unknown,
-): PersistedVaultWorkspaceSnapshot {
+): PersistedVaultRuntimeSnapshot {
   if (!isRecord(value)) {
-    throw new Error("invalid persisted vault workspace snapshot");
+    throw new Error("invalid persisted vault runtime snapshot");
   }
 
   if (value.schemaVersion !== 1) {
-    throw new Error(
-      "invalid persisted vault workspace snapshot field: schemaVersion",
-    );
+    throw new Error("invalid persisted vault runtime snapshot field: schemaVersion");
   }
 
   if (typeof value.savedAt !== "string" || value.savedAt === "") {
-    throw new Error("invalid persisted vault workspace snapshot field: savedAt");
+    throw new Error("invalid persisted vault runtime snapshot field: savedAt");
+  }
+
+  const head =
+    value.head === null || value.head === undefined
+      ? null
+      : parseCollectionHeadRecord(value.head);
+  const events = parseVaultEventRecords(value.events);
+  if (head === null && events.length > 0) {
+    throw new Error("invalid persisted vault runtime snapshot: head required when events exist");
   }
 
   return {
     schemaVersion: 1,
     savedAt: value.savedAt,
     accountConfig: parseAccountConfigRecord(value.accountConfig),
-    head: parseCollectionHeadRecord(value.head),
-    events: parseVaultEventRecords(value.events),
-    query: isRecord(value.query)
-      ? {
-          text: typeof value.query.text === "string" ? value.query.text : undefined,
-          kind:
-            value.query.kind === "all" ||
-            value.query.kind === "login" ||
-            value.query.kind === "note" ||
-            value.query.kind === "apiKey" ||
-            value.query.kind === "sshKey" ||
-            value.query.kind === "totp"
-              ? value.query.kind
-              : undefined,
-          tag: typeof value.query.tag === "string" ? value.query.tag : undefined,
-          limit:
-            typeof value.query.limit === "number" &&
-            Number.isInteger(value.query.limit)
-              ? value.query.limit
-              : undefined,
-        }
-      : {},
-    starterRecords: Array.isArray(value.starterRecords)
-      ? parseVaultItemRecords(value.starterRecords)
-      : undefined,
+    head,
+    events,
+  };
+}
+
+function parsePersistedVaultWorkspaceSnapshot(
+  value: unknown,
+): PersistedVaultWorkspaceSnapshot {
+  return parsePersistedVaultRuntimeSnapshot(value);
+}
+
+function createEmptyVaultWorkspace(input: {
+  accountConfig: AccountConfigRecord;
+  query?: VaultWorkspaceQuery;
+  starterRecords?: VaultItemRecord[];
+}): VaultWorkspace {
+  const query = input.query ?? {};
+
+  return {
+    accountConfig: input.accountConfig,
+    head: null,
+    events: [],
+    query,
+    overview: {
+      accountId: input.accountConfig.accountId,
+      defaultCollectionId: input.accountConfig.defaultCollectionId,
+      collectionCount: input.accountConfig.collectionIds.length,
+      deviceCount: input.accountConfig.deviceIds.length,
+      itemCount: 0,
+      itemCountByKind: {
+        login: 0,
+        note: 0,
+        apiKey: 0,
+        sshKey: 0,
+        totp: 0,
+      },
+      latestSeq: 0,
+      latestEventId: "",
+      lastUpdatedAt: "",
+    },
+    spotlight: [
+      {
+        id: "vault-items",
+        title: "Vault Items",
+        value: "0",
+        detail: "No vault items have been saved to this local runtime yet",
+      },
+      {
+        id: "authenticator-ready",
+        title: "Authenticator Ready",
+        value: "0",
+        detail: "No built-in authenticators configured yet",
+      },
+      {
+        id: "connected-devices",
+        title: "Connected Devices",
+        value: String(input.accountConfig.deviceIds.length),
+        detail: `${input.accountConfig.collectionIds.length} synced collection${input.accountConfig.collectionIds.length === 1 ? "" : "s"}`,
+      },
+    ],
+    insights: [],
+    items: [],
+    authenticators: [],
+    activity: [],
+    availableKinds: ["all", "login", "note", "apiKey", "sshKey", "totp"],
+    availableTags: [],
+    itemRecords: [],
+    starterRecords: input.starterRecords ?? [],
   };
 }
 
 export function createVaultWorkspace(input: {
   accountConfig: AccountConfigRecord;
-  head: CollectionHeadRecord;
+  head: CollectionHeadRecord | null;
   events: VaultEventRecord[];
   starterRecords?: VaultItemRecord[];
   query?: VaultWorkspaceQuery;
 }): VaultWorkspace {
   const query = input.query ?? {};
+  if (input.head === null) {
+    if (input.events.length > 0) {
+      throw new Error("vault runtime head required when events are present");
+    }
+
+    return createEmptyVaultWorkspace({
+      accountConfig: input.accountConfig,
+      query,
+      starterRecords: input.starterRecords,
+    });
+  }
+
   if (input.accountConfig.defaultCollectionId !== input.head.collectionId) {
     throw new Error(
       `default collection mismatch: expected ${input.accountConfig.defaultCollectionId} got ${input.head.collectionId}`,
@@ -774,7 +836,7 @@ export async function unlockVaultWorkspace(input: {
 
 async function rebuildWorkspace(input: {
   workspace: VaultWorkspace;
-  head: CollectionHeadRecord;
+  head: CollectionHeadRecord | null;
   events: VaultEventRecord[];
   secretMaterial: VaultSecretMaterial;
   at?: Date;
@@ -797,12 +859,21 @@ async function persistUpdatedItem(input: {
   itemRecord: VaultItemRecord;
   at?: Date;
 }): Promise<VaultWorkspaceUpdate> {
-  const mutation = buildPutItemMutation(
-    input.workspace.head,
-    input.deviceId,
-    input.itemRecord,
-    (input.at ?? new Date()).toISOString(),
-  );
+  const mutation =
+    input.workspace.head === null
+      ? buildInitialPutItemMutation({
+          accountId: input.workspace.accountConfig.accountId,
+          collectionId: input.workspace.accountConfig.defaultCollectionId,
+          deviceId: input.deviceId,
+          itemRecord: input.itemRecord,
+          occurredAt: (input.at ?? new Date()).toISOString(),
+        })
+      : buildPutItemMutation(
+          input.workspace.head,
+          input.deviceId,
+          input.itemRecord,
+          (input.at ?? new Date()).toISOString(),
+        );
   const events = [...input.workspace.events, mutation.event];
 
   return {
@@ -1139,8 +1210,8 @@ export function exportVaultWorkspace(
     const exportedSecrets = collectExportSecretMaterial([record], secretMaterial);
     return {
       accountId: workspace.accountConfig.accountId,
-      collectionId: workspace.head.collectionId,
-      latestSeq: workspace.head.latestSeq,
+      collectionId: workspace.head?.collectionId ?? workspace.accountConfig.defaultCollectionId,
+      latestSeq: workspace.head?.latestSeq ?? 0,
       item: record,
       ...(Object.keys(exportedSecrets).length > 0
         ? { secretMaterial: exportedSecrets }
@@ -1152,8 +1223,8 @@ export function exportVaultWorkspace(
   const exportedSecrets = collectExportSecretMaterial(records, secretMaterial);
   return {
     accountId: workspace.accountConfig.accountId,
-    collectionId: workspace.head.collectionId,
-    latestSeq: workspace.head.latestSeq,
+    collectionId: workspace.head?.collectionId ?? workspace.accountConfig.defaultCollectionId,
+    latestSeq: workspace.head?.latestSeq ?? 0,
     items: records,
     ...(Object.keys(exportedSecrets).length > 0
       ? { secretMaterial: exportedSecrets }
@@ -1389,7 +1460,7 @@ export async function deleteItemFromVaultWorkspace(input: {
   }
 
   const mutation = buildDeleteItemMutation(
-    input.workspace.head,
+    input.workspace.head!,
     input.deviceId,
     input.itemId,
     (input.at ?? new Date()).toISOString(),
@@ -1695,7 +1766,7 @@ export async function restoreItemToVaultWorkspace(input: {
   }
 
   const mutation = buildPutItemMutation(
-    input.workspace.head,
+    input.workspace.head!,
     input.deviceId,
     latestRecord,
     (input.at ?? new Date()).toISOString(),
@@ -1736,12 +1807,21 @@ export async function importVaultWorkspace(input: {
     const occurredAt = new Date(
       (input.at ?? new Date()).getTime() + index,
     ).toISOString();
-    const mutation = buildPutItemMutation(
-      head,
-      input.deviceId,
-      record,
-      occurredAt,
-    );
+    const mutation =
+      head === null
+        ? buildInitialPutItemMutation({
+            accountId: input.workspace.accountConfig.accountId,
+            collectionId: input.workspace.accountConfig.defaultCollectionId,
+            deviceId: input.deviceId,
+            itemRecord: record,
+            occurredAt,
+          })
+        : buildPutItemMutation(
+            head,
+            input.deviceId,
+            record,
+            occurredAt,
+          );
 
     head = mutation.newHead;
     events.push(mutation.event);
@@ -1768,7 +1848,7 @@ export async function importVaultWorkspace(input: {
 
 export async function createUnlockedVaultWorkspace(input: {
   accountConfig: AccountConfigRecord;
-  head: CollectionHeadRecord;
+  head: CollectionHeadRecord | null;
   events: VaultEventRecord[];
   starterRecords?: VaultItemRecord[];
   query?: VaultWorkspaceQuery;
@@ -1782,32 +1862,56 @@ export async function createUnlockedVaultWorkspace(input: {
   });
 }
 
-export function createPersistedVaultWorkspaceSnapshot(input: {
+export function createPersistedVaultRuntimeSnapshot(input: {
   workspace: VaultWorkspace;
   savedAt?: Date;
-}): PersistedVaultWorkspaceSnapshot {
+}): PersistedVaultRuntimeSnapshot {
   return {
     schemaVersion: 1,
     savedAt: (input.savedAt ?? new Date()).toISOString(),
     accountConfig: input.workspace.accountConfig,
     head: input.workspace.head,
     events: input.workspace.events,
-    query: input.workspace.query,
-    ...(input.workspace.starterRecords.length > 0
-      ? { starterRecords: input.workspace.starterRecords }
-      : {}),
   };
+}
+
+export function createPersistedVaultWorkspaceSnapshot(input: {
+  workspace: VaultWorkspace;
+  savedAt?: Date;
+}): PersistedVaultWorkspaceSnapshot {
+  return createPersistedVaultRuntimeSnapshot(input);
+}
+
+export function serializePersistedVaultRuntimeSnapshot(input: {
+  workspace: VaultWorkspace;
+  savedAt?: Date;
+}): string {
+  return JSON.stringify(
+    createPersistedVaultRuntimeSnapshot(input),
+    null,
+    2,
+  );
 }
 
 export function serializePersistedVaultWorkspaceSnapshot(input: {
   workspace: VaultWorkspace;
   savedAt?: Date;
 }): string {
-  return JSON.stringify(
-    createPersistedVaultWorkspaceSnapshot(input),
-    null,
-    2,
-  );
+  return serializePersistedVaultRuntimeSnapshot(input);
+}
+
+export function persistVaultRuntimeSnapshot(input: {
+  storage: VaultWorkspaceStorage;
+  storageKey: string;
+  workspace: VaultWorkspace;
+  savedAt?: Date;
+}): PersistedVaultRuntimeSnapshot {
+  const snapshot = createPersistedVaultRuntimeSnapshot({
+    workspace: input.workspace,
+    savedAt: input.savedAt,
+  });
+  input.storage.setItem(input.storageKey, JSON.stringify(snapshot));
+  return snapshot;
 }
 
 export function persistVaultWorkspaceSnapshot(input: {
@@ -1816,38 +1920,71 @@ export function persistVaultWorkspaceSnapshot(input: {
   workspace: VaultWorkspace;
   savedAt?: Date;
 }): PersistedVaultWorkspaceSnapshot {
-  const snapshot = createPersistedVaultWorkspaceSnapshot({
-    workspace: input.workspace,
-    savedAt: input.savedAt,
-  });
-  input.storage.setItem(input.storageKey, JSON.stringify(snapshot));
-  return snapshot;
+  return persistVaultRuntimeSnapshot(input);
 }
 
-export function loadPersistedVaultWorkspace(input: {
+export function loadPersistedVaultRuntime(input: {
   storage: VaultWorkspaceStorage;
   storageKey: string;
+  query?: VaultWorkspaceQuery;
 }): VaultWorkspace | null {
   const rawSnapshot = input.storage.getItem(input.storageKey);
   if (rawSnapshot === null) {
     return null;
   }
 
-  const snapshot = parsePersistedVaultWorkspaceSnapshot(JSON.parse(rawSnapshot));
+  const snapshot = parsePersistedVaultRuntimeSnapshot(JSON.parse(rawSnapshot));
   return createVaultWorkspace({
     accountConfig: snapshot.accountConfig,
     head: snapshot.head,
     events: snapshot.events,
-    query: snapshot.query,
-    starterRecords: snapshot.starterRecords,
+    query: input.query,
   });
+}
+
+export async function loadUnlockedPersistedVaultRuntime(input: {
+  storage: VaultWorkspaceStorage;
+  storageKey: string;
+  secretMaterial: VaultSecretMaterial;
+  query?: VaultWorkspaceQuery;
+  at?: Date;
+}): Promise<VaultWorkspace | null> {
+  const workspace = loadPersistedVaultRuntime({
+    storage: input.storage,
+    storageKey: input.storageKey,
+    query: input.query,
+  });
+  if (workspace === null) {
+    return null;
+  }
+
+  return unlockVaultWorkspace({
+    workspace,
+    secretMaterial: input.secretMaterial,
+    at: input.at,
+  });
+}
+
+export function loadPersistedVaultWorkspace(input: {
+  storage: VaultWorkspaceStorage;
+  storageKey: string;
+  query?: VaultWorkspaceQuery;
+}): VaultWorkspace | null {
+  return loadPersistedVaultRuntime(input);
+}
+
+export function clearPersistedVaultRuntime(input: {
+  storage: VaultWorkspaceStorage;
+  storageKey: string;
+}): void {
+  input.storage.removeItem(input.storageKey);
 }
 
 export function clearPersistedVaultWorkspace(input: {
   storage: VaultWorkspaceStorage;
   storageKey: string;
 }): void {
-  input.storage.removeItem(input.storageKey);
+  clearPersistedVaultRuntime(input);
 }
 
 export const webBootstrap = createVaultWorkspace({
@@ -1866,4 +2003,35 @@ export function createUnlockedWebBootstrap(at: Date = new Date()): Promise<Vault
     secretMaterial: sampleVaultSecretMaterial,
     at,
   });
+}
+
+function buildInitialPutItemMutation(input: {
+  accountId: string;
+  collectionId: string;
+  deviceId: string;
+  itemRecord: VaultItemRecord;
+  occurredAt: string;
+}) {
+  const eventId = `evt-${input.itemRecord.item.id}-v1`;
+
+  return {
+    event: {
+      schemaVersion: 1 as const,
+      eventId,
+      accountId: input.accountId,
+      deviceId: input.deviceId,
+      collectionId: input.collectionId,
+      sequence: 1,
+      occurredAt: input.occurredAt,
+      action: "put_item" as const,
+      itemRecord: input.itemRecord,
+    },
+    newHead: {
+      schemaVersion: 1 as const,
+      accountId: input.accountId,
+      collectionId: input.collectionId,
+      latestEventId: eventId,
+      latestSeq: 1,
+    },
+  };
 }

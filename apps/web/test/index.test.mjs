@@ -15,7 +15,9 @@ import {
   addNoteToVaultWorkspace,
   addSshKeyToVaultWorkspace,
   addTotpToVaultWorkspace,
+  clearPersistedVaultRuntime,
   clearPersistedVaultWorkspace,
+  createPersistedVaultRuntimeSnapshot,
   createPersistedVaultWorkspaceSnapshot,
   createUnlockedVaultWorkspace,
   createVaultWorkspace,
@@ -24,10 +26,14 @@ import {
   getVaultItemDetail,
   getVaultLoginCredentialDetail,
   importVaultWorkspace,
+  loadPersistedVaultRuntime,
   listVaultLoginCredentials,
+  loadUnlockedPersistedVaultRuntime,
   loadPersistedVaultWorkspace,
+  persistVaultRuntimeSnapshot,
   listDeletedVaultItems,
   persistVaultWorkspaceSnapshot,
+  serializePersistedVaultRuntimeSnapshot,
   revealLoginPassword,
   restoreItemToVaultWorkspace,
   serializePersistedVaultWorkspaceSnapshot,
@@ -215,7 +221,7 @@ test("createUnlockedVaultWorkspace preserves locked state without secret materia
   assert.equal(workspace.authenticators[0].code, null);
 });
 
-test("persisted vault workspace snapshots exclude unlocked codes and survive reload", async () => {
+test("persisted vault runtime snapshots exclude derived UI state and survive reload", async () => {
   const unlockedWorkspace = await createUnlockedVaultWorkspace({
     accountConfig: sampleAccountConfigRecord,
     head: sampleCollectionHeadRecord,
@@ -230,7 +236,7 @@ test("persisted vault workspace snapshots exclude unlocked codes and survive rel
   });
 
   const storage = new MemoryStorage();
-  const snapshot = persistVaultWorkspaceSnapshot({
+  const snapshot = persistVaultRuntimeSnapshot({
     storage,
     storageKey: "safe:vault",
     workspace: unlockedWorkspace,
@@ -239,9 +245,15 @@ test("persisted vault workspace snapshots exclude unlocked codes and survive rel
 
   assert.equal(snapshot.savedAt, "2026-04-01T11:25:00.000Z");
   assert.equal(snapshot.events.length, 2);
-  const reloadedWorkspace = loadPersistedVaultWorkspace({
+  assert.equal("query" in snapshot, false);
+  assert.equal("starterRecords" in snapshot, false);
+
+  const reloadedWorkspace = loadPersistedVaultRuntime({
     storage,
     storageKey: "safe:vault",
+    query: {
+      text: "gmail",
+    },
   });
   assert.ok(reloadedWorkspace);
   assert.equal(reloadedWorkspace.overview.itemCount, 2);
@@ -250,9 +262,9 @@ test("persisted vault workspace snapshots exclude unlocked codes and survive rel
   assert.equal(reloadedWorkspace.authenticators[0].code, null);
 });
 
-test("persisted vault workspace helpers serialize snapshots without secret material and can clear storage", () => {
+test("persisted vault runtime helpers serialize snapshots without secret material and can clear storage", async () => {
   const storage = new MemoryStorage();
-  const serializedSnapshot = serializePersistedVaultWorkspaceSnapshot({
+  const serializedSnapshot = serializePersistedVaultRuntimeSnapshot({
     workspace: webBootstrap,
     savedAt: new Date("2026-04-01T11:26:00Z"),
   });
@@ -260,25 +272,84 @@ test("persisted vault workspace helpers serialize snapshots without secret mater
 
   assert.equal(parsedSnapshot.savedAt, "2026-04-01T11:26:00.000Z");
   assert.equal("secretMaterial" in parsedSnapshot, false);
+  assert.equal("query" in parsedSnapshot, false);
+  assert.equal("starterRecords" in parsedSnapshot, false);
 
-  persistVaultWorkspaceSnapshot({
+  persistVaultRuntimeSnapshot({
     storage,
     storageKey: "safe:vault",
     workspace: webBootstrap,
   });
-  assert.ok(loadPersistedVaultWorkspace({ storage, storageKey: "safe:vault" }));
+  assert.ok(loadPersistedVaultRuntime({ storage, storageKey: "safe:vault" }));
+  assert.ok(
+    await loadUnlockedPersistedVaultRuntime({
+      storage,
+      storageKey: "safe:vault",
+      secretMaterial: sampleVaultSecretMaterial,
+      at: new Date("1970-01-01T00:00:59Z"),
+    }),
+  );
 
-  clearPersistedVaultWorkspace({
+  clearPersistedVaultRuntime({
     storage,
     storageKey: "safe:vault",
   });
-  assert.equal(loadPersistedVaultWorkspace({ storage, storageKey: "safe:vault" }), null);
+  assert.equal(loadPersistedVaultRuntime({ storage, storageKey: "safe:vault" }), null);
 
-  const snapshot = createPersistedVaultWorkspaceSnapshot({
+  const snapshot = createPersistedVaultRuntimeSnapshot({
     workspace: webBootstrap,
     savedAt: new Date("2026-04-01T11:27:00Z"),
   });
   assert.equal(snapshot.savedAt, "2026-04-01T11:27:00.000Z");
+});
+
+test("web runtime snapshots can persist and reload an empty first-use account", () => {
+  const emptyWorkspace = createVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: null,
+    events: [],
+  });
+
+  assert.equal(emptyWorkspace.overview.itemCount, 0);
+  assert.equal(emptyWorkspace.overview.latestSeq, 0);
+
+  const storage = new MemoryStorage();
+  persistVaultRuntimeSnapshot({
+    storage,
+    storageKey: "safe:vault",
+    workspace: emptyWorkspace,
+  });
+
+  const reloaded = loadPersistedVaultRuntime({
+    storage,
+    storageKey: "safe:vault",
+  });
+  assert.ok(reloaded);
+  assert.equal(reloaded.head, null);
+  assert.equal(reloaded.overview.itemCount, 0);
+});
+
+test("web runtime can create the first item from an empty account-local snapshot", async () => {
+  const emptyWorkspace = createVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: null,
+    events: [],
+  });
+
+  const result = await addLoginToVaultWorkspace({
+    workspace: emptyWorkspace,
+    secretMaterial: {},
+    deviceId: "dev-web-001",
+    title: "GitHub",
+    username: "alice",
+    url: "https://github.com/login",
+    password: "ghp-secret-123",
+    at: new Date("2026-04-01T10:20:00Z"),
+  });
+
+  assert.equal(result.workspace.overview.latestSeq, 1);
+  assert.equal(result.workspace.overview.itemCount, 1);
+  assert.equal(result.workspace.activity[0].eventId, "evt-login-github-primary-v1");
 });
 
 test("addLoginToVaultWorkspace appends a replay-backed login mutation", async () => {
