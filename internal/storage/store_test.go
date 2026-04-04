@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ndelorme/safe/internal/domain"
@@ -214,4 +215,159 @@ func TestStoreAndLoadSecretMaterial(t *testing.T) {
 	if loaded != "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" {
 		t.Fatalf("unexpected loaded secret material: %s", loaded)
 	}
+}
+
+// TestCommitVaultMutationFull verifies that CommitVaultMutation writes all
+// records (secret, item, event, head) and that each can be read back.
+func TestCommitVaultMutationFull(t *testing.T) {
+	store := NewMemoryObjectStore()
+
+	events := domain.StarterVaultEventRecords()
+	items := domain.StarterVaultItemRecords()
+	itemRef := items[1]
+	event := events[1]
+	head := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     event.AccountID,
+		CollectionID:  event.CollectionID,
+		LatestEventID: event.EventID,
+		LatestSeq:     event.Sequence,
+	}
+
+	const secretRef = "vault-secret://totp/gmail-primary"
+	const secretVal = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+	m := VaultMutation{
+		AccountID:      event.AccountID,
+		CollectionID:   event.CollectionID,
+		SecretRef:      secretRef,
+		SecretMaterial: secretVal,
+		ItemRecord:     &itemRef,
+		EventRecord:    event,
+		HeadRecord:     head,
+	}
+
+	if err := CommitVaultMutation(store, m); err != nil {
+		t.Fatalf("CommitVaultMutation: %v", err)
+	}
+
+	// secret survives
+	sec, err := LoadSecretMaterial(store, event.AccountID, event.CollectionID, secretRef)
+	if err != nil {
+		t.Fatalf("load secret: %v", err)
+	}
+	if sec != secretVal {
+		t.Fatalf("secret mismatch: got %s", sec)
+	}
+
+	// item survives
+	item, err := LoadItemRecord(store, event.AccountID, event.CollectionID, itemRef.Item.ID)
+	if err != nil {
+		t.Fatalf("load item: %v", err)
+	}
+	if item.Item.ID != itemRef.Item.ID {
+		t.Fatalf("item ID mismatch")
+	}
+
+	// event survives
+	evt, err := LoadEventRecord(store, event.AccountID, event.CollectionID, event.EventID)
+	if err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if evt.EventID != event.EventID {
+		t.Fatalf("event ID mismatch")
+	}
+
+	// head is last, survives and matches
+	h, err := LoadCollectionHeadRecord(store, head.AccountID, head.CollectionID)
+	if err != nil {
+		t.Fatalf("load head: %v", err)
+	}
+	if h.LatestEventID != head.LatestEventID {
+		t.Fatalf("head event ID mismatch")
+	}
+}
+
+// TestCommitVaultMutationEventOnly verifies that CommitVaultMutation works
+// without an optional secret or item (the minimal delete-item path).
+func TestCommitVaultMutationEventOnly(t *testing.T) {
+	store := NewMemoryObjectStore()
+
+	events := domain.StarterVaultEventRecords()
+	event := events[0]
+	head := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     event.AccountID,
+		CollectionID:  event.CollectionID,
+		LatestEventID: event.EventID,
+		LatestSeq:     event.Sequence,
+	}
+
+	m := VaultMutation{
+		AccountID:    event.AccountID,
+		CollectionID: event.CollectionID,
+		EventRecord:  event,
+		HeadRecord:   head,
+	}
+
+	if err := CommitVaultMutation(store, m); err != nil {
+		t.Fatalf("CommitVaultMutation: %v", err)
+	}
+
+	h, err := LoadCollectionHeadRecord(store, head.AccountID, head.CollectionID)
+	if err != nil {
+		t.Fatalf("load head: %v", err)
+	}
+	if h.LatestEventID != head.LatestEventID {
+		t.Fatalf("head event ID mismatch: got %s", h.LatestEventID)
+	}
+}
+
+// TestCommitVaultMutationHeadNotExposedBeforeEvent verifies the commit boundary
+// by using an errStore that fails on event writes: the head must not be visible
+// if the event write fails.
+func TestCommitVaultMutationHeadNotExposedBeforeEvent(t *testing.T) {
+	base := NewMemoryObjectStore()
+
+	events := domain.StarterVaultEventRecords()
+	event := events[0]
+	head := domain.CollectionHeadRecord{
+		SchemaVersion: 1,
+		AccountID:     event.AccountID,
+		CollectionID:  event.CollectionID,
+		LatestEventID: event.EventID,
+		LatestSeq:     event.Sequence,
+	}
+
+	failing := &failOnKeyStore{ObjectStore: base, failKey: EventObjectKey(event.AccountID, event.CollectionID, event.EventID)}
+
+	m := VaultMutation{
+		AccountID:    event.AccountID,
+		CollectionID: event.CollectionID,
+		EventRecord:  event,
+		HeadRecord:   head,
+	}
+
+	err := CommitVaultMutation(failing, m)
+	if err == nil {
+		t.Fatal("expected error from failing event write")
+	}
+
+	// head must not be readable because the event write failed first
+	if _, err := LoadCollectionHeadRecord(base, head.AccountID, head.CollectionID); err == nil {
+		t.Fatal("head must not be visible when event write failed")
+	}
+}
+
+// failOnKeyStore wraps an ObjectStore and returns an error for a specific key.
+type failOnKeyStore struct {
+	ObjectStore
+	failKey string
+}
+
+func (s *failOnKeyStore) Put(key string, value []byte) error {
+	if key == s.failKey {
+		return fmt.Errorf("injected failure for key %s", key)
+	}
+	return s.ObjectStore.Put(key, value)
 }
