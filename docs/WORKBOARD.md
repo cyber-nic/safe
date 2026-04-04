@@ -14,9 +14,24 @@ Use it to answer:
 
 Keep this file current. If reality changes, update this file first.
 
+GitHub companion artifacts:
+
+- project board: `https://github.com/users/cyber-nic/projects/1`
+- planning issues: `https://github.com/cyber-nic/safe/issues`
+- CLI guide: `docs/GITHUB_PROJECTS.md`
+
+Important:
+
+- this file is the canonical technical workboard
+- GitHub issues and the project board are the collaboration and visibility layer
+
 ## Current Milestone
 
 Milestone: `M1 - First Trustworthy Local Loop`
+
+GitHub issue:
+
+- `#1`
 
 Goal:
 
@@ -42,6 +57,8 @@ Non-goals for this milestone:
 - Shared interfaces must land before downstream wiring.
 - Do not combine protocol changes and multiple consumer integrations in one commit unless required.
 - Keep commits single-purpose and small enough to revert cleanly.
+- Update the matching GitHub issue when task status changes.
+- Keep technical contract decisions in repo docs, not only in issue comments.
 
 ## Team
 
@@ -141,6 +158,10 @@ Dependencies:
 
 - none
 
+GitHub issue:
+
+- `#6`
+
 ### W2 - Implement durable local persistence adapter
 
 Owner:
@@ -172,6 +193,10 @@ Dependencies:
 
 - `docs/INTERFACES.md` local persistence contract
 
+GitHub issue:
+
+- `#4`
+
 ### W3 - Add password-derived local encryption primitives
 
 Owner:
@@ -197,6 +222,10 @@ Dependencies:
 
 - W1
 
+GitHub issue:
+
+- `#5`
+
 ### W4 - Replace CLI starter bootstrapping on the save/read path
 
 Owner:
@@ -221,6 +250,10 @@ Dependencies:
 - W2
 - W3
 
+GitHub issue:
+
+- `#3`
+
 ### W5 - Minimal web runtime integration
 
 Owner:
@@ -244,6 +277,10 @@ Dependencies:
 - W1
 - W2
 - W3
+
+GitHub issue:
+
+- `#2`
 
 ## Engineer2 Assignment
 
@@ -297,3 +334,5 @@ Every PR should include:
 - append handoffs to `docs/HANDOFFS.md`
 - record durable decisions in `docs/DECISIONS.md`
 - update `docs/INTERFACES.md` before implementing against a new shared contract
+- comment on the matching GitHub issue when work starts, blocks, hands off, or completes
+- use `docs/GITHUB_PROJECTS.md` for `gh` commands

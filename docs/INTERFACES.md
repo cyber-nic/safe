@@ -4,11 +4,18 @@
 
 This file defines the current shared contracts between workstreams.
 
+Related planning artifacts:
+
+- `docs/WORKBOARD.md`
+- `docs/HANDOFFS.md`
+- `docs/GITHUB_PROJECTS.md`
+
 If you need to change one of these contracts:
 
 1. update this file first
 2. note the change in `docs/HANDOFFS.md`
-3. then update consumers
+3. comment on the matching GitHub issue
+4. then update consumers
 
 ## I1 - Durable Local Persistence Contract
 

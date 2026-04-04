@@ -44,6 +44,8 @@ Impact:
 - `docs/WORKBOARD.md` is the active work queue
 - `docs/INTERFACES.md` is the contract source of truth
 - external PM tools are optional mirrors, not canonical state
+- GitHub issues and the GitHub Project are the shared discussion and visibility layer
+- `docs/GITHUB_PROJECTS.md` is the CLI access guide
 
 ### D2 - Optimize for the first trustworthy local loop
 

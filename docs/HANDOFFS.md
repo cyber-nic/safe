@@ -4,6 +4,12 @@
 
 This file is the handoff log between engineers.
 
+GitHub companion workflow:
+
+- each tracked task also has a GitHub issue for discussion
+- add a matching issue comment when a handoff happens
+- use `docs/GITHUB_PROJECTS.md` for `gh` commands
+
 Use short entries only. Each entry should say:
 
 - date
@@ -13,6 +19,15 @@ Use short entries only. Each entry should say:
 - status
 - files touched or requested
 - blocker or next action
+
+Current planning issues:
+
+- `#1` milestone
+- `#6` W1
+- `#4` W2
+- `#5` W3
+- `#3` W4
+- `#2` W5
 
 ## Entries
 
