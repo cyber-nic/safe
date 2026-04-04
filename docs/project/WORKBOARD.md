@@ -84,7 +84,7 @@ Role:
 
 Status:
 
-- active
+- W2 completed; awaiting next assignment
 
 Current owner:
 
@@ -178,7 +178,7 @@ Owner:
 
 Status:
 
-- completed (`refs #5`)
+- completed (`refs #4`)
 
 Write scope:
 
