@@ -4,3 +4,4 @@ compose.override.yaml
 node_modules/
 dist/
 .whoami
+safe
