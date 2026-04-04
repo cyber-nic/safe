@@ -29,6 +29,10 @@ func AccountConfigKey(accountID string) string {
 	return fmt.Sprintf("accounts/%s/account.json", accountID)
 }
 
+func LocalUnlockKey(accountID string) string {
+	return fmt.Sprintf("accounts/%s/unlock.json", accountID)
+}
+
 func SecretMaterialKey(accountID, collectionID, secretRef string) string {
 	encodedRef := base64.RawURLEncoding.EncodeToString([]byte(secretRef))
 	return fmt.Sprintf("accounts/%s/collections/%s/secrets/%s.txt", accountID, collectionID, encodedRef)

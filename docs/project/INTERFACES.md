@@ -119,10 +119,23 @@ Required behaviors:
 - reject wrong password
 - reject corrupted ciphertext or metadata
 
-Not yet defined:
+Frozen for W3 (`refs #5`):
 
-- exact unlock record schema
-- exact crypto envelope
+- unlock metadata is stored at `accounts/<accountID>/unlock.json`
+- unlock record schema is `LocalUnlockRecord` with:
+  `schemaVersion`, `accountId`, `kdf`, and `wrappedKey`
+- `kdf` fields are:
+  `name=argon2id`, `salt`, `memoryKiB`, `timeCost`, `parallelism`, and `keyBytes`
+- `wrappedKey` fields are:
+  `algorithm=aes-256-gcm`, `nonce`, and `ciphertext`
+- the unlock flow derives a 32-byte KEK from the user password with Argon2id and unwraps a random 32-byte account master key via AES-256-GCM
+- local secret material is stored as a versioned JSON envelope containing:
+  `schemaVersion`, `algorithm`, `nonce`, and `ciphertext`
+- both the unlock record and the secret-material envelope use base64url encoding without padding for binary fields
+- wrong-password and corrupted-payload failures may share the same authentication-failure result; callers must reject both without exposing plaintext
+
+Still not defined:
+
 - password rotation flow
 - recovery-key support
 

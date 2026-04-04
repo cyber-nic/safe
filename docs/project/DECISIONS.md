@@ -192,23 +192,41 @@ Impact:
 
 ## Pending Decisions
 
-### P2 - Local encryption payload format
+### D7 - Local unlock uses an account-scoped Argon2id record plus AES-GCM envelopes
 
 Status:
 
-- pending
+- accepted
+
+Date:
+
+- 2026-04-04
 
 Owner:
 
 - Engineer1
 
-Question:
+Decision:
 
-- exact local envelope format for password-derived encryption, key wrapping, and versioning
+- W3 freezes the local unlock record at `accounts/<accountID>/unlock.json`
+- the password path derives a 32-byte KEK with Argon2id and unwraps a random 32-byte account master key with AES-256-GCM
+- encrypted secret material uses a versioned AES-256-GCM JSON envelope so the storage layer still treats it as opaque bytes
 
-Decision driver:
+Rationale:
 
-- must support wrong-password and corrupted-payload tests cleanly
+- W4 needs a stable unlock and secret-material format before wiring the CLI to durable local storage
+- the architecture docs already point at Argon2id and an account master key instead of deriving vault data keys directly from the password
+- a versioned JSON envelope is easy to inspect in tests while still keeping the storage contract backend-agnostic
+
+Impact:
+
+- `internal/crypto/**` is now the source of truth for local unlock and secret-material envelope parsing
+- `internal/storage/**` stores secret material as opaque bytes and persists the account-scoped unlock record without understanding the crypto payload
+- W4 should consume the frozen unlock record and envelope rather than introducing a second CLI-local format
+
+Refs:
+
+- `#5`
 
 ### P3 - Web local runtime storage boundary
 

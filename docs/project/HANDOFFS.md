@@ -115,3 +115,31 @@ Files:
 Next action:
 
 - implement the durable adapter and restart-survival tests against the frozen contract
+
+### 2026-04-04 - Engineer1 internal note
+
+Task:
+
+- `W3 - Add password-derived local encryption primitives`
+
+Status:
+
+- completed (`refs #5`)
+
+Files:
+
+- `internal/crypto/**`
+- `internal/domain/unlock.go`
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/WORKBOARD.md`
+
+Contract updates:
+
+- froze `accounts/<accountID>/unlock.json` as the account-scoped unlock metadata path
+- froze the `LocalUnlockRecord` Argon2id plus AES-256-GCM schema for password-derived account unlock
+- froze the versioned AES-256-GCM JSON envelope used for encrypted secret material
+
+Next action:
+
+- W4 can now wire `cmd/safe/**` to the durable adapter and real unlock flow without inventing new local crypto formats
