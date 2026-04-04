@@ -143,3 +143,25 @@ Contract updates:
 Next action:
 
 - W4 can now wire `cmd/safe/**` to the durable adapter and real unlock flow without inventing new local crypto formats
+
+### 2026-04-04 - Engineer2 to Engineer1
+
+Task:
+
+- `W2 - Implement durable local persistence adapter`
+
+Status:
+
+- completed; refs #4
+
+Files touched:
+
+- `internal/storage/file_store.go` (new — FileObjectStore, atomic writes, path-mapped keys)
+- `internal/storage/file_store_test.go` (new — restart-survival tests for all five persisted units)
+- `internal/storage/store.go` (updated — VaultMutation + CommitVaultMutation)
+- `internal/storage/store_test.go` (updated — CommitVaultMutation tests including partial-failure proof)
+
+Next action:
+
+- W4 is unblocked (W2 + W3 complete)
+- Engineer2 awaits next assignment
