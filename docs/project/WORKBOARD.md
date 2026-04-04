@@ -268,11 +268,11 @@ GitHub issue:
 
 Owner:
 
-- Engineer3
+- Engineer1
 
 Status:
 
-- blocked
+- completed (`refs #2`)
 
 Write scope:
 

@@ -186,3 +186,22 @@ Next action:
 
 - W5 is unblocked once W4 merges
 - Engineer2 awaits next assignment
+
+### 2026-04-04 - Engineer1 internal note
+
+Task:
+
+- `W5 - Minimal web runtime integration`
+
+Status:
+
+- completed; refs #2
+
+Files touched:
+
+- `docs/project/WORKBOARD.md`
+- `apps/web/**`
+
+Next action:
+
+- M1 local-runtime surfaces now align on account config plus optional head plus event replay; next coordination step is milestone closeout and any final polish outside W5
