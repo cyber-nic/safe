@@ -155,6 +155,22 @@ export type VaultItemDetail = {
   canRestore: boolean;
 };
 
+export type VaultLoginCredentialEntry = {
+  id: string;
+  title: string;
+  username: string;
+  primaryURL: string | null;
+  tags: string[];
+  summary: string;
+  passwordStatus: "ready" | "locked" | "missing";
+  password: string | null;
+  secretRef: string | null;
+  relatedAuthenticatorId: string | null;
+  relatedAuthenticatorTitle: string | null;
+  relatedAuthenticatorStatus: AuthenticatorCard["status"] | null;
+  relatedAuthenticatorCode: string | null;
+};
+
 export type VaultExportPayload = {
   accountId: string;
   collectionId: string;
@@ -235,6 +251,18 @@ function matchesLogin(totpItem: VaultItem, candidate: VaultItem): boolean {
 
 function findRelatedLogin(totpItem: VaultItem, items: VaultItem[]): VaultItem | null {
   return items.find((item) => matchesLogin(totpItem, item)) ?? null;
+}
+
+function findRelatedAuthenticator(
+  loginItem: Extract<VaultItem, { kind: "login" }>,
+  items: VaultItem[],
+): Extract<VaultItem, { kind: "totp" }> | null {
+  return (
+    items.find(
+      (item): item is Extract<VaultItem, { kind: "totp" }> =>
+        item.kind === "totp" && matchesLogin(item, loginItem),
+    ) ?? null
+  );
 }
 
 function buildSearchableFields(item: VaultItem): Array<[field: string, value: string]> {
@@ -796,6 +824,18 @@ function sortItemRecords(records: VaultItemRecord[]): VaultItemRecord[] {
   );
 }
 
+function getVaultItemSecretRef(item: VaultItem): string | null {
+  if (item.kind === "totp") {
+    return item.secretRef;
+  }
+
+  if (item.kind === "login" && item.secretRef) {
+    return item.secretRef;
+  }
+
+  return null;
+}
+
 function collectExportSecretMaterial(
   records: VaultItemRecord[],
   secretMaterial: VaultSecretMaterial,
@@ -803,17 +843,148 @@ function collectExportSecretMaterial(
   const exportedSecrets: VaultSecretMaterial = {};
 
   for (const record of records) {
-    if (record.item.kind !== "totp") {
+    const secretRef = getVaultItemSecretRef(record.item);
+    if (!secretRef) {
       continue;
     }
 
-    const secret = secretMaterial[record.item.secretRef];
+    const secret = secretMaterial[secretRef];
     if (secret) {
-      exportedSecrets[record.item.secretRef] = secret;
+      exportedSecrets[secretRef] = secret;
     }
   }
 
   return exportedSecrets;
+}
+
+export function revealLoginPassword(input: {
+  workspace: VaultWorkspace;
+  secretMaterial: VaultSecretMaterial;
+  itemId: string;
+}): string {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "login") {
+    throw new Error(
+      `vault login password reveal only supports login items: ${input.itemId}`,
+    );
+  }
+  if (!record.item.secretRef) {
+    throw new Error(`vault login password not configured: ${input.itemId}`);
+  }
+
+  const password = input.secretMaterial[record.item.secretRef];
+  if (!password) {
+    throw new Error(`vault login password not found: ${record.item.secretRef}`);
+  }
+
+  return password;
+}
+
+function getLoginPasswordState(input: {
+  item: Extract<VaultItem, { kind: "login" }>;
+  secretMaterial?: VaultSecretMaterial;
+}): Pick<VaultLoginCredentialEntry, "passwordStatus" | "password" | "secretRef"> {
+  if (!input.item.secretRef) {
+    return {
+      passwordStatus: "missing",
+      password: null,
+      secretRef: null,
+    };
+  }
+
+  if (!input.secretMaterial) {
+    return {
+      passwordStatus: "locked",
+      password: null,
+      secretRef: input.item.secretRef,
+    };
+  }
+
+  const password = input.secretMaterial[input.item.secretRef];
+  if (!password) {
+    return {
+      passwordStatus: "locked",
+      password: null,
+      secretRef: input.item.secretRef,
+    };
+  }
+
+  return {
+    passwordStatus: "ready",
+    password,
+    secretRef: input.item.secretRef,
+  };
+}
+
+export function getVaultLoginCredentialDetail(input: {
+  workspace: VaultWorkspace;
+  itemId: string;
+  secretMaterial?: VaultSecretMaterial;
+}): VaultLoginCredentialEntry {
+  const record = input.workspace.itemRecords.find(
+    (itemRecord) => itemRecord.item.id === input.itemId,
+  );
+  if (!record) {
+    throw new Error(`vault item not found: ${input.itemId}`);
+  }
+  if (record.item.kind !== "login") {
+    throw new Error(
+      `vault login credential detail only supports login items: ${input.itemId}`,
+    );
+  }
+
+  const passwordState = getLoginPasswordState({
+    item: record.item,
+    secretMaterial: input.secretMaterial,
+  });
+  const items = input.workspace.itemRecords.map((itemRecord) => itemRecord.item);
+  const relatedAuthenticator = findRelatedAuthenticator(record.item, items);
+  const relatedAuthenticatorCard = relatedAuthenticator
+    ? input.workspace.authenticators.find((card) => card.id === relatedAuthenticator.id) ?? null
+    : null;
+
+  return {
+    id: record.item.id,
+    title: record.item.title,
+    username: record.item.username,
+    primaryURL: record.item.urls[0] ?? null,
+    tags: record.item.tags,
+    summary: describeVaultItem(record.item),
+    passwordStatus: passwordState.passwordStatus,
+    password: passwordState.password,
+    secretRef: passwordState.secretRef,
+    relatedAuthenticatorId: relatedAuthenticatorCard?.id ?? null,
+    relatedAuthenticatorTitle: relatedAuthenticatorCard?.title ?? null,
+    relatedAuthenticatorStatus: relatedAuthenticatorCard?.status ?? null,
+    relatedAuthenticatorCode: relatedAuthenticatorCard?.code ?? null,
+  };
+}
+
+export function listVaultLoginCredentials(input: {
+  workspace: VaultWorkspace;
+  secretMaterial?: VaultSecretMaterial;
+}): VaultLoginCredentialEntry[] {
+  return input.workspace.itemRecords
+    .map((itemRecord) => itemRecord.item)
+    .filter(
+      (item): item is Extract<VaultItem, { kind: "login" }> => item.kind === "login",
+    )
+    .sort(
+      (left, right) =>
+        left.title.localeCompare(right.title) || left.id.localeCompare(right.id),
+    )
+    .map((item) =>
+      getVaultLoginCredentialDetail({
+        workspace: input.workspace,
+        itemId: item.id,
+        secretMaterial: input.secretMaterial,
+      }),
+    );
 }
 
 function parseVaultImportRecords(payload: unknown): {
@@ -1001,6 +1172,7 @@ export async function addLoginToVaultWorkspace(input: {
   title: string;
   username: string;
   url: string;
+  password?: string;
   tags?: string[];
   at?: Date;
 }): Promise<VaultWorkspaceUpdate> {
@@ -1018,9 +1190,19 @@ export async function addLoginToVaultWorkspace(input: {
   }
 
   const itemId = `login-${slugify(title)}-primary`;
+  const secretRef = input.password
+    ? `vault-secret://login/${slugify(title)}-primary`
+    : undefined;
+  const secretMaterial =
+    input.password && secretRef
+      ? {
+          ...input.secretMaterial,
+          [secretRef]: input.password,
+        }
+      : input.secretMaterial;
   return persistUpdatedItem({
     workspace: input.workspace,
-    secretMaterial: input.secretMaterial,
+    secretMaterial,
     deviceId: input.deviceId,
     itemRecord: createVaultItemRecord({
       id: itemId,
@@ -1029,6 +1211,7 @@ export async function addLoginToVaultWorkspace(input: {
       tags: input.tags ?? ["manual"],
       username,
       urls: [url],
+      ...(secretRef ? { secretRef } : {}),
     }),
     at: input.at,
   });
@@ -1212,14 +1395,14 @@ export async function deleteItemFromVaultWorkspace(input: {
     (input.at ?? new Date()).toISOString(),
   );
   const events = [...input.workspace.events, mutation.event];
-  const secretMaterial =
-    record.item.kind === "totp"
-      ? Object.fromEntries(
-          Object.entries(input.secretMaterial).filter(
-            ([secretRef]) => secretRef !== record.item.secretRef,
-          ),
-        )
-      : input.secretMaterial;
+  const secretRef = getVaultItemSecretRef(record.item);
+  const secretMaterial = secretRef
+    ? Object.fromEntries(
+        Object.entries(input.secretMaterial).filter(
+          ([candidateSecretRef]) => candidateSecretRef !== secretRef,
+        ),
+      )
+    : input.secretMaterial;
 
   return {
     workspace: await rebuildWorkspace({
@@ -1242,6 +1425,7 @@ export async function updateLoginInVaultWorkspace(input: {
   title: string;
   username: string;
   url?: string;
+  password?: string;
   tags?: string[];
   at?: Date;
 }): Promise<VaultWorkspaceUpdate> {
@@ -1268,9 +1452,23 @@ export async function updateLoginInVaultWorkspace(input: {
     throw new Error("invalid login item: url");
   }
 
+  const secretMaterial =
+    input.password === undefined
+      ? input.secretMaterial
+      : {
+          ...input.secretMaterial,
+          [(record.item.secretRef ??
+            `vault-secret://login/${slugify(record.item.title)}-primary`)]: input.password,
+        };
+  const secretRef =
+    input.password === undefined
+      ? record.item.secretRef
+      : (record.item.secretRef ??
+          `vault-secret://login/${slugify(record.item.title)}-primary`);
+
   return persistUpdatedItem({
     workspace: input.workspace,
-    secretMaterial: input.secretMaterial,
+    secretMaterial,
     deviceId: input.deviceId,
     itemRecord: createVaultItemRecord({
       ...record.item,
@@ -1278,6 +1476,7 @@ export async function updateLoginInVaultWorkspace(input: {
       username,
       urls: [url],
       tags: input.tags ?? record.item.tags,
+      ...(secretRef ? { secretRef } : {}),
     }),
     at: input.at,
   });

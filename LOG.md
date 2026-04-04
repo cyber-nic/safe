@@ -185,3 +185,15 @@
 - Added `typescript` as a root workspace dev dependency and generated `pnpm-lock.yaml`, so `pnpm exec tsc` now resolves locally instead of depending on a global install.
 - Verified the installed compiler path with `pnpm exec tsc --version`, which now reports TypeScript `5.9.3`.
 - Ran `pnpm --filter @safe/web check` after installation and confirmed the remaining failures are repo-side TypeScript config and source issues rather than a missing compiler binary.
+
+## 2026-04-01T11:46:13Z
+
+- Added first-class login password secret-material support across the shared protocol, starter fixtures, CLI, and web workspace by allowing login items to carry a `secretRef` that points at locally stored password material instead of stuffing plaintext credentials into replayed item records.
+- Added consumer-facing password read and write flows: the CLI now supports `safe secret password <item-id>` plus optional password input on login add and update, and the web workspace can create password-backed logins, reveal stored passwords, and carry those secrets through export and import.
+- Kept the new password path aligned with the long-term local-runtime model by reusing the existing local secret-material store and replay-backed mutations, and added Go, TS SDK, test-vector, and web tests covering canonical serialization, starter data, password reveal, and import or export round-trips.
+
+## 2026-04-03T11:35:46Z
+
+- Added consumer-facing web login credential detail helpers so the primary client model can now show a login's username, primary URL, password availability, and linked authenticator status from the replayed vault plus locally available secret material instead of treating login detail as metadata only.
+- Added `getVaultLoginCredentialDetail` and `listVaultLoginCredentials`, which preserve the locked-versus-ready boundary for password material while surfacing authenticator linkage and live code availability when the workspace has been unlocked.
+- Added web tests covering locked and unlocked login detail, passwordless-login handling, and login-credential summaries so future UI work has a stable, product-relevant read model for the actual sign-in workflow.

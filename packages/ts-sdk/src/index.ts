@@ -19,6 +19,7 @@ export type LoginItem = VaultItemBase & {
   kind: "login";
   username: string;
   urls: string[];
+  secretRef?: string;
 };
 
 export type NoteItem = VaultItemBase & {
@@ -307,6 +308,9 @@ export function parseVaultItem(value: unknown): VaultItem {
         tags,
         username: expectString(value.username, "username"),
         urls: expectStringArray(value.urls, "urls"),
+        ...(typeof value.secretRef === "string"
+          ? { secretRef: value.secretRef }
+          : {}),
       };
     case "note":
       return {
@@ -516,6 +520,7 @@ function canonicalVaultItemShape(item: VaultItem): Record<string, unknown> {
         tags: item.tags,
         username: item.username,
         urls: item.urls,
+        ...(item.secretRef ? { secretRef: item.secretRef } : {}),
       };
     case "note":
       return {

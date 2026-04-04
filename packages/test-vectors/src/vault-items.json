@@ -5,7 +5,8 @@
     "title": "Gmail",
     "tags": ["email", "personal"],
     "username": "alice@example.com",
-    "urls": ["https://accounts.google.com"]
+    "urls": ["https://accounts.google.com"],
+    "secretRef": "vault-secret://login/gmail-primary"
   },
   {
     "id": "totp-gmail-primary",

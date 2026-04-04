@@ -137,6 +137,9 @@ func bootstrapCLIState() (cliState, error) {
 	if _, err := storage.StoreSecretMaterial(store, session.AccountID, "vault-personal", "vault-secret://totp/gmail-primary", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"); err != nil {
 		return cliState{}, err
 	}
+	if _, err := storage.StoreSecretMaterial(store, session.AccountID, "vault-personal", "vault-secret://login/gmail-primary", "correct-horse-battery-staple"); err != nil {
+		return cliState{}, err
+	}
 
 	accountConfig, err := storage.LoadAccountConfigRecord(store, session.AccountID)
 	if err != nil {
@@ -221,8 +224,11 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 		}
 		return secretDelete(out, state, options, args[1])
 	case "update":
-		if len(args) < 4 {
-			return fmt.Errorf("usage: safe secret update <item-id> <title> <username>")
+		if len(args) < 4 || len(args) > 5 {
+			return fmt.Errorf("usage: safe secret update <item-id> <title> <username> [password]")
+		}
+		if len(args) == 5 {
+			return secretUpdate(out, state, options, args[1], args[2], args[3], args[4])
 		}
 		return secretUpdate(out, state, options, args[1], args[2], args[3])
 	case "search":
@@ -235,6 +241,11 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 			return fmt.Errorf("usage: safe secret show <item-id>")
 		}
 		return secretShow(out, state, options, args[1])
+	case "password":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: safe secret password <item-id>")
+		}
+		return secretPassword(out, state, options, args[1])
 	case "code":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: safe secret code <item-id>")
@@ -246,10 +257,14 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 		}
 		return secretAddTOTP(out, state, options, args[1], args[2], args[3], args[4])
 	case "add":
-		if len(args) < 3 {
-			return fmt.Errorf("usage: safe secret add <title> <username>")
+		if len(args) < 3 || len(args) > 4 {
+			return fmt.Errorf("usage: safe secret add <title> <username> [password]")
 		}
-		return secretAdd(out, state, options, args[1], args[2])
+		password := ""
+		if len(args) == 4 {
+			password = args[3]
+		}
+		return secretAdd(out, state, options, args[1], args[2], password)
 	default:
 		return fmt.Errorf("unknown secret subcommand: %s", args[0])
 	}
@@ -369,6 +384,9 @@ func secretShow(out io.Writer, state cliState, options cliOptions, itemID string
 	case domain.VaultItemKindLogin:
 		fmt.Fprintf(out, "- username=%s\n", item.Username)
 		fmt.Fprintf(out, "- urls=%s\n", strings.Join(item.URLs, ","))
+		if item.SecretRef != "" {
+			fmt.Fprintf(out, "- secretRef=%s\n", item.SecretRef)
+		}
 	case domain.VaultItemKindNote:
 		fmt.Fprintf(out, "- bodyPreview=%s\n", item.BodyPreview)
 	case domain.VaultItemKindAPIKey:
@@ -380,6 +398,52 @@ func secretShow(out io.Writer, state cliState, options cliOptions, itemID string
 		fmt.Fprintf(out, "- issuer=%s account=%s digits=%d period=%d algorithm=%s secretRef=%s\n", item.Issuer, item.AccountName, item.Digits, item.PeriodSeconds, item.Algorithm, item.SecretRef)
 	}
 
+	return nil
+}
+
+func secretPassword(out io.Writer, state cliState, options cliOptions, itemID string) error {
+	projection, err := loadProjection(state)
+	if err != nil {
+		return err
+	}
+
+	record, ok := projection.Items[itemID]
+	if !ok {
+		return fmt.Errorf("secret not found: %s", itemID)
+	}
+	if record.Item.Kind != domain.VaultItemKindLogin {
+		return fmt.Errorf("secret password only supports login items: %s", itemID)
+	}
+	if record.Item.SecretRef == "" {
+		return fmt.Errorf("secret password not configured: %s", itemID)
+	}
+
+	password, err := storage.LoadSecretMaterial(
+		state.store,
+		state.session.AccountID,
+		state.accountConfig.DefaultCollectionID,
+		record.Item.SecretRef,
+	)
+	if err != nil {
+		return fmt.Errorf("secret password secret material not found: %s", record.Item.SecretRef)
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			ItemID    string `json:"itemId"`
+			Title     string `json:"title"`
+			Password  string `json:"password"`
+			SecretRef string `json:"secretRef"`
+		}{
+			ItemID:    itemID,
+			Title:     record.Item.Title,
+			Password:  password,
+			SecretRef: record.Item.SecretRef,
+		})
+	}
+
+	fmt.Fprintln(out, "secret password:")
+	fmt.Fprintf(out, "- id=%s title=%s password=%s secretRef=%s\n", itemID, record.Item.Title, password, record.Item.SecretRef)
 	return nil
 }
 
@@ -492,9 +556,15 @@ func secretImport(in io.Reader, out io.Writer, state cliState, options cliOption
 		return err
 	}
 
-	records, err := parseSecretImportRecords(payload)
+	records, secretMaterial, err := parseSecretImportRecords(payload)
 	if err != nil {
 		return err
+	}
+
+	for secretRef, secret := range secretMaterial {
+		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, secret); err != nil {
+			return err
+		}
 	}
 
 	projection := safesync.Projection{}
@@ -538,16 +608,19 @@ func secretExport(out io.Writer, state cliState, itemID string) error {
 			return fmt.Errorf("secret not found: %s", itemID)
 		}
 
+		exportedSecrets := collectExportSecretMaterial(state, []domain.VaultItemRecord{record})
 		payload := struct {
-			AccountID    string                 `json:"accountId"`
-			CollectionID string                 `json:"collectionId"`
-			LatestSeq    int                    `json:"latestSeq"`
-			Item         domain.VaultItemRecord `json:"item"`
+			AccountID      string                 `json:"accountId"`
+			CollectionID   string                 `json:"collectionId"`
+			LatestSeq      int                    `json:"latestSeq"`
+			Item           domain.VaultItemRecord `json:"item"`
+			SecretMaterial map[string]string      `json:"secretMaterial,omitempty"`
 		}{
 			AccountID:    projection.AccountID,
 			CollectionID: projection.CollectionID,
 			LatestSeq:    projection.LatestSeq,
 			Item:         record,
+			SecretMaterial: exportedSecrets,
 		}
 
 		return encoder.Encode(payload)
@@ -565,31 +638,71 @@ func secretExport(out io.Writer, state cliState, itemID string) error {
 	}
 
 	payload := struct {
-		AccountID    string                   `json:"accountId"`
-		CollectionID string                   `json:"collectionId"`
-		LatestSeq    int                      `json:"latestSeq"`
-		Items        []domain.VaultItemRecord `json:"items"`
+		AccountID      string                   `json:"accountId"`
+		CollectionID   string                   `json:"collectionId"`
+		LatestSeq      int                      `json:"latestSeq"`
+		Items          []domain.VaultItemRecord `json:"items"`
+		SecretMaterial map[string]string        `json:"secretMaterial,omitempty"`
 	}{
 		AccountID:    projection.AccountID,
 		CollectionID: projection.CollectionID,
 		LatestSeq:    projection.LatestSeq,
 		Items:        items,
+		SecretMaterial: collectExportSecretMaterial(state, items),
 	}
 
 	return encoder.Encode(payload)
 }
 
-func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, error) {
+func getItemSecretRef(item domain.VaultItem) string {
+	switch item.Kind {
+	case domain.VaultItemKindLogin, domain.VaultItemKindTOTP:
+		return item.SecretRef
+	default:
+		return ""
+	}
+}
+
+func collectExportSecretMaterial(state cliState, records []domain.VaultItemRecord) map[string]string {
+	exportedSecrets := map[string]string{}
+
+	for _, record := range records {
+		secretRef := getItemSecretRef(record.Item)
+		if secretRef == "" {
+			continue
+		}
+
+		secret, err := storage.LoadSecretMaterial(
+			state.store,
+			state.session.AccountID,
+			state.accountConfig.DefaultCollectionID,
+			secretRef,
+		)
+		if err == nil {
+			exportedSecrets[secretRef] = secret
+		}
+	}
+
+	if len(exportedSecrets) == 0 {
+		return nil
+	}
+
+	return exportedSecrets
+}
+
+func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, map[string]string, error) {
 	payload = bytes.TrimSpace(payload)
 	if len(payload) == 0 {
-		return nil, fmt.Errorf("secret import payload is empty")
+		return nil, nil, fmt.Errorf("secret import payload is empty")
 	}
 
 	type listImportPayload struct {
-		Items []json.RawMessage `json:"items"`
+		Items          []json.RawMessage   `json:"items"`
+		SecretMaterial map[string]string   `json:"secretMaterial"`
 	}
 	type singleImportPayload struct {
-		Item json.RawMessage `json:"item"`
+		Item           json.RawMessage   `json:"item"`
+		SecretMaterial map[string]string `json:"secretMaterial"`
 	}
 
 	var listPayload listImportPayload
@@ -598,28 +711,28 @@ func parseSecretImportRecords(payload []byte) ([]domain.VaultItemRecord, error) 
 		for _, rawRecord := range listPayload.Items {
 			record, err := domain.ParseVaultItemRecordJSON(rawRecord)
 			if err != nil {
-				return nil, fmt.Errorf("secret import invalid item: %w", err)
+				return nil, nil, fmt.Errorf("secret import invalid item: %w", err)
 			}
 			records = append(records, record)
 		}
-		return records, nil
+		return records, listPayload.SecretMaterial, nil
 	}
 
 	record, err := domain.ParseVaultItemRecordJSON(payload)
 	if err == nil {
-		return []domain.VaultItemRecord{record}, nil
+		return []domain.VaultItemRecord{record}, nil, nil
 	}
 
 	var singlePayload singleImportPayload
 	if err := json.Unmarshal(payload, &singlePayload); err == nil && len(singlePayload.Item) > 0 {
 		record, err := domain.ParseVaultItemRecordJSON(singlePayload.Item)
 		if err != nil {
-			return nil, fmt.Errorf("secret import invalid item: %w", err)
+			return nil, nil, fmt.Errorf("secret import invalid item: %w", err)
 		}
-		return []domain.VaultItemRecord{record}, nil
+		return []domain.VaultItemRecord{record}, singlePayload.SecretMaterial, nil
 	}
 
-	return nil, fmt.Errorf("secret import payload must be a vault item record or secret export JSON")
+	return nil, nil, fmt.Errorf("secret import payload must be a vault item record or secret export JSON")
 }
 
 func secretHistory(out io.Writer, state cliState, options cliOptions, itemID string) error {
@@ -661,8 +774,15 @@ func secretHistory(out io.Writer, state cliState, options cliOptions, itemID str
 	return nil
 }
 
-func secretAdd(out io.Writer, state cliState, options cliOptions, title, username string) error {
+func secretAdd(out io.Writer, state cliState, options cliOptions, title, username, password string) error {
 	itemID := fmt.Sprintf("login-%s-primary", slugify(title))
+	secretRef := ""
+	if password != "" {
+		secretRef = fmt.Sprintf("vault-secret://login/%s-primary", slugify(title))
+		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, secretRef, password); err != nil {
+			return err
+		}
+	}
 	itemRecord := domain.VaultItemRecord{
 		SchemaVersion: 1,
 		Item: domain.VaultItem{
@@ -672,6 +792,7 @@ func secretAdd(out io.Writer, state cliState, options cliOptions, title, usernam
 			Tags:     []string{"manual", "password"},
 			Username: username,
 			URLs:     []string{"https://example.invalid/login"},
+			SecretRef: secretRef,
 		},
 	}
 
@@ -699,7 +820,7 @@ func secretAdd(out io.Writer, state cliState, options cliOptions, title, usernam
 	return nil
 }
 
-func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, title, username string) error {
+func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, title, username string, password ...string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
 		return err
@@ -716,6 +837,14 @@ func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, tit
 	updated := record
 	updated.Item.Title = title
 	updated.Item.Username = username
+	if len(password) > 0 && password[0] != "" {
+		if updated.Item.SecretRef == "" {
+			updated.Item.SecretRef = fmt.Sprintf("vault-secret://login/%s-primary", slugify(title))
+		}
+		if _, err := storage.StoreSecretMaterial(state.store, state.session.AccountID, state.accountConfig.DefaultCollectionID, updated.Item.SecretRef, password[0]); err != nil {
+			return err
+		}
+	}
 
 	projection, newEvent, err := persistItemMutation(state, updated, "2026-03-31T10:03:00Z")
 	if err != nil {

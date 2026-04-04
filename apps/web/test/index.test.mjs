@@ -22,10 +22,13 @@ import {
   deleteItemFromVaultWorkspace,
   exportVaultWorkspace,
   getVaultItemDetail,
+  getVaultLoginCredentialDetail,
   importVaultWorkspace,
+  listVaultLoginCredentials,
   loadPersistedVaultWorkspace,
   listDeletedVaultItems,
   persistVaultWorkspaceSnapshot,
+  revealLoginPassword,
   restoreItemToVaultWorkspace,
   serializePersistedVaultWorkspaceSnapshot,
   serializeVaultExportPayload,
@@ -286,6 +289,7 @@ test("addLoginToVaultWorkspace appends a replay-backed login mutation", async ()
     title: "GitHub",
     username: "alice",
     url: "https://github.com/login",
+    password: "ghp-secret-123",
     tags: ["dev"],
     at: new Date("2026-04-01T10:20:00Z"),
   });
@@ -295,6 +299,18 @@ test("addLoginToVaultWorkspace appends a replay-backed login mutation", async ()
   assert.equal(result.workspace.overview.latestSeq, 3);
   assert.equal(result.workspace.items.some((item) => item.id === "login-github-primary"), true);
   assert.equal(result.workspace.activity[0].eventId, "evt-login-github-primary-v3");
+  assert.equal(
+    result.secretMaterial["vault-secret://login/github-primary"],
+    "ghp-secret-123",
+  );
+  assert.equal(
+    revealLoginPassword({
+      workspace: result.workspace,
+      secretMaterial: result.secretMaterial,
+      itemId: "login-github-primary",
+    }),
+    "ghp-secret-123",
+  );
 });
 
 test("addTotpToVaultWorkspace stores secret material and unlocks the new authenticator", async () => {
@@ -393,6 +409,30 @@ test("deleteItemFromVaultWorkspace removes items and totp secret material", asyn
   assert.equal(result.workspace.activity[0].action, "delete_item");
 });
 
+test("deleteItemFromVaultWorkspace removes login password secret material", async () => {
+  const withPassword = await addLoginToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "GitHub",
+    username: "alice",
+    url: "https://github.com/login",
+    password: "ghp-secret-123",
+  });
+
+  const deleted = await deleteItemFromVaultWorkspace({
+    workspace: withPassword.workspace,
+    secretMaterial: withPassword.secretMaterial,
+    deviceId: "dev-web-001",
+    itemId: withPassword.itemId,
+  });
+
+  assert.equal(
+    "vault-secret://login/github-primary" in deleted.secretMaterial,
+    false,
+  );
+});
+
 test("getVaultItemDetail returns active item history", () => {
   const detail = getVaultItemDetail(webBootstrap, "login-gmail-primary");
 
@@ -401,6 +441,61 @@ test("getVaultItemDetail returns active item history", () => {
   assert.equal(detail.history.length, 1);
   assert.equal(detail.history[0].action, "put_item");
   assert.equal(detail.canRestore, false);
+});
+
+test("getVaultLoginCredentialDetail reports locked and unlocked password state with linked authenticator context", async () => {
+  const lockedDetail = getVaultLoginCredentialDetail({
+    workspace: webBootstrap,
+    itemId: "login-gmail-primary",
+  });
+  assert.equal(lockedDetail.username, "alice@example.com");
+  assert.equal(lockedDetail.primaryURL, "https://accounts.google.com");
+  assert.equal(lockedDetail.passwordStatus, "locked");
+  assert.equal(lockedDetail.password, null);
+  assert.equal(lockedDetail.relatedAuthenticatorId, "totp-gmail-primary");
+  assert.equal(lockedDetail.relatedAuthenticatorStatus, "locked");
+
+  const unlockedWorkspace = await createUnlockedVaultWorkspace({
+    accountConfig: sampleAccountConfigRecord,
+    head: sampleCollectionHeadRecord,
+    events: sampleVaultEventRecords,
+    starterRecords: sampleVaultItemRecords,
+    secretMaterial: sampleVaultSecretMaterial,
+    at: new Date("1970-01-01T00:00:59Z"),
+  });
+  const unlockedDetail = getVaultLoginCredentialDetail({
+    workspace: unlockedWorkspace,
+    itemId: "login-gmail-primary",
+    secretMaterial: sampleVaultSecretMaterial,
+  });
+  assert.equal(unlockedDetail.passwordStatus, "ready");
+  assert.equal(unlockedDetail.password, "correct-horse-battery-staple");
+  assert.equal(unlockedDetail.relatedAuthenticatorStatus, "ready");
+  assert.equal(unlockedDetail.relatedAuthenticatorCode, "287082");
+});
+
+test("listVaultLoginCredentials summarizes password and authenticator readiness across logins", async () => {
+  const withPasswordlessLogin = await addLoginToVaultWorkspace({
+    workspace: webBootstrap,
+    secretMaterial: sampleVaultSecretMaterial,
+    deviceId: "dev-web-001",
+    title: "Linear",
+    username: "alice@linear.example",
+    url: "https://linear.app/login",
+  });
+
+  const credentials = listVaultLoginCredentials({
+    workspace: withPasswordlessLogin.workspace,
+    secretMaterial: withPasswordlessLogin.secretMaterial,
+  });
+
+  assert.equal(credentials.length, 2);
+  assert.equal(credentials[0].id, "login-gmail-primary");
+  assert.equal(credentials[0].passwordStatus, "ready");
+  assert.equal(credentials[0].relatedAuthenticatorId, "totp-gmail-primary");
+  assert.equal(credentials[1].id, "login-linear-primary");
+  assert.equal(credentials[1].passwordStatus, "missing");
+  assert.equal(credentials[1].relatedAuthenticatorId, null);
 });
 
 test("listDeletedVaultItems surfaces deleted records and restoreItemToVaultWorkspace replays them back", async () => {
@@ -474,6 +569,7 @@ test("updateLoginInVaultWorkspace replays login edits into the workspace", async
     title: "Gmail Personal",
     username: "alice+safe@example.com",
     url: "https://mail.google.com",
+    password: "updated-gmail-password",
     tags: ["email", "personal", "updated"],
     at: new Date("2026-04-01T10:40:00Z"),
   });
@@ -485,6 +581,14 @@ test("updateLoginInVaultWorkspace replays login edits into the workspace", async
   assert.equal(
     result.workspace.items.find((item) => item.id === "login-gmail-primary")?.title,
     "Gmail Personal",
+  );
+  assert.equal(
+    revealLoginPassword({
+      workspace: result.workspace,
+      secretMaterial: result.secretMaterial,
+      itemId: "login-gmail-primary",
+    }),
+    "updated-gmail-password",
   );
 });
 
@@ -674,6 +778,10 @@ test("exportVaultWorkspace returns deterministic full-vault payloads", () => {
     ["login-gmail-primary", "totp-gmail-primary"],
   );
   assert.equal(
+    payload.secretMaterial?.["vault-secret://login/gmail-primary"],
+    "correct-horse-battery-staple",
+  );
+  assert.equal(
     payload.secretMaterial?.["vault-secret://totp/gmail-primary"],
     "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
   );
@@ -732,14 +840,14 @@ test("exportVaultWorkspace supports single-item exports", () => {
   const payload = exportVaultWorkspace(
     webBootstrap,
     sampleVaultSecretMaterial,
-    "totp-gmail-primary",
+    "login-gmail-primary",
   );
 
-  assert.equal(payload.item?.item.id, "totp-gmail-primary");
+  assert.equal(payload.item?.item.id, "login-gmail-primary");
   assert.equal(payload.items, undefined);
   assert.equal(
-    payload.secretMaterial?.["vault-secret://totp/gmail-primary"],
-    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    payload.secretMaterial?.["vault-secret://login/gmail-primary"],
+    "correct-horse-battery-staple",
   );
 });
 
@@ -751,6 +859,7 @@ test("importVaultWorkspace replays exported payloads back through put-item mutat
     title: "GitHub",
     username: "alice",
     url: "https://github.com/login",
+    password: "ghp-secret-123",
     at: new Date("2026-04-01T10:50:00Z"),
   });
 
@@ -773,5 +882,13 @@ test("importVaultWorkspace replays exported payloads back through put-item mutat
   assert.equal(
     imported.workspace.items.some((item) => item.id === "login-github-primary"),
     true,
+  );
+  assert.equal(
+    revealLoginPassword({
+      workspace: imported.workspace,
+      secretMaterial: imported.secretMaterial,
+      itemId: "login-github-primary",
+    }),
+    "ghp-secret-123",
   );
 });

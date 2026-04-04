@@ -26,6 +26,7 @@ type VaultItem struct {
 	Tags          []string      `json:"tags"`
 	Username      string        `json:"username,omitempty"`
 	URLs          []string      `json:"urls,omitempty"`
+	SecretRef     string        `json:"secretRef,omitempty"`
 	BodyPreview   string        `json:"bodyPreview,omitempty"`
 	Service       string        `json:"service,omitempty"`
 	Host          string        `json:"host,omitempty"`
@@ -34,7 +35,6 @@ type VaultItem struct {
 	Digits        int           `json:"digits,omitempty"`
 	PeriodSeconds int           `json:"periodSeconds,omitempty"`
 	Algorithm     string        `json:"algorithm,omitempty"`
-	SecretRef     string        `json:"secretRef,omitempty"`
 }
 
 type VaultItemRecord struct {
@@ -207,6 +207,7 @@ func (record VaultItemRecord) CanonicalJSON() ([]byte, error) {
 		Tags     []string      `json:"tags"`
 		Username string        `json:"username"`
 		URLs     []string      `json:"urls"`
+		SecretRef string       `json:"secretRef,omitempty"`
 	}
 
 	type canonicalTotpItem struct {
@@ -261,6 +262,7 @@ func (record VaultItemRecord) CanonicalJSON() ([]byte, error) {
 				Tags:     record.Item.Tags,
 				Username: record.Item.Username,
 				URLs:     record.Item.URLs,
+				SecretRef: record.Item.SecretRef,
 			},
 		})
 	case VaultItemKindNote:
@@ -630,6 +632,7 @@ func StarterVaultItemRecords() []VaultItemRecord {
 				Tags:     []string{"email", "personal"},
 				Username: "alice@example.com",
 				URLs:     []string{"https://accounts.google.com"},
+				SecretRef: "vault-secret://login/gmail-primary",
 			},
 		},
 		{

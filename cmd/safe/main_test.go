@@ -227,6 +227,33 @@ func TestRunSecretAddJSON(t *testing.T) {
 	})
 }
 
+func TestRunSecretAddWithPasswordAndReveal(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var addBuffer bytes.Buffer
+		if err := secretAdd(&addBuffer, state, cliOptions{}, "GitHub", "alice", "ghp-secret-123"); err != nil {
+			t.Fatalf("add secret with password: %v", err)
+		}
+
+		var passwordBuffer bytes.Buffer
+		if err := secretPassword(&passwordBuffer, state, cliOptions{}, "login-github-primary"); err != nil {
+			t.Fatalf("reveal secret password: %v", err)
+		}
+
+		output := passwordBuffer.String()
+		if !strings.Contains(output, "secret password:") {
+			t.Fatalf("expected secret password output, got %s", output)
+		}
+		if !strings.Contains(output, "password=ghp-secret-123") {
+			t.Fatalf("expected stored password in output, got %s", output)
+		}
+	})
+}
+
 func TestRunSecretUpdate(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
@@ -427,6 +454,29 @@ func TestSecretCodeRejectsNonTOTPItem(t *testing.T) {
 	})
 }
 
+func TestRunSecretPasswordJSON(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		var buffer bytes.Buffer
+		if err := run([]string{"--json", "secret", "password", "login-gmail-primary"}, &buffer); err != nil {
+			t.Fatalf("run secret password json: %v", err)
+		}
+
+		var payload struct {
+			ItemID    string `json:"itemId"`
+			Title     string `json:"title"`
+			Password  string `json:"password"`
+			SecretRef string `json:"secretRef"`
+		}
+		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
+			t.Fatalf("decode password json: %v", err)
+		}
+
+		if payload.ItemID != "login-gmail-primary" || payload.Password != "correct-horse-battery-staple" {
+			t.Fatalf("unexpected password payload: %+v", payload)
+		}
+	})
+}
+
 func TestSecretCodeRejectsMissingSecretMaterial(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		state, err := bootstrapCLIState()
@@ -466,6 +516,29 @@ func TestRunSecretUpdateRejectsNonLoginItem(t *testing.T) {
 
 		if !strings.Contains(err.Error(), "secret update only supports login items: totp-gmail-primary") {
 			t.Fatalf("expected non-login item error, got %v", err)
+		}
+	})
+}
+
+func TestRunSecretUpdateCanRotatePassword(t *testing.T) {
+	withFakeBootstrap(t, func() {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap cli state: %v", err)
+		}
+
+		var updateBuffer bytes.Buffer
+		if err := secretUpdate(&updateBuffer, state, cliOptions{}, "login-gmail-primary", "Gmail", "alice@example.com", "new-staple"); err != nil {
+			t.Fatalf("update secret with password: %v", err)
+		}
+
+		var passwordBuffer bytes.Buffer
+		if err := secretPassword(&passwordBuffer, state, cliOptions{}, "login-gmail-primary"); err != nil {
+			t.Fatalf("reveal secret password after update: %v", err)
+		}
+
+		if !strings.Contains(passwordBuffer.String(), "password=new-staple") {
+			t.Fatalf("expected rotated password, got %s", passwordBuffer.String())
 		}
 	})
 }
@@ -793,10 +866,11 @@ func TestSecretExport(t *testing.T) {
 		}
 
 		var payload struct {
-			AccountID    string                   `json:"accountId"`
-			CollectionID string                   `json:"collectionId"`
-			LatestSeq    int                      `json:"latestSeq"`
-			Items        []domain.VaultItemRecord `json:"items"`
+			AccountID      string                   `json:"accountId"`
+			CollectionID   string                   `json:"collectionId"`
+			LatestSeq      int                      `json:"latestSeq"`
+			Items          []domain.VaultItemRecord `json:"items"`
+			SecretMaterial map[string]string        `json:"secretMaterial"`
 		}
 		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
 			t.Fatalf("decode export payload: %v", err)
@@ -820,6 +894,12 @@ func TestSecretExport(t *testing.T) {
 		if payload.Items[1].Item.ID != "totp-gmail-primary" {
 			t.Fatalf("expected sorted second item, got %+v", payload.Items)
 		}
+		if payload.SecretMaterial["vault-secret://login/gmail-primary"] != "correct-horse-battery-staple" {
+			t.Fatalf("expected exported login password, got %+v", payload.SecretMaterial)
+		}
+		if payload.SecretMaterial["vault-secret://totp/gmail-primary"] != "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" {
+			t.Fatalf("expected exported totp secret, got %+v", payload.SecretMaterial)
+		}
 	})
 }
 
@@ -836,10 +916,11 @@ func TestSecretExportSingleItem(t *testing.T) {
 		}
 
 		var payload struct {
-			AccountID    string                 `json:"accountId"`
-			CollectionID string                 `json:"collectionId"`
-			LatestSeq    int                    `json:"latestSeq"`
-			Item         domain.VaultItemRecord `json:"item"`
+			AccountID      string                 `json:"accountId"`
+			CollectionID   string                 `json:"collectionId"`
+			LatestSeq      int                    `json:"latestSeq"`
+			Item           domain.VaultItemRecord `json:"item"`
+			SecretMaterial map[string]string      `json:"secretMaterial"`
 		}
 		if err := json.Unmarshal(buffer.Bytes(), &payload); err != nil {
 			t.Fatalf("decode single export payload: %v", err)
@@ -850,6 +931,9 @@ func TestSecretExportSingleItem(t *testing.T) {
 		}
 		if payload.Item.Item.Kind != domain.VaultItemKindTOTP {
 			t.Fatalf("expected totp item export, got %+v", payload)
+		}
+		if payload.SecretMaterial["vault-secret://totp/gmail-primary"] != "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" {
+			t.Fatalf("expected exported totp secret material, got %+v", payload.SecretMaterial)
 		}
 	})
 }
@@ -914,6 +998,14 @@ func TestSecretImportSingleItemExport(t *testing.T) {
 		}
 		if _, ok := projection.Items["login-gmail-primary"]; !ok {
 			t.Fatalf("expected imported login item in projection, got %+v", projection.Items)
+		}
+
+		var passwordBuffer bytes.Buffer
+		if err := secretPassword(&passwordBuffer, importState, cliOptions{}, "login-gmail-primary"); err != nil {
+			t.Fatalf("reveal imported login password: %v", err)
+		}
+		if !strings.Contains(passwordBuffer.String(), "correct-horse-battery-staple") {
+			t.Fatalf("expected imported login password, got %s", passwordBuffer.String())
 		}
 	})
 }
@@ -1100,7 +1192,7 @@ func TestSecretAddRejectsHeadMismatch(t *testing.T) {
 		}
 
 		var buffer bytes.Buffer
-		err = secretAdd(&buffer, state, cliOptions{}, "GitHub", "alice")
+		err = secretAdd(&buffer, state, cliOptions{}, "GitHub", "alice", "")
 		if err == nil {
 			t.Fatal("expected head mismatch error")
 		}

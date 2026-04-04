@@ -19,7 +19,8 @@
       "username": "alice",
       "urls": [
         "https://github.com/login"
-      ]
+      ],
+      "secretRef": "vault-secret://login/github-primary"
     }
   }
 }

@@ -31,6 +31,7 @@ export const sampleVaultItems: VaultItem[] = parseVaultItems(rawVaultItems);
 export const sampleVaultItemRecords: VaultItemRecord[] =
   parseVaultItemRecords(rawVaultItemRecords);
 export const sampleVaultSecretMaterial: Record<string, string> = {
+  "vault-secret://login/gmail-primary": "correct-horse-battery-staple",
   "vault-secret://totp/gmail-primary": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
 };
 export const canonicalVaultItemRecords = sampleVaultItemRecords.map(

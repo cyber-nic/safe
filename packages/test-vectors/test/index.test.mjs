@@ -34,6 +34,10 @@ test("sample vault items and records stay aligned", () => {
 
 test("sample vault secret material exports authenticator seeds", () => {
   assert.equal(
+    sampleVaultSecretMaterial["vault-secret://login/gmail-primary"],
+    "correct-horse-battery-staple",
+  );
+  assert.equal(
     sampleVaultSecretMaterial["vault-secret://totp/gmail-primary"],
     "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
   );
@@ -43,7 +47,7 @@ test("canonical vault item records preserve starter ordering", () => {
   assert.equal(canonicalVaultItemRecords.length, sampleVaultItemRecords.length);
   assert.equal(
     canonicalVaultItemRecords[0],
-    '{"schemaVersion":1,"item":{"id":"login-gmail-primary","kind":"login","title":"Gmail","tags":["email","personal"],"username":"alice@example.com","urls":["https://accounts.google.com"]}}',
+    '{"schemaVersion":1,"item":{"id":"login-gmail-primary","kind":"login","title":"Gmail","tags":["email","personal"],"username":"alice@example.com","urls":["https://accounts.google.com"],"secretRef":"vault-secret://login/gmail-primary"}}',
   );
 });
 
@@ -86,12 +90,12 @@ test("put mutation vectors export parsed and canonical forms", () => {
   assert.equal(samplePutVaultItemRecord.item.id, "login-github-primary");
   assert.equal(
     canonicalPutVaultItemRecord,
-    '{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"]}}',
+    '{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"],"secretRef":"vault-secret://login/github-primary"}}',
   );
   assert.equal(samplePutVaultEventRecord.eventId, "evt-login-github-primary-v3");
   assert.equal(
     canonicalPutVaultEventRecord,
-    '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"]}}}',
+    '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["dev"],"username":"alice","urls":["https://github.com/login"],"secretRef":"vault-secret://login/github-primary"}}}',
   );
   assert.equal(samplePutCollectionHeadRecord.latestEventId, "evt-login-github-primary-v3");
   assert.equal(

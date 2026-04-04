@@ -96,12 +96,13 @@ test("serializeCanonicalVaultEventRecord still supports put_item records", () =>
       tags: ["manual", "password"],
       username: "alice",
       urls: ["https://github.com/login"],
+      secretRef: "vault-secret://login/github-primary",
     }),
   });
 
   assert.equal(
     serializeCanonicalVaultEventRecord(record),
-    '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["manual","password"],"username":"alice","urls":["https://github.com/login"]}}}',
+    '{"schemaVersion":1,"eventId":"evt-login-github-primary-v3","accountId":"acct-dev-001","deviceId":"dev-web-001","collectionId":"vault-personal","sequence":3,"occurredAt":"2026-03-31T10:02:00Z","action":"put_item","itemRecord":{"schemaVersion":1,"item":{"id":"login-github-primary","kind":"login","title":"GitHub","tags":["manual","password"],"username":"alice","urls":["https://github.com/login"],"secretRef":"vault-secret://login/github-primary"}}}',
   );
 });
 
@@ -270,6 +271,7 @@ test("replayCollection sorts input and builds the latest state", () => {
       tags: ["email", "personal"],
       username: "alice@example.com",
       urls: ["https://accounts.google.com"],
+      secretRef: "vault-secret://login/gmail-primary",
     }),
   });
   const totpEvent = createPutItemEventRecord({
@@ -314,6 +316,7 @@ test("replayCollection deletes items and rejects sequence gaps", () => {
       tags: ["email", "personal"],
       username: "alice@example.com",
       urls: ["https://accounts.google.com"],
+      secretRef: "vault-secret://login/gmail-primary",
     }),
   });
   const deleteEvent = createDeleteItemEventRecord({
@@ -360,6 +363,7 @@ test("replayCollectionAgainstHead enforces latest seq and event alignment", () =
         tags: ["email", "personal"],
         username: "alice@example.com",
         urls: ["https://accounts.google.com"],
+        secretRef: "vault-secret://login/gmail-primary",
       }),
     }),
     createPutItemEventRecord({
@@ -422,6 +426,7 @@ test("buildPutItemMutation and buildDeleteItemMutation advance the head", () => 
       tags: ["dev"],
       username: "alice",
       urls: ["https://github.com/login"],
+      secretRef: "vault-secret://login/github-primary",
     }),
     "2026-03-31T10:02:00Z",
   );
