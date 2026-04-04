@@ -302,6 +302,124 @@ Current focus:
 - close out `M1 - First Trustworthy Local Loop`
 - capture any post-W5 polish as explicit follow-up work instead of reopening completed milestone tasks
 
+## Queued Tasks
+
+### W6 - Close out M1 local-runtime loop
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #21`)
+
+Write scope:
+
+- `docs/project/**`
+- `README.md`
+- test-only updates in `cmd/safe/**` or `apps/web/**` if verification gaps require them
+
+Output:
+
+- milestone closeout notes for the shipped CLI and web local-runtime loop
+- explicit follow-up tasks for any remaining polish instead of hidden scope
+
+Dependencies:
+
+- W5
+
+GitHub issue:
+
+- `#21`
+
+### W7 - Freeze recovery-key account contract
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #20`)
+
+Write scope:
+
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+
+Output:
+
+- frozen persisted recovery-key contract for account bootstrap and account recovery
+
+Dependencies:
+
+- W1
+- W3
+
+GitHub issue:
+
+- `#20`
+
+### W8 - Implement recovery-key wrap and recovery tests
+
+Owner:
+
+- Engineer2
+
+Status:
+
+- todo (`refs #19`)
+
+Write scope:
+
+- `internal/crypto/**`
+- supporting account-domain records if required
+- test vectors or fixtures if needed
+
+Output:
+
+- recovery-key generation plus AMK wrap and unwrap support
+- persisted-account recovery tests and wrong-key or corrupted-payload coverage
+
+Dependencies:
+
+- W7
+
+GitHub issue:
+
+- `#19`
+
+### W9 - Freeze signed mutable metadata and rollback rules
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #18`)
+
+Write scope:
+
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- architecture notes only where wording needs alignment
+
+Output:
+
+- frozen contract for signed mutable metadata, freshness checks, and rollback-sensitive objects
+
+Dependencies:
+
+- W1
+
+GitHub issue:
+
+- `#18`
+
 ## Merge Order
 
 1. W1 contract docs

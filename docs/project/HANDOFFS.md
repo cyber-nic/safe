@@ -31,6 +31,26 @@ Current planning issues:
 - `#5` W3
 - `#3` W4
 - `#2` W5
+- `#21` W6
+- `#20` W7
+- `#19` W8
+- `#18` W9
+
+### 2026-04-04 - Engineer1 PM queue expansion
+
+Task:
+
+- create post-W5 queued work items for milestone closeout and the next contract-first security slices
+
+Status:
+
+- completed; created `#21`, `#20`, `#19`, and `#18` and added them to the GitHub project
+
+Next action:
+
+- use W6 to close out M1 cleanly
+- keep W7 before W8 so recovery implementation lands against a frozen contract
+- keep W9 contract-first before broader sync implementation expands
 
 ## Entries
 
