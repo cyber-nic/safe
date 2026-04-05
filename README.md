@@ -43,22 +43,21 @@ Useful progress already landed:
 - shared Go and TypeScript protocol models plus canonical fixture coverage
 - a script-friendly CLI prototype for local secret CRUD, history, import/export, and JSON output
 - durable file-backed local runtime wiring in the CLI, including password-derived unlock and encrypted secret-material storage
-- web local runtime persistence aligned around account config, optional head state, replayable events, and locked-at-rest secret handling
+- a local server-rendered web client that identifies, unlocks, saves one login secret, locks, and reopens against the same account-local runtime concepts
 - full Go test coverage for the current local-runtime path passes on `main`
 
-But the project is still behind the plan's actual critical path:
+The repository still has important v1 gaps after M1:
 
-- there is still no navigable authenticated client surface for the first trustworthy save or read loop
 - cryptographic key hierarchy and recovery flows are still missing
 - signed mutable metadata and rollback detection are still missing
 - object-store sync is still a starter model, not the intended v1 storage protocol
 
 ## Immediate Next Steps
 
-1. Deliver a real client surface for the M1 save or read loop instead of relying on runtime packages and tests alone.
-2. Close M1 only after that client can identify, save, lock or reload, and read the same secret back.
-3. Pull the next milestone boundary forward only after the remaining critical-path gaps are explicit and scoped.
-4. Continue signer, rollback, and sync-hardening work only insofar as it supports that first trustworthy save/read loop, then expand outward.
+1. Move from the closed M1 loop into recovery implementation and rollback-rule hardening.
+2. Freeze the next milestone boundary before expanding surface area beyond the current local client and CLI paths.
+3. Keep browser-native adapter decisions explicit instead of backfilling them into the finished M1 scope.
+4. Continue signer and sync-hardening work only insofar as it supports the next real user-critical loop.
 
 ## Local Development
 
@@ -74,6 +73,7 @@ Quick start:
 3. Run `make up`.
 4. Run `make logs` to follow service output.
 5. Run `make watch` if you want Compose-managed restart behavior on Go file changes.
+6. Run `npm start --prefix apps/web` to launch the local M1 web client surface.
 
 When multiple engineers or agents run the stack on the same machine, each one needs a unique Compose namespace as well as unique host ports. Set the shared identity in your local `.env`:
 

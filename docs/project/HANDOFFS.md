@@ -340,3 +340,42 @@ Next action:
 
 - record M1 as still open for the missing client-surface requirement
 - close W5 cleanly and queue the missing client-surface slice as a separate task
+
+### 2026-04-05 - Engineer1 completion note (W10)
+
+Task:
+
+- `W10 - Deliver a real M1 client surface`
+
+Status:
+
+- completed; refs #22
+
+Files touched:
+
+- `apps/web/src/local-runtime.ts`
+- `apps/web/src/server.ts`
+- `apps/web/src/main.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `apps/web/package.json`
+- `docs/project/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- `README.md`
+
+Verification:
+
+- `npm test --prefix apps/web`
+- `GOCACHE=/tmp/go-build go test ./...`
+
+Outcome:
+
+- `apps/web` now ships a real local client surface with routes for identify, unlock, save, lock, and reopen
+- the web client persists account config, collection head, item records, replayable events, and encrypted secret material under the accepted account-local unlock contract
+- M1 is complete; remaining browser-native adapter questions stay queued as explicit post-M1 work
+
+Next action:
+
+- close issue `#22` and milestone issue `#1`
+- keep W8 and W9 explicit as post-M1 follow-up work

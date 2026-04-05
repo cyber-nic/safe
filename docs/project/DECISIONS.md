@@ -302,6 +302,42 @@ Refs:
 
 - `#20`
 
+### D10 - W10 closes M1 with a local web client, not a browser-only crypto rewrite
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-05
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- W10 closes M1 by shipping a local server-rendered client surface under `apps/web`
+- that surface uses the accepted account-scoped unlock record and encrypted secret-material envelope instead of inventing a second web-only unlock format
+- a fully browser-native storage adapter remains a follow-up decision, not a prerequisite for closing the first trustworthy local loop
+
+Rationale:
+
+- the missing milestone gap was a navigable client surface, not another rewrite of the frozen local unlock contract
+- Node can execute the accepted Argon2id plus AES-256-GCM path today, which lets the web client complete the real save or read loop without hiding new crypto divergence in `apps/web`
+- closing M1 cleanly is better than letting browser-adapter ambiguity silently keep the milestone open
+
+Downstream impact:
+
+- `docs/project/WORKBOARD.md` and `README.md` should treat M1 as complete once W10 lands
+- post-M1 planning should keep browser-native adapter work explicit instead of backfilling it into W10
+- the web client surface should continue consuming the shared runtime model from `apps/web/src/index.ts` rather than bypassing it
+
+Refs:
+
+- `#22`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary
@@ -322,4 +358,4 @@ Decision driver:
 
 - avoid inventing a second runtime model
 - W5 aligned the web runtime around account config, optional head state, replayable events, and locked secret-material boundaries
-- remaining decisions should focus on browser-specific adapter details and post-M1 polish, not on inventing a second runtime model
+- W10 closed M1 with a local web client; remaining decisions should focus on browser-specific adapter details and post-M1 polish, not on inventing a second runtime model
