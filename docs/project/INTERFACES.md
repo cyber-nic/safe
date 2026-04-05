@@ -137,7 +137,10 @@ Frozen for W3 (`refs #5`):
 Still not defined:
 
 - password rotation flow
-- recovery-key support
+
+Frozen for W7 (`refs #20`):
+
+- see I6 below for the recovery-key contract
 
 ## I3 - CLI Integration Contract
 
@@ -190,6 +193,100 @@ Rules:
 - persisted workspace snapshots are transitional and should not become the final runtime API
 - runtime persistence should prefer account config, collection head, replayable events, and opaque secret-material boundaries over derived UI state
 - M1 is not complete until those runtime helpers are exposed through a real client surface instead of test-only package entry points
+
+## I6 - Recovery Key Contract
+
+Status:
+
+- accepted
+
+Owner:
+
+- Engineer2 (Claude)
+
+Frozen for W7 (`refs #20`):
+
+Goals:
+
+- allow an account to be unlocked on a new device without the master password
+- derive no key material from the recovery key via a KDF; the recovery key itself is the KEK for the AMK wrap
+- keep the recovery record schema aligned with the unlock record schema from I2
+
+### Recovery Key Format
+
+- a recovery key is 32 random bytes generated on the client at first-use time
+- it is encoded for human display and backup as a 24-word BIP-39 mnemonic (256-bit entropy → 24 words with checksum)
+- the raw 32 bytes are the input key material; no KDF is applied because the entropy is already sufficient
+- callers must display the mnemonic exactly once during account creation and require explicit acknowledgement before proceeding
+
+### Storage Path
+
+- recovery metadata is stored at `accounts/<accountID>/recovery.json`
+- this is an account-scoped path, parallel to `accounts/<accountID>/unlock.json`
+- the persistence adapter stores and loads the recovery record as opaque bytes; it does not parse the crypto payload
+
+### Recovery Record Schema
+
+The record is named `LocalRecoveryRecord` and contains:
+
+```json
+{
+  "schemaVersion": 1,
+  "accountId": "<accountID>",
+  "wrappedKey": {
+    "algorithm": "aes-256-gcm",
+    "nonce": "<base64url-no-pad>",
+    "ciphertext": "<base64url-no-pad>"
+  }
+}
+```
+
+Fields:
+
+- `schemaVersion`: integer, must be `1`
+- `accountId`: the account ID this record belongs to
+- `wrappedKey.algorithm`: must be `"aes-256-gcm"`
+- `wrappedKey.nonce`: base64url without padding, 12 random bytes
+- `wrappedKey.ciphertext`: base64url without padding, the AES-256-GCM encryption of the 32-byte AMK using the raw recovery key bytes as the key
+
+### AAD
+
+- the authenticated additional data for the wrappedKey envelope is the fixed ASCII string `"safe.local-recovery.v1/"` concatenated with the `accountId`
+- this binds the ciphertext to its account and prevents cross-account record transplant
+
+### Wrap and Unwrap Rules
+
+- wrap: `AES-256-GCM.Seal(key=recoveryKeyBytes, nonce=random12, plaintext=AMK, aad=AAD)`
+- unwrap: `AES-256-GCM.Open(key=recoveryKeyBytes, nonce=record.wrappedKey.nonce, ciphertext=record.wrappedKey.ciphertext, aad=AAD)`
+- a wrong recovery key or corrupted ciphertext must return an authentication-failure error and must never expose partial plaintext
+- wrong-key and corrupted-ciphertext failures may share the same error value; callers must not distinguish them
+
+### First-Use Lifecycle
+
+- `CreateLocalRecoveryRecord(accountID string, recoveryKeyBytes []byte, AMK []byte)` creates the record and returns the mnemonic for display
+- the record is persisted to the durable store via `StoreLocalRecoveryRecord` immediately after creation
+- `OpenLocalRecoveryRecord(record LocalRecoveryRecord, recoveryKeyBytes []byte)` returns the unwrapped AMK
+- both functions must be tested against serialized on-disk fixtures, not only in-memory state
+
+### Relationship to the Password Unlock Path (I2)
+
+- both I2 and I6 wrap the same AMK; they are parallel unlock paths for the same account key
+- the recovery record does not replace the unlock record; both must be present after account creation
+- callers that have the AMK from either path proceed identically; no caller should branch on which path produced the AMK
+
+### Negative Tests Required by W8
+
+- wrong recovery key → authentication-failure error, no plaintext
+- corrupted ciphertext (bit-flipped) → authentication-failure error, no plaintext
+- recovery record for wrong account ID → validation error before any decryption attempt
+- recovery succeeds against a serialized on-disk fixture (not only in-memory helpers)
+
+### Not in Scope for W7 or W8
+
+- mnemonic validation or checksum checking during input (UX concern for a later slice)
+- recovery key rotation
+- server-assisted recovery escrow
+- device enrollment via recovery key (separate protocol slice)
 
 ## I5 - Handoff Protocol
 
