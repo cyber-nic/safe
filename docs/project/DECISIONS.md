@@ -76,6 +76,7 @@ Impact:
 
 - new work must justify itself against the local-runtime milestone
 - non-critical surface expansion should be deferred
+- runtime helper packages do not count as milestone completion unless they are exposed through a real client surface
 
 ### D3 - Ownership is directory-first
 

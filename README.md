@@ -44,18 +44,20 @@ Useful progress already landed:
 - a script-friendly CLI prototype for local secret CRUD, history, import/export, and JSON output
 - durable file-backed local runtime wiring in the CLI, including password-derived unlock and encrypted secret-material storage
 - web local runtime persistence aligned around account config, optional head state, replayable events, and locked-at-rest secret handling
+- full Go test coverage for the current local-runtime path passes on `main`
 
 But the project is still behind the plan's actual critical path:
 
+- there is still no navigable authenticated client surface for the first trustworthy save or read loop
 - cryptographic key hierarchy and recovery flows are still missing
 - signed mutable metadata and rollback detection are still missing
 - object-store sync is still a starter model, not the intended v1 storage protocol
 
 ## Immediate Next Steps
 
-1. Finish the first real user loop in a client surface: sign in, save a secret, and read it back.
-2. Validate the M1 local-runtime loop end to end across the shipped CLI and web surfaces.
-3. Pull the next milestone boundary forward only after any remaining M1 polish is explicit and scoped.
+1. Deliver a real client surface for the M1 save or read loop instead of relying on runtime packages and tests alone.
+2. Close M1 only after that client can identify, save, lock or reload, and read the same secret back.
+3. Pull the next milestone boundary forward only after the remaining critical-path gaps are explicit and scoped.
 4. Continue signer, rollback, and sync-hardening work only insofar as it supports that first trustworthy save/read loop, then expand outward.
 
 ## Local Development

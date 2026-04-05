@@ -178,6 +178,7 @@ Current gap:
 
 - W5 moved the web runtime toward the same account-local concepts as the CLI path
 - browser-specific storage adapter details and unlock UX remain thinner than the CLI path
+- `apps/web` is still a runtime helper package rather than a navigable authenticated client surface
 
 Target:
 
@@ -188,6 +189,7 @@ Rules:
 - do not invent a separate unlock model in `apps/web`
 - persisted workspace snapshots are transitional and should not become the final runtime API
 - runtime persistence should prefer account config, collection head, replayable events, and opaque secret-material boundaries over derived UI state
+- M1 is not complete until those runtime helpers are exposed through a real client surface instead of test-only package entry points
 
 ## I5 - Handoff Protocol
 
