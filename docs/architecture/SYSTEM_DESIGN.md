@@ -182,7 +182,7 @@ This is preferable to deriving every level from the password directly. The passw
 - Symmetric encryption: AES-256-GCM or XChaCha20-Poly1305
 - Key wrapping: AEAD-based wrapping using random nonces
 - Hashing: SHA-256 or BLAKE2/BLAKE3 for integrity metadata
-- Public-key crypto for invites and device bootstrap: X25519 for key agreement, Ed25519 for signatures if signatures are needed
+- Public-key crypto for invites and device bootstrap: X25519 for key agreement, Ed25519 for required mutable-metadata and event signatures
 
 The implementation should standardize on one primitive set across all clients. Mixing algorithms by platform creates migration and audit risk.
 
@@ -451,7 +451,7 @@ This means the mutable head pointer is the commit point. Immutable objects may e
 - A committed event must reference only immutable objects that already exist
 - Writers must be able to detect whether a retried mutation already committed by matching on idempotency key
 - Clients must reject unsigned or stale mutable metadata
-- Head pointers, account config, membership state, and snapshot pointers must be rollback-detectable
+- Head pointers, account config, snapshot pointers, device metadata, membership state, and invite state must be rollback-detectable
 
 ### Snapshot Policy
 

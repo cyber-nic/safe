@@ -379,3 +379,32 @@ Next action:
 
 - close issue `#22` and milestone issue `#1`
 - keep W8 and W9 explicit as post-M1 follow-up work
+
+### 2026-04-05 - Engineer1 internal note (W9)
+
+Task:
+
+- `W9 - Freeze signed mutable metadata and rollback rules`
+
+Status:
+
+- completed; refs #18
+
+Files touched:
+
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- `docs/project/WORKBOARD.md`
+- `docs/architecture/PROTOCOL.md`
+- `docs/architecture/SYSTEM_DESIGN.md`
+
+Contract updates:
+
+- froze the mutable metadata families that are mandatory trust anchors: account config, collection heads, snapshot pointers, device metadata, membership state, and invite state
+- froze signer ownership, required scope bindings, and monotonic freshness rules for those records
+- required clients to reject stale, divergent, or unsigned mutable metadata before replay, snapshot restore, or authorization-sensitive state transitions
+
+Next action:
+
+- future sync and sharing implementation should add authenticated record envelopes and stale-state rejection tests against the frozen W9 contract

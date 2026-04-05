@@ -27,15 +27,17 @@ The following record types require canonical serialization and authenticated ver
 ## Signers
 
 - Device keys sign event records.
-- Account-level trust material authenticates account config and mutable account metadata.
+- Account-level trust material authenticates account config, snapshot pointers, device metadata, membership state, and invite state.
+- Head pointers are authenticated by the device key that authored the committed event they reference.
 - Membership and invite transitions must be authenticated by an authorized writer and validated by recipients.
 
-Exact key ownership and verification rules must be finalized before code generation or schema freezing.
+Clients must reject unsigned or unverifiable mutable metadata. This is a blocking protocol rule, not an optional diagnostic.
 
 ## Rollback Rules
 
-- Every client stores the highest trusted head it has seen for an account and relevant shared collections.
+- Every client stores the highest trusted version, cursor, or sequence it has accepted for each rollback-sensitive mutable record family.
 - Clients reject older authenticated mutable state unless explicitly recovering from a known-safe local reset flow.
+- If two authenticated mutable records claim the same trusted counter or cursor but differ in authenticated contents, clients reject the candidate as divergence.
 - Snapshots are valid only if their base cursor and authenticated metadata match the trusted event history.
 
 ## Capability Rules
