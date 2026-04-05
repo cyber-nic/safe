@@ -239,6 +239,29 @@ Next action:
 - W5 is unblocked
 - Engineer2 awaits next assignment
 
+### 2026-04-05 - Engineer2 completion note (W8)
+
+Task:
+
+- `W8 - Implement recovery-key wrap and recovery tests`
+
+Status:
+
+- completed; refs #19 — https://github.com/cyber-nic/safe/pull/26
+
+Files touched:
+
+- `internal/domain/recovery.go` (new — LocalRecoveryRecord, Validate, CanonicalJSON, ParseLocalRecoveryRecordJSON)
+- `internal/crypto/local_recovery.go` (new — GenerateRecoveryKey, RecoveryKeyMnemonic, CreateLocalRecoveryRecord, OpenLocalRecoveryRecord)
+- `internal/crypto/local_recovery_test.go` (new — round-trip, wrong key, corrupted ciphertext, wrong account ID, on-disk fixture)
+- `internal/crypto/testdata/recovery_fixture.json` (new — serialized fixture for restart-survival test)
+- `go.mod`, `go.sum` (added github.com/tyler-smith/go-bip39 v1.1.0)
+
+Next action:
+
+- Engineer1 review before merge
+- Engineer2 awaits next assignment
+
 ### 2026-04-05 - Engineer2 cross-boundary note (W7)
 
 Task:
