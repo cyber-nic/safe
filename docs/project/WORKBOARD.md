@@ -45,8 +45,8 @@ Goal:
 Current status:
 
 - CLI local-runtime save or read is shipped and test-backed
-- web local-runtime persistence helpers are shipped and test-backed
-- the milestone is still open because `apps/web` is currently a runtime package, not a navigable authenticated client surface
+- a local server-rendered web client now ships in `apps/web` and completes the same identify, unlock, save, lock, and reopen loop
+- M1 is complete on `main`; remaining work is post-M1 hardening and expansion, not a hidden milestone gap
 
 Non-goals for this milestone:
 
@@ -58,8 +58,9 @@ Non-goals for this milestone:
 
 Milestone closeout status:
 
-- technical implementation slices W1-W5 are complete (`refs #2`, `#3`, `#4`, `#5`, `#6`)
-- remaining PM work is planning hygiene: verify issue states, project statuses, and define the first post-M1 queue (`refs #1`)
+- implementation slices W1-W7 and W10 are complete (`refs #2`, `#3`, `#4`, `#5`, `#6`, `#20`, `#22`)
+- the first trustworthy local loop is now closed for both the CLI and the local web client (`refs #1`)
+- remaining queued work is explicitly post-M1: recovery implementation, rollback rules, and broader browser-native adapter decisions
 
 ## Execution Rules
 
@@ -339,8 +340,8 @@ No new implementation slice is assigned on this branch.
 
 Current focus:
 
-- keep M1 open until W10 delivers the missing real client surface
-- keep non-M1 foundational work queued, but do not let it replace the missing real-client milestone work
+- keep M1 closed and avoid reintroducing hidden milestone scope
+- move the queue forward through recovery implementation, rollback rules, and next-milestone definition
 
 ## Queued Tasks
 
@@ -352,7 +353,7 @@ Owner:
 
 Status:
 
-- todo
+- completed (`refs #22`)
 
 Write scope:
 
@@ -363,6 +364,12 @@ Write scope:
 Output:
 
 - a navigable client surface where a user can identify, save one secret, lock or reload, and read it back
+
+Outcome:
+
+- `apps/web` now ships a local server-rendered client surface with real routes for identify, unlock, save, lock, and reopen
+- the local web client persists account config, collection head, replayable events, item records, and encrypted secret material on disk
+- the local web client uses the accepted account-scoped Argon2id plus AES-256-GCM unlock contract rather than inventing a second web-only unlock format
 
 Dependencies:
 
