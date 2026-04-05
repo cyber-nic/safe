@@ -409,7 +409,7 @@ Owner:
 
 Status:
 
-- blocked on W7
+- completed (`refs #19`)
 
 Write scope:
 
