@@ -31,6 +31,11 @@ Current planning issues:
 - `#5` W3
 - `#3` W4
 - `#2` W5
+- `#21` W6
+- `#22` W10
+- `#20` W7
+- `#19` W8
+- `#18` W9
 
 ## Entries
 
@@ -252,3 +257,37 @@ Files touched:
 Next action:
 
 - M1 local-runtime surfaces now align on account config plus optional head plus event replay; next coordination step is milestone closeout and any final polish outside W5
+
+### 2026-04-05 - Engineer1 W6 verification note
+
+Task:
+
+- `W6 - Close out M1 local-runtime loop`
+
+Status:
+
+- completed; verification run complete, milestone still open
+
+Files reviewed:
+
+- `cmd/safe/**`
+- `apps/web/**`
+- `docs/project/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
+- `README.md`
+
+Verification:
+
+- `GOCACHE=/tmp/go-build go test ./...`
+- `npm test --prefix apps/web`
+- `npm run check --prefix apps/web` fails in this environment because `tsc` is not installed on `PATH`
+
+Finding:
+
+- the CLI path and web runtime helpers are real and test-backed
+- `apps/web` still contains only package code plus tests, not a navigable authenticated client surface
+
+Next action:
+
+- record M1 as still open for the missing client-surface requirement
+- close W5 cleanly and queue the missing client-surface slice as a separate task

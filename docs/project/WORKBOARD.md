@@ -42,6 +42,12 @@ Goal:
 - close or lock the client
 - reopen or unlock and read that secret back
 
+Current status:
+
+- CLI local-runtime save or read is shipped and test-backed
+- web local-runtime persistence helpers are shipped and test-backed
+- the milestone is still open because `apps/web` is currently a runtime package, not a navigable authenticated client surface
+
 Non-goals for this milestone:
 
 - sharing
@@ -298,77 +304,160 @@ GitHub issue:
 
 - `#2`
 
+### W6 - Close out M1 local-runtime loop
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- completed (`refs #21`)
+
+Write scope:
+
+- `docs/project/**`
+- `README.md`
+- test-only updates in `cmd/safe/**` or `apps/web/**` if verification gaps require them
+
+Output:
+
+- verified milestone closeout notes for the shipped runtime work
+- explicit follow-up tasks for any remaining critical-path gap
+
+Dependencies:
+
+- W5
+
+GitHub issue:
+
+- `#21`
+
 ## Next Assignment
 
-M1 closeout planning is now active under milestone issue `#1`.
+No new implementation slice is assigned on this branch.
 
 Current focus:
 
-- close out `M1 - First Trustworthy Local Loop`
-- capture post-W5 polish as explicit follow-up work instead of reopening completed milestone tasks
-- split next execution into one stabilization slice and one product-surface slice so Codex and Claude can run in parallel after PM sign-off
+- keep M1 open until W10 delivers the missing real client surface
+- keep non-M1 foundational work queued, but do not let it replace the missing real-client milestone work
 
-Planned next slices (`refs #1`; create dedicated issues before coding):
+## Queued Tasks
 
-### W6 - M1 closeout audit and release checklist
+### W10 - Deliver a real M1 client surface
 
 Owner:
 
-- Engineer1 (Codex)
+- Engineer1
 
 Status:
 
-- planned
+- todo
 
 Write scope:
 
-- `docs/project/WORKBOARD.md`
-- `docs/project/HANDOFFS.md`
+- `apps/web/**`
+- `cmd/control-plane/**` if the client surface needs the existing dev identity bootstrap path
+- minimal doc updates in `docs/project/**` if the surface contract changes
+
+Output:
+
+- a navigable client surface where a user can identify, save one secret, lock or reload, and read it back
+
+Dependencies:
+
+- W5
+
+GitHub issue:
+
+- `#22`
+
+### W7 - Freeze recovery-key account contract
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #20`)
+
+Write scope:
+
+- `docs/project/INTERFACES.md`
 - `docs/project/DECISIONS.md`
-- release-readiness notes in `docs/architecture/IMPLEMENTATION_PLAN.md` only
+- `docs/project/HANDOFFS.md`
 
 Output:
 
-- audited mapping between docs, issue states, and project board status values
-- explicit release checklist for the first trustworthy local loop (lock or unlock, restart readback, known failure modes)
-- list of any missing follow-up issues required before milestone close
+- frozen persisted recovery-key contract for account bootstrap and account recovery
 
 Dependencies:
 
-- W1-W5 complete
+- W1
+- W3
 
 GitHub issue:
 
-- `#1` (dedicated W6 issue to be created)
+- `#20`
 
-### W7 - Post-M1 UX and reliability backlog definition
+### W8 - Implement recovery-key wrap and recovery tests
 
 Owner:
 
-- Engineer2 (Claude)
+- Engineer2
 
 Status:
 
-- planned
+- todo (`refs #19`)
 
 Write scope:
 
-- issue drafts and labels in GitHub only
-- summary sync in `docs/project/HANDOFFS.md`
+- `internal/crypto/**`
+- supporting account-domain records if required
+- test vectors or fixtures if needed
 
 Output:
 
-- prioritized backlog proposals grouped by severity (`must-fix`, `should-fix`, `nice-to-have`)
-- issue labels normalized for planning visibility (`area/*`, `type/*`, `priority/*`)
-- project-ready candidate slices with acceptance criteria and dependency notes
+- recovery-key generation plus AMK wrap and unwrap support
+- persisted-account recovery tests and wrong-key or corrupted-payload coverage
 
 Dependencies:
 
-- W6 closeout checklist draft
+- W7
 
 GitHub issue:
 
-- `#1` (dedicated W7 issue to be created)
+- `#19`
+
+### W9 - Freeze signed mutable metadata and rollback rules
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #18`)
+
+Write scope:
+
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- architecture notes only where wording needs alignment
+
+Output:
+
+- frozen contract for signed mutable metadata, freshness checks, and rollback-sensitive objects
+
+Dependencies:
+
+- W1
+
+GitHub issue:
+
+- `#18`
 
 ## Merge Order
 
