@@ -239,6 +239,32 @@ Next action:
 - W5 is unblocked
 - Engineer2 awaits next assignment
 
+### 2026-04-05 - Engineer2 cross-boundary note (W7)
+
+Task:
+
+- `W7 - Freeze recovery-key account contract`
+
+Status:
+
+- in progress; refs #20
+
+Reason for cross-boundary edit:
+
+- W7 write scope is normally Engineer1's; Engineer2 is taking it because W8 is blocked and no W7 branch was open
+- cross-boundary edit noted here per D3; Engineer1 should review before W8 implementation starts
+
+Files touched:
+
+- `docs/project/INTERFACES.md` (new I6 — recovery-key contract)
+- `docs/project/DECISIONS.md` (new D8 — no KDF on recovery key)
+- `docs/project/WORKBOARD.md` (W7 and W8 task entries added; Engineer2 status updated)
+- `docs/project/HANDOFFS.md` (this entry)
+
+Next action:
+
+- W8 is unblocked once W7 merges
+
 ### 2026-04-04 - Engineer1 internal note
 
 Task:

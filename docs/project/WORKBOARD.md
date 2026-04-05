@@ -95,7 +95,7 @@ Role:
 
 Status:
 
-- W2 complete (`refs #4`); W4 merged (`refs #3`); awaiting next assignment
+- W2 complete (`refs #4`); W4 merged (`refs #3`); W7 in progress (`refs #20`)
 
 Current owner:
 
@@ -376,11 +376,11 @@ GitHub issue:
 
 Owner:
 
-- Engineer1
+- Engineer2 (Claude), cross-boundary per D3
 
 Status:
 
-- todo (`refs #20`)
+- in progress (`refs #20`)
 
 Write scope:
 
@@ -409,7 +409,7 @@ Owner:
 
 Status:
 
-- todo (`refs #19`)
+- blocked on W7
 
 Write scope:
 
