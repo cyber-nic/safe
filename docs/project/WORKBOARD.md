@@ -387,7 +387,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #20`)
+- completed (`refs #20`)
 
 Write scope:
 
