@@ -34,6 +34,53 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-05 - Engineer1 to Engineer1
+
+Task:
+
+- `W6 - M1 closeout audit and release checklist`
+
+Status:
+
+- assigned (`refs #1`)
+
+Write scope:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+- `docs/project/DECISIONS.md`
+- release-readiness notes in `docs/architecture/IMPLEMENTATION_PLAN.md` only
+
+Next action:
+
+- reconcile milestone docs against GitHub issue and project statuses, then produce a closeout checklist and identified follow-up issue set
+
+### 2026-04-05 - Engineer1 to Engineer2
+
+Task:
+
+- `W7 - Post-M1 UX and reliability backlog definition`
+
+Status:
+
+- planned; pending assignment acceptance (`refs #1`)
+
+Write scope:
+
+- GitHub planning issues and labels
+- summary note in `docs/project/HANDOFFS.md`
+
+Do not edit:
+
+- `cmd/safe/**`
+- `apps/web/**`
+- `internal/storage/**`
+- `internal/crypto/**`
+
+Next action:
+
+- draft and tag post-M1 backlog issues (`area/*`, `type/*`, `priority/*`) after W6 publishes the closeout checklist
+
 ### 2026-04-04 - Engineer1 to Engineer2
 
 Task:

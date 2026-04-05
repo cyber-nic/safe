@@ -50,6 +50,11 @@ Non-goals for this milestone:
 - OAuth production hardening
 - rich vault UX beyond what is needed to prove the loop
 
+Milestone closeout status:
+
+- technical implementation slices W1-W5 are complete (`refs #2`, `#3`, `#4`, `#5`, `#6`)
+- remaining PM work is planning hygiene: verify issue states, project statuses, and define the first post-M1 queue (`refs #1`)
+
 ## Execution Rules
 
 - Work from the critical path outward, not from surface area inward.
@@ -295,12 +300,75 @@ GitHub issue:
 
 ## Next Assignment
 
-No new slice is assigned yet.
+M1 closeout planning is now active under milestone issue `#1`.
 
 Current focus:
 
 - close out `M1 - First Trustworthy Local Loop`
-- capture any post-W5 polish as explicit follow-up work instead of reopening completed milestone tasks
+- capture post-W5 polish as explicit follow-up work instead of reopening completed milestone tasks
+- split next execution into one stabilization slice and one product-surface slice so Codex and Claude can run in parallel after PM sign-off
+
+Planned next slices (`refs #1`; create dedicated issues before coding):
+
+### W6 - M1 closeout audit and release checklist
+
+Owner:
+
+- Engineer1 (Codex)
+
+Status:
+
+- planned
+
+Write scope:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+- `docs/project/DECISIONS.md`
+- release-readiness notes in `docs/architecture/IMPLEMENTATION_PLAN.md` only
+
+Output:
+
+- audited mapping between docs, issue states, and project board status values
+- explicit release checklist for the first trustworthy local loop (lock or unlock, restart readback, known failure modes)
+- list of any missing follow-up issues required before milestone close
+
+Dependencies:
+
+- W1-W5 complete
+
+GitHub issue:
+
+- `#1` (dedicated W6 issue to be created)
+
+### W7 - Post-M1 UX and reliability backlog definition
+
+Owner:
+
+- Engineer2 (Claude)
+
+Status:
+
+- planned
+
+Write scope:
+
+- issue drafts and labels in GitHub only
+- summary sync in `docs/project/HANDOFFS.md`
+
+Output:
+
+- prioritized backlog proposals grouped by severity (`must-fix`, `should-fix`, `nice-to-have`)
+- issue labels normalized for planning visibility (`area/*`, `type/*`, `priority/*`)
+- project-ready candidate slices with acceptance criteria and dependency notes
+
+Dependencies:
+
+- W6 closeout checklist draft
+
+GitHub issue:
+
+- `#1` (dedicated W7 issue to be created)
 
 ## Merge Order
 

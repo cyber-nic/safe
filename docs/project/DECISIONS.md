@@ -228,6 +228,43 @@ Refs:
 
 - `#5`
 
+### D8 - Post-M1 planning uses explicit stabilization plus UX backlog slices
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-05
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- once W1-W5 are complete, the next planning step is split into:
+  - W6: milestone closeout audit and release checklist
+  - W7: post-M1 UX and reliability backlog definition with consistent issue tagging
+- W6 and W7 should be tracked as dedicated issues after bootstrap under milestone issue `#1`
+
+Rationale:
+
+- the team needs clear separation between “verify what is done” and “define what comes next”
+- two-engineer execution (Codex plus Claude) works best when one engineer handles closeout correctness while the other prepares backlog quality
+- a normalized label taxonomy lowers future planning ambiguity and keeps the project board sortable
+
+Impact:
+
+- milestone-close communication should reference W6 and W7 explicitly instead of reopening completed W1-W5 issues
+- new backlog issues should include `area/*`, `type/*`, and `priority/*` labels before being added to the project board
+- PM should treat issue or project status drift as a blocking planning bug during closeout
+
+Refs:
+
+- `#1`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary
