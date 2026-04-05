@@ -124,6 +124,26 @@ Reopen an issue:
 gh issue reopen <number> --repo cyber-nic/safe
 ```
 
+Add labels while creating or editing planning issues:
+
+```bash
+gh issue create --repo cyber-nic/safe \
+  --title "W6: M1 closeout audit and release checklist" \
+  --body "..." \
+  --label "area/planning" \
+  --label "type/task" \
+  --label "priority/p0"
+
+gh issue edit <number> --repo cyber-nic/safe \
+  --add-label "area/web,priority/p1"
+```
+
+Recommended planning label taxonomy:
+
+- `area/planning`, `area/runtime`, `area/cli`, `area/web`, `area/storage`, `area/crypto`
+- `type/task`, `type/bug`, `type/follow-up`, `type/risk`
+- `priority/p0`, `priority/p1`, `priority/p2`
+
 ## Working With The Project
 
 List items:
