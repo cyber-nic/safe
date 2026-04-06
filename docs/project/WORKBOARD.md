@@ -505,7 +505,7 @@ Owner:
 
 Status:
 
-- planned (`refs #32`)
+- in progress (`refs #32`)
 
 Write scope:
 
@@ -516,6 +516,7 @@ Write scope:
 Output:
 
 - narrow account-scoped object-access path for single-user sync
+- freeze I9 for signed account-scoped access capabilities with default `get` and `put` only
 
 Dependencies:
 

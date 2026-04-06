@@ -39,6 +39,35 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W16)
+
+Task:
+
+- `W16 - Implement minimal control-plane access mediation for single-account sync`
+
+Status:
+
+- in progress; refs #32
+
+Files touched:
+
+- `docs/project/INTERFACES.md` (new I9 account-scoped access capability contract)
+- `docs/project/WORKBOARD.md` (W16 status and output update)
+- `internal/auth/access.go` (new signed access-capability issuance and verification helpers)
+- `internal/auth/access_test.go` (new method escalation, prefix overreach, list-by-default, expiry, and device-state tests)
+- `cmd/control-plane/main.go` (new `/v1/access/account` issuance endpoint)
+- `cmd/control-plane/main_test.go` (control-plane issuance endpoint coverage)
+
+Outcome:
+
+- W16 now has a frozen minimal capability contract for account-scoped object access at `accounts/<accountID>/`
+- the control plane issues short-lived signed capabilities bound to `accountId`, `deviceId`, `bucket`, allowed actions, and expiry
+- default issuance is `get` plus `put`; `list` remains explicit instead of implied
+
+Next action:
+
+- update GitHub issue `#32` and the project board to match repo state, then open a PR so W17 can consume the frozen W16 access path
+
 ### 2026-04-06 - Engineer2 completion note (W15)
 
 Task:
