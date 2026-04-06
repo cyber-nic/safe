@@ -658,7 +658,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #52`)
+- completed (`refs #52`)
 
 Write scope:
 
@@ -684,7 +684,7 @@ Owner:
 
 Status:
 
-- todo (`refs #53`)
+- in progress (`refs #53`)
 
 Write scope:
 

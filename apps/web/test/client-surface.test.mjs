@@ -531,3 +531,242 @@ test("web client requests remote account access during identify when control pla
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("web client surfaces sync actions, enrolled devices, and enrollment approval", async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "safe-web-"));
+  const identity = {
+    accountId: "acct-dev-001",
+    deviceId: "dev-web-001",
+    env: "test",
+  };
+  const remoteAccess = {
+    bucket: "safe-test",
+    endpoint: "http://127.0.0.1:4566",
+    region: "us-east-1",
+    keyId: "dev-hmac-v1",
+    token: "signed-token",
+    capability: {
+      version: 1,
+      accountId: "acct-dev-001",
+      deviceId: "dev-web-001",
+      bucket: "safe-test",
+      prefix: "accounts/acct-dev-001/",
+      allowedActions: ["get", "put"],
+      issuedAt: "2026-04-06T08:00:00Z",
+      expiresAt: "2026-04-06T08:05:00Z",
+    },
+  };
+
+  const devices = [
+    {
+      schemaVersion: 1,
+      accountId: "acct-dev-001",
+      deviceId: "dev-cli-001",
+      label: "Safe CLI dev-cli-001",
+      deviceType: "cli",
+      signingPublicKey: "c2ln",
+      encryptionPublicKey: "ZW5j",
+      createdAt: "2026-04-06T07:55:00Z",
+      status: "active",
+    },
+    {
+      schemaVersion: 1,
+      accountId: "acct-dev-001",
+      deviceId: "dev-web-001",
+      label: "Safe Web dev-web-001",
+      deviceType: "web",
+      signingPublicKey: "c2lnMg",
+      encryptionPublicKey: "ZW5jMg",
+      createdAt: "2026-04-06T08:00:00Z",
+      status: "active",
+    },
+  ];
+  const pendingEnrollments = [
+    {
+      schemaVersion: 1,
+      accountId: "acct-dev-001",
+      deviceId: "dev-web-099",
+      label: "Safe Web dev-web-099",
+      deviceType: "web",
+      encryptionPublicKey: "ZW5jLTA5OQ",
+      requestedAt: "2026-04-06T08:10:00Z",
+    },
+  ];
+  const calls = [];
+
+  try {
+    const app = createWebClientServer({
+      dataDir,
+      resolveIdentity: async () => identity,
+      resolveRemoteAccess: async () => remoteAccess,
+      now: () => new Date("2026-04-06T08:12:00Z"),
+      runSafeCommand: async (args, env) => {
+        calls.push({ args, env });
+        assert.match(env.SAFE_LOCAL_RUNTIME_DIR, /accounts$/);
+        assert.equal(env.SAFE_LOCAL_PASSWORD, "correct horse battery staple");
+        assert.equal(env.SAFE_DEVICE_ID, "dev-web-001");
+
+        if (args[0] === "--json" && args[1] === "device" && args[2] === "list") {
+          return {
+            stdout: JSON.stringify(devices),
+            stderr: "",
+          };
+        }
+        if (args[0] === "--json" && args[1] === "device" && args[2] === "pending") {
+          return {
+            stdout: JSON.stringify(pendingEnrollments),
+            stderr: "",
+          };
+        }
+        if (
+          args[0] === "--json" &&
+          args[1] === "device" &&
+          args[2] === "approve" &&
+          args[3] === "dev-web-099"
+        ) {
+          pendingEnrollments.splice(0, pendingEnrollments.length);
+          return {
+            stdout: JSON.stringify({
+              approvedDeviceId: "dev-web-099",
+              accountId: "acct-dev-001",
+              bundleAlgorithm: "x25519-hkdf-aes-256-gcm",
+            }),
+            stderr: "",
+          };
+        }
+        if (args[0] === "--json" && args[1] === "sync" && args[2] === "push") {
+          return {
+            stdout: JSON.stringify({
+              pushed: 1,
+              latestSeq: 3,
+              deviceId: "dev-web-001",
+            }),
+            stderr: "",
+          };
+        }
+        if (args[0] === "--json" && args[1] === "sync" && args[2] === "pull") {
+          return {
+            stdout: JSON.stringify({
+              latestSeq: 3,
+              itemCount: 2,
+            }),
+            stderr: "",
+          };
+        }
+
+        throw new Error(`unexpected safe command ${args.join(" ")}`);
+      },
+    });
+
+    let response = await invoke(app, {
+      method: "POST",
+      url: "/identify",
+    });
+    assert.equal(response.status, 303);
+    const cookie = getSetCookie(response);
+    assert.ok(cookie);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/unlock",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        password: "correct horse battery staple",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/onboarding/recovery");
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/onboarding/recovery",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        confirmed: "yes",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault");
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Sync push/);
+    assert.match(response.text, /Sync pull/);
+    assert.match(response.text, /Safe CLI dev-cli-001/);
+    assert.match(response.text, /Safe Web dev-web-099/);
+    assert.match(response.text, /Approve/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/devices/approve",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        deviceId: "dev-web-099",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault");
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Approved enrollment request for dev-web-099/);
+    assert.doesNotMatch(response.text, /Safe Web dev-web-099/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/sync/push",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault");
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Sync push completed against the account remote path/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/sync/pull",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault");
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Sync pull completed and reloaded the local vault snapshot/);
+
+    assert.ok(
+      calls.some((call) => call.args[1] === "device" && call.args[2] === "approve"),
+    );
+    assert.ok(
+      calls.some((call) => call.args[1] === "sync" && call.args[2] === "push"),
+    );
+    assert.ok(
+      calls.some((call) => call.args[1] === "sync" && call.args[2] === "pull"),
+    );
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});

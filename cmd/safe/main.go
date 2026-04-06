@@ -427,29 +427,22 @@ func runDeviceCommand(out io.Writer, state cliState, options cliOptions, args []
 	switch args[0] {
 	case "list":
 		return deviceList(out, state, options)
+	case "pending":
+		return devicePending(out, state, options)
+	case "approve":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: safe device approve <device-id>")
+		}
+		return deviceApprove(out, state, options, args[1])
 	default:
 		return fmt.Errorf("unknown device subcommand: %s", args[0])
 	}
 }
 
 func deviceList(out io.Writer, state cliState, options cliOptions) error {
-	keys, err := state.remoteStore.List(fmt.Sprintf("accounts/%s/devices/", state.session.AccountID))
+	devices, err := storage.ListDeviceRecords(state.remoteStore, state.session.AccountID)
 	if err != nil {
 		return err
-	}
-
-	devices := make([]domain.LocalDeviceRecord, 0, len(keys))
-	for _, key := range keys {
-		payload, err := state.remoteStore.Get(key)
-		if err != nil {
-			return err
-		}
-
-		record, err := domain.ParseLocalDeviceRecordJSON(payload)
-		if err != nil {
-			return err
-		}
-		devices = append(devices, record)
 	}
 
 	sort.Slice(devices, func(i, j int) bool {
@@ -475,6 +468,79 @@ func deviceList(out io.Writer, state cliState, options cliOptions) error {
 			device.CreatedAt,
 		)
 	}
+	return nil
+}
+
+func devicePending(out io.Writer, state cliState, options cliOptions) error {
+	requests, err := storage.ListPendingEnrollments(state.remoteStore, state.session.AccountID)
+	if err != nil {
+		return err
+	}
+
+	sort.Slice(requests, func(i, j int) bool {
+		if requests[i].RequestedAt == requests[j].RequestedAt {
+			return requests[i].DeviceID < requests[j].DeviceID
+		}
+		return requests[i].RequestedAt < requests[j].RequestedAt
+	})
+
+	if options.json {
+		return writeJSON(out, requests)
+	}
+
+	fmt.Fprintln(out, "pending enrollments:")
+	for _, request := range requests {
+		fmt.Fprintf(
+			out,
+			"- id=%s label=%s type=%s requestedAt=%s\n",
+			request.DeviceID,
+			request.Label,
+			request.DeviceType,
+			request.RequestedAt,
+		)
+	}
+	return nil
+}
+
+func deviceApprove(out io.Writer, state cliState, options cliOptions, deviceID string) error {
+	request, err := storage.LoadEnrollmentRequest(state.remoteStore, state.session.AccountID, deviceID)
+	if err != nil {
+		return err
+	}
+
+	encryptionPublicKey, err := base64.RawURLEncoding.DecodeString(request.EncryptionPublicKey)
+	if err != nil {
+		return fmt.Errorf("decode enrollment request encryption public key: %w", err)
+	}
+
+	bundle, err := safecrypto.CreateDeviceEnrollmentBundle(
+		request.AccountID,
+		request.DeviceID,
+		encryptionPublicKey,
+		state.accountKey,
+	)
+	if err != nil {
+		return err
+	}
+
+	if _, err := storage.StoreEnrollmentBundle(state.remoteStore, bundle); err != nil {
+		return err
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			ApprovedDeviceID string `json:"approvedDeviceId"`
+			AccountID        string `json:"accountId"`
+			BundleAlgorithm  string `json:"bundleAlgorithm"`
+		}{
+			ApprovedDeviceID: request.DeviceID,
+			AccountID:        request.AccountID,
+			BundleAlgorithm:  bundle.WrappedKey.Algorithm,
+		})
+	}
+
+	fmt.Fprintln(out, "device approval:")
+	fmt.Fprintf(out, "- approved=%s account=%s\n", request.DeviceID, request.AccountID)
 	return nil
 }
 

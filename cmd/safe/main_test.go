@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	safecrypto "github.com/ndelorme/safe/internal/crypto"
 	"github.com/ndelorme/safe/internal/domain"
 	"github.com/ndelorme/safe/internal/storage"
 	safesync "github.com/ndelorme/safe/internal/sync"
@@ -473,6 +475,131 @@ func TestDeviceListReturnsRemoteDeviceRecords(t *testing.T) {
 		}
 		if records[0].DeviceID != "dev-cli-001" || records[1].DeviceID != "dev-web-002" {
 			t.Fatalf("unexpected device list ordering or contents: %+v", records)
+		}
+	})
+}
+
+func TestDevicePendingReturnsUnapprovedEnrollmentRequests(t *testing.T) {
+	withEmptyBootstrap(t, func(_ string) {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap state: %v", err)
+		}
+
+		sharedRemote := storage.NewMemoryObjectStoreWithCAS()
+		state.remoteStore = sharedRemote
+
+		pending := domain.DeviceEnrollmentRequest{
+			SchemaVersion:       1,
+			AccountID:           state.session.AccountID,
+			DeviceID:            "dev-web-010",
+			Label:               "Safe Web dev-web-010",
+			DeviceType:          "web",
+			EncryptionPublicKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)),
+			RequestedAt:         "2026-04-06T15:00:00Z",
+		}
+		approved := domain.DeviceEnrollmentRequest{
+			SchemaVersion:       1,
+			AccountID:           state.session.AccountID,
+			DeviceID:            "dev-web-011",
+			Label:               "Safe Web dev-web-011",
+			DeviceType:          "web",
+			EncryptionPublicKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)),
+			RequestedAt:         "2026-04-06T15:05:00Z",
+		}
+		if _, err := storage.StoreEnrollmentRequest(sharedRemote, pending); err != nil {
+			t.Fatalf("store pending enrollment request: %v", err)
+		}
+		if _, err := storage.StoreEnrollmentRequest(sharedRemote, approved); err != nil {
+			t.Fatalf("store approved enrollment request: %v", err)
+		}
+		if _, err := storage.StoreEnrollmentBundle(sharedRemote, domain.DeviceEnrollmentBundle{
+			SchemaVersion: 1,
+			AccountID:     state.session.AccountID,
+			DeviceID:      approved.DeviceID,
+			WrappedKey: domain.DeviceEnrollmentWrappedKey{
+				Algorithm:          "x25519-hkdf-aes-256-gcm",
+				EphemeralPublicKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)),
+				Nonce:              base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 12)),
+				Ciphertext:         base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{5}, 48)),
+			},
+		}); err != nil {
+			t.Fatalf("store enrollment bundle: %v", err)
+		}
+
+		var output bytes.Buffer
+		if err := devicePending(&output, state, cliOptions{json: true}); err != nil {
+			t.Fatalf("device pending: %v", err)
+		}
+
+		var requests []domain.DeviceEnrollmentRequest
+		if err := json.Unmarshal(output.Bytes(), &requests); err != nil {
+			t.Fatalf("decode pending enrollment list: %v", err)
+		}
+		if len(requests) != 1 || requests[0].DeviceID != pending.DeviceID {
+			t.Fatalf("unexpected pending enrollment requests: %+v", requests)
+		}
+	})
+}
+
+func TestDeviceApproveStoresEnrollmentBundle(t *testing.T) {
+	withEmptyBootstrap(t, func(_ string) {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap state: %v", err)
+		}
+
+		sharedRemote := storage.NewMemoryObjectStoreWithCAS()
+		state.remoteStore = sharedRemote
+
+		requestKeyPair, err := safecrypto.GenerateDeviceKeyPair()
+		if err != nil {
+			t.Fatalf("generate request device key pair: %v", err)
+		}
+		request := domain.DeviceEnrollmentRequest{
+			SchemaVersion:       1,
+			AccountID:           state.session.AccountID,
+			DeviceID:            "dev-web-020",
+			Label:               "Safe Web dev-web-020",
+			DeviceType:          "web",
+			EncryptionPublicKey: base64.RawURLEncoding.EncodeToString(requestKeyPair.EncryptionPublicKey),
+			RequestedAt:         "2026-04-06T16:00:00Z",
+		}
+		if _, err := storage.StoreEnrollmentRequest(sharedRemote, request); err != nil {
+			t.Fatalf("store enrollment request: %v", err)
+		}
+
+		var output bytes.Buffer
+		if err := deviceApprove(&output, state, cliOptions{json: true}, request.DeviceID); err != nil {
+			t.Fatalf("device approve: %v", err)
+		}
+
+		var payload struct {
+			ApprovedDeviceID string `json:"approvedDeviceId"`
+			AccountID        string `json:"accountId"`
+			BundleAlgorithm  string `json:"bundleAlgorithm"`
+		}
+		if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
+			t.Fatalf("decode approval payload: %v", err)
+		}
+		if payload.ApprovedDeviceID != request.DeviceID || payload.AccountID != request.AccountID {
+			t.Fatalf("unexpected approval payload: %+v", payload)
+		}
+
+		bundle, err := storage.LoadEnrollmentBundle(sharedRemote, request.AccountID, request.DeviceID)
+		if err != nil {
+			t.Fatalf("load enrollment bundle: %v", err)
+		}
+		amk, err := safecrypto.OpenDeviceEnrollmentBundle(
+			bundle,
+			request.DeviceID,
+			requestKeyPair.EncryptionPrivateKey,
+		)
+		if err != nil {
+			t.Fatalf("open enrollment bundle: %v", err)
+		}
+		if !bytes.Equal(amk, state.accountKey) {
+			t.Fatal("expected enrollment bundle to wrap the current account key")
 		}
 	})
 }
