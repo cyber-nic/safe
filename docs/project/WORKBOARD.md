@@ -505,7 +505,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #32`)
+- completed (`refs #32`, PR #43)
 
 Write scope:
 
@@ -535,7 +535,7 @@ Owner:
 
 Status:
 
-- planned (`refs #37`)
+- in progress (`refs #37`)
 
 Write scope:
 

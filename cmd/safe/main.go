@@ -32,9 +32,30 @@ type storageConfigResponse struct {
 	DeviceID  string `json:"deviceId"`
 }
 
+type accessCapability struct {
+	Version        int      `json:"version"`
+	AccountID      string   `json:"accountId"`
+	DeviceID       string   `json:"deviceId"`
+	Bucket         string   `json:"bucket"`
+	Prefix         string   `json:"prefix"`
+	AllowedActions []string `json:"allowedActions"`
+	IssuedAt       string   `json:"issuedAt"`
+	ExpiresAt      string   `json:"expiresAt"`
+}
+
+type accountAccessResponse struct {
+	Bucket     string           `json:"bucket"`
+	Endpoint   string           `json:"endpoint"`
+	Region     string           `json:"region"`
+	KeyID      string           `json:"keyId"`
+	Token      string           `json:"token"`
+	Capability accessCapability `json:"capability"`
+}
+
 type cliState struct {
 	session       devSessionResponse
 	storageConfig storageConfigResponse
+	access        accountAccessResponse
 	accountConfig domain.AccountConfigRecord
 	head          domain.CollectionHeadRecord
 	store         storage.ObjectStore
@@ -78,6 +99,7 @@ func runWithIO(args []string, in io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, "safe CLI bootstrap")
 		fmt.Fprintf(out, "control plane bootstrap:\n- env=%s account=%s device=%s\n", state.session.Env, state.session.AccountID, state.session.DeviceID)
 		fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.storageConfig.Bucket, state.storageConfig.Region, state.storageConfig.Endpoint)
+		fmt.Fprintf(out, "- remote access prefix=%s actions=%s expiresAt=%s\n", state.access.Capability.Prefix, strings.Join(state.access.Capability.AllowedActions, ","), state.access.Capability.ExpiresAt)
 	}
 
 	if len(args) == 0 {
@@ -125,6 +147,11 @@ func bootstrapCLIState() (cliState, error) {
 		return cliState{}, err
 	}
 
+	access, err := fetchAccountAccess(httpClient, baseURL, session)
+	if err != nil {
+		return cliState{}, err
+	}
+
 	store, err := openLocalObjectStore(session.AccountID)
 	if err != nil {
 		return cliState{}, err
@@ -143,6 +170,7 @@ func bootstrapCLIState() (cliState, error) {
 	return cliState{
 		session:       session,
 		storageConfig: storageConfig,
+		access:        access,
 		accountConfig: accountConfig,
 		head:          head,
 		store:         store,
@@ -1249,7 +1277,6 @@ func loadSecretMaterial(state cliState, secretRef string) (string, error) {
 	return string(plaintext), nil
 }
 
-
 func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {
 	request, err := http.NewRequest(http.MethodPost, baseURL+"/v1/dev/session", bytes.NewReader([]byte("{}")))
 	if err != nil {
@@ -1297,6 +1324,46 @@ func fetchStorageConfig(httpClient *http.Client, baseURL string) (storageConfigR
 
 	if payload.Bucket == "" || payload.Region == "" || payload.Endpoint == "" {
 		return storageConfigResponse{}, fmt.Errorf("control plane storage config response incomplete; restart the control-plane service and verify /v1/dev/storage-config")
+	}
+
+	return payload, nil
+}
+
+func fetchAccountAccess(httpClient *http.Client, baseURL string, session devSessionResponse) (accountAccessResponse, error) {
+	requestBody, err := json.Marshal(struct {
+		AccountID string `json:"accountId"`
+		DeviceID  string `json:"deviceId"`
+	}{
+		AccountID: session.AccountID,
+		DeviceID:  session.DeviceID,
+	})
+	if err != nil {
+		return accountAccessResponse{}, err
+	}
+
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/v1/access/account", bytes.NewReader(requestBody))
+	if err != nil {
+		return accountAccessResponse{}, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := httpClient.Do(request)
+	if err != nil {
+		return accountAccessResponse{}, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return accountAccessResponse{}, fmt.Errorf("control plane account access request failed: %s", response.Status)
+	}
+
+	var payload accountAccessResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return accountAccessResponse{}, err
+	}
+
+	if payload.Token == "" || payload.Bucket == "" || payload.Capability.Prefix == "" || len(payload.Capability.AllowedActions) == 0 || payload.Capability.ExpiresAt == "" {
+		return accountAccessResponse{}, fmt.Errorf("control plane account access response incomplete; restart the control-plane service and verify /v1/access/account")
 	}
 
 	return payload, nil

@@ -98,6 +98,39 @@ func TestFetchStorageConfig(t *testing.T) {
 	}
 }
 
+func TestFetchAccountAccess(t *testing.T) {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/v1/access/account" {
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected method: %s", r.Method)
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","keyId":"dev-hmac-v1","token":"signed-token","capability":{"version":1,"accountId":"acct-test-001","deviceId":"dev-test-001","bucket":"safe-test","prefix":"accounts/acct-test-001/","allowedActions":["get","put"],"issuedAt":"2026-04-06T08:00:00Z","expiresAt":"2026-04-06T08:05:00Z"}}`)),
+			}, nil
+		}),
+	}
+
+	payload, err := fetchAccountAccess(client, "http://control-plane.test", devSessionResponse{
+		AccountID: "acct-test-001",
+		DeviceID:  "dev-test-001",
+		Env:       "test",
+	})
+	if err != nil {
+		t.Fatalf("fetch account access: %v", err)
+	}
+
+	if payload.Token != "signed-token" || payload.Capability.Prefix != "accounts/acct-test-001/" {
+		t.Fatalf("unexpected access payload: %+v", payload)
+	}
+}
+
 func TestRunSecretList(t *testing.T) {
 	withFakeBootstrap(t, func() {
 		var buffer bytes.Buffer
@@ -1456,6 +1489,12 @@ func withBootstrapRuntime(t *testing.T, seedStarter bool, fn func(runtimeDir str
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","accountId":"acct-dev-001","deviceId":"dev-web-001"}`)),
+			}, nil
+		case "/v1/access/account":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","keyId":"dev-hmac-v1","token":"signed-token","capability":{"version":1,"accountId":"acct-dev-001","deviceId":"dev-web-001","bucket":"safe-test","prefix":"accounts/acct-dev-001/","allowedActions":["get","put"],"issuedAt":"2026-04-06T08:00:00Z","expiresAt":"2026-04-06T08:05:00Z"}}`)),
 			}, nil
 		default:
 			t.Fatalf("unexpected bootstrap path: %s", r.URL.Path)
