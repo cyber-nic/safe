@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndelorme/safe/internal/domain"
 	"github.com/ndelorme/safe/internal/storage"
+	safesync "github.com/ndelorme/safe/internal/sync"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -299,6 +300,36 @@ func TestRunSecretAddJSON(t *testing.T) {
 	})
 }
 
+func TestRunSecretAddNote(t *testing.T) {
+	withEmptyBootstrap(t, func(runtimeDir string) {
+		var buffer bytes.Buffer
+		if err := run([]string{"secret", "add-note", "Staging", "rotate-db-password"}, &buffer); err != nil {
+			t.Fatalf("run secret add-note: %v", err)
+		}
+
+		output := buffer.String()
+		if !strings.Contains(output, "secret add-note:") {
+			t.Fatalf("expected add-note output, got %s", output)
+		}
+		if !strings.Contains(output, "added=Staging") {
+			t.Fatalf("expected note title in output, got %s", output)
+		}
+
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap after add-note: %v", err)
+		}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, state, cliOptions{}, "note-staging-primary"); err != nil {
+			t.Fatalf("show note: %v", err)
+		}
+		if !strings.Contains(showBuffer.String(), "bodyPreview=rotate-db-password") {
+			t.Fatalf("expected synced note preview, got %s", showBuffer.String())
+		}
+	})
+}
+
 func TestRunSecretAddPersistsAcrossRestartAndEncryptsSecret(t *testing.T) {
 	withEmptyBootstrap(t, func(runtimeDir string) {
 		var addBuffer bytes.Buffer
@@ -333,6 +364,155 @@ func TestRunSecretAddPersistsAcrossRestartAndEncryptsSecret(t *testing.T) {
 		}
 		if !strings.Contains(string(payload), `"algorithm":"aes-256-gcm"`) {
 			t.Fatalf("expected encrypted secret envelope, got %s", string(payload))
+		}
+	})
+}
+
+func TestSyncPushPullAcrossTwoDevices(t *testing.T) {
+	withEmptyBootstrap(t, func(_ string) {
+		writerState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap writer: %v", err)
+		}
+
+		sharedRemote := storage.NewMemoryObjectStoreWithCAS()
+		writerState.remoteStore = sharedRemote
+		writerState.session.DeviceID = "dev-cli-001"
+		writerState.accountConfig.DeviceIDs = []string{"dev-cli-001"}
+
+		if err := secretAddNote(io.Discard, writerState, cliOptions{}, "Shared", "ship-real-sync"); err != nil {
+			t.Fatalf("add writer note: %v", err)
+		}
+		if err := syncPush(io.Discard, writerState, cliOptions{}); err != nil {
+			t.Fatalf("sync push: %v", err)
+		}
+
+		readerRuntimeDir := t.TempDir()
+		previousPassword := os.Getenv(localPasswordEnv)
+		previousRuntimeDir := os.Getenv(localRuntimeDirEnv)
+		if err := os.Setenv(localPasswordEnv, "test-password-123"); err != nil {
+			t.Fatalf("set password env: %v", err)
+		}
+		if err := os.Setenv(localRuntimeDirEnv, readerRuntimeDir); err != nil {
+			t.Fatalf("set runtime dir env: %v", err)
+		}
+		defer func() {
+			if previousPassword == "" {
+				_ = os.Unsetenv(localPasswordEnv)
+			} else {
+				_ = os.Setenv(localPasswordEnv, previousPassword)
+			}
+			if previousRuntimeDir == "" {
+				_ = os.Unsetenv(localRuntimeDirEnv)
+			} else {
+				_ = os.Setenv(localRuntimeDirEnv, previousRuntimeDir)
+			}
+		}()
+
+		readerState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap reader: %v", err)
+		}
+		readerState.remoteStore = sharedRemote
+		readerState.session.DeviceID = "dev-cli-002"
+		readerState.accountConfig.DeviceIDs = []string{"dev-cli-002"}
+
+		if err := syncPull(io.Discard, readerState, cliOptions{}); err != nil {
+			t.Fatalf("sync pull: %v", err)
+		}
+
+		reopenedState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("rebootstrap reader after sync pull: %v", err)
+		}
+		reopenedState.remoteStore = sharedRemote
+		reopenedState.session.DeviceID = "dev-cli-002"
+		reopenedState.accountConfig.DeviceIDs = []string{"dev-cli-002"}
+
+		var showBuffer bytes.Buffer
+		if err := secretShow(&showBuffer, reopenedState, cliOptions{}, "note-shared-primary"); err != nil {
+			t.Fatalf("reader secret show: %v", err)
+		}
+		output := showBuffer.String()
+		if !strings.Contains(output, "title=Shared") || !strings.Contains(output, "bodyPreview=ship-real-sync") {
+			t.Fatalf("expected pulled note detail, got %s", output)
+		}
+	})
+}
+
+func TestSyncPullRejectsTamperedRemoteHead(t *testing.T) {
+	withEmptyBootstrap(t, func(_ string) {
+		writerState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap writer: %v", err)
+		}
+
+		sharedRemote := storage.NewMemoryObjectStoreWithCAS()
+		writerState.remoteStore = sharedRemote
+		writerState.session.DeviceID = "dev-cli-001"
+		writerState.accountConfig.DeviceIDs = []string{"dev-cli-001"}
+
+		if err := secretAddNote(io.Discard, writerState, cliOptions{}, "Shared", "ship-real-sync"); err != nil {
+			t.Fatalf("add writer note: %v", err)
+		}
+		if err := syncPush(io.Discard, writerState, cliOptions{}); err != nil {
+			t.Fatalf("sync push: %v", err)
+		}
+
+		headKey := storage.CollectionHeadKey(writerState.session.AccountID, writerState.accountConfig.DefaultCollectionID)
+		payload, err := sharedRemote.Get(headKey)
+		if err != nil {
+			t.Fatalf("load shared head: %v", err)
+		}
+		signedHead, err := safesync.ParseSignedCollectionHeadJSON(payload)
+		if err != nil {
+			t.Fatalf("parse shared head: %v", err)
+		}
+		signedHead.Signature = "tampered-signature"
+		if _, err := signedHead.CanonicalJSON(); err == nil {
+			t.Fatal("expected canonical tampered head to fail validation")
+		}
+		// Store a JSON envelope with an invalid signature shape to force verification failure.
+		if err := sharedRemote.Put(headKey, []byte(`{"record":{"schemaVersion":1,"accountId":"acct-dev-001","collectionId":"vault-personal","latestEventId":"evt-note-shared-primary-v1","latestSeq":1},"signature":"tampered-signature"}`)); err != nil {
+			t.Fatalf("store tampered head: %v", err)
+		}
+
+		readerRuntimeDir := t.TempDir()
+		previousPassword := os.Getenv(localPasswordEnv)
+		previousRuntimeDir := os.Getenv(localRuntimeDirEnv)
+		if err := os.Setenv(localPasswordEnv, "test-password-123"); err != nil {
+			t.Fatalf("set password env: %v", err)
+		}
+		if err := os.Setenv(localRuntimeDirEnv, readerRuntimeDir); err != nil {
+			t.Fatalf("set runtime dir env: %v", err)
+		}
+		defer func() {
+			if previousPassword == "" {
+				_ = os.Unsetenv(localPasswordEnv)
+			} else {
+				_ = os.Setenv(localPasswordEnv, previousPassword)
+			}
+			if previousRuntimeDir == "" {
+				_ = os.Unsetenv(localRuntimeDirEnv)
+			} else {
+				_ = os.Setenv(localRuntimeDirEnv, previousRuntimeDir)
+			}
+		}()
+
+		readerState, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap reader: %v", err)
+		}
+		readerState.remoteStore = sharedRemote
+		readerState.session.DeviceID = "dev-cli-002"
+		readerState.accountConfig.DeviceIDs = []string{"dev-cli-002"}
+
+		err = syncPull(io.Discard, readerState, cliOptions{})
+		if err == nil {
+			t.Fatal("expected sync pull to reject tampered head")
+		}
+		if !strings.Contains(err.Error(), "signature") && !strings.Contains(err.Error(), "invalid") {
+			t.Fatalf("expected signature failure, got %v", err)
 		}
 	})
 }

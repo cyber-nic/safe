@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,7 +60,9 @@ type cliState struct {
 	access        accountAccessResponse
 	accountConfig domain.AccountConfigRecord
 	head          domain.CollectionHeadRecord
+	localStoreDir string
 	store         storage.ObjectStore
+	remoteStore   storage.ObjectStoreWithCAS
 	accountKey    []byte
 }
 
@@ -72,6 +76,7 @@ const (
 	defaultCollectionID = "vault-personal"
 	localPasswordEnv    = "SAFE_LOCAL_PASSWORD"
 	localRuntimeDirEnv  = "SAFE_LOCAL_RUNTIME_DIR"
+	localStackPortEnv   = "LOCALSTACK_PORT"
 )
 
 func main() {
@@ -109,6 +114,8 @@ func runWithIO(args []string, in io.Reader, out io.Writer) error {
 	switch args[0] {
 	case "secret":
 		return runSecretCommand(in, out, state, options, args[1:])
+	case "sync":
+		return runSyncCommand(out, state, options, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -156,6 +163,12 @@ func bootstrapCLIState() (cliState, error) {
 	if err != nil {
 		return cliState{}, err
 	}
+	localStoreDir := localObjectStoreDir(session.AccountID)
+
+	remoteStore, err := openRemoteObjectStore(storageConfig)
+	if err != nil {
+		return cliState{}, err
+	}
 
 	accountConfig, accountKey, err := openLocalRuntime(store, session)
 	if err != nil {
@@ -173,12 +186,18 @@ func bootstrapCLIState() (cliState, error) {
 		access:        access,
 		accountConfig: accountConfig,
 		head:          head,
+		localStoreDir: localStoreDir,
 		store:         store,
+		remoteStore:   remoteStore,
 		accountKey:    accountKey,
 	}, nil
 }
 
 func openLocalObjectStore(accountID string) (storage.ObjectStore, error) {
+	return storage.NewFileObjectStore(localObjectStoreDir(accountID))
+}
+
+func localObjectStoreDir(accountID string) string {
 	rootDir := os.Getenv(localRuntimeDirEnv)
 	if rootDir == "" {
 		configDir, err := os.UserConfigDir()
@@ -189,7 +208,39 @@ func openLocalObjectStore(accountID string) (storage.ObjectStore, error) {
 		}
 	}
 
-	return storage.NewFileObjectStore(filepath.Join(rootDir, accountID))
+	return filepath.Join(rootDir, accountID)
+}
+
+func openRemoteObjectStore(storageConfig storageConfigResponse) (storage.ObjectStoreWithCAS, error) {
+	endpoint := os.Getenv("SAFE_S3_ENDPOINT")
+	if endpoint == "" {
+		endpoint = storageConfig.Endpoint
+	}
+	if strings.HasPrefix(endpoint, "http://localstack:") {
+		port := os.Getenv(localStackPortEnv)
+		if port == "" {
+			port = "4566"
+		}
+		endpoint = "http://127.0.0.1:" + port
+	}
+
+	bucket := os.Getenv("SAFE_S3_BUCKET")
+	if bucket == "" {
+		bucket = storageConfig.Bucket
+	}
+
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = storageConfig.Region
+	}
+
+	return storage.NewS3ObjectStoreWithCAS(context.Background(), storage.S3Config{
+		Bucket:          bucket,
+		Region:          region,
+		Endpoint:        endpoint,
+		AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+	})
 }
 
 func openLocalRuntime(store storage.ObjectStore, session devSessionResponse) (domain.AccountConfigRecord, []byte, error) {
@@ -350,8 +401,28 @@ func runSecretCommand(in io.Reader, out io.Writer, state cliState, options cliOp
 			password = args[3]
 		}
 		return secretAdd(out, state, options, args[1], args[2], password)
+	case "add-note":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: safe secret add-note <title> <body-preview>")
+		}
+		return secretAddNote(out, state, options, args[1], args[2])
 	default:
 		return fmt.Errorf("unknown secret subcommand: %s", args[0])
+	}
+}
+
+func runSyncCommand(out io.Writer, state cliState, options cliOptions, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("sync command requires a subcommand")
+	}
+
+	switch args[0] {
+	case "push":
+		return syncPush(out, state, options)
+	case "pull":
+		return syncPull(out, state, options)
+	default:
+		return fmt.Errorf("unknown sync subcommand: %s", args[0])
 	}
 }
 
@@ -882,6 +953,42 @@ func secretAdd(out io.Writer, state cliState, options cliOptions, title, usernam
 	return nil
 }
 
+func secretAddNote(out io.Writer, state cliState, options cliOptions, title, bodyPreview string) error {
+	itemRecord := domain.VaultItemRecord{
+		SchemaVersion: 1,
+		Item: domain.VaultItem{
+			ID:          fmt.Sprintf("note-%s-primary", slugify(title)),
+			Kind:        domain.VaultItemKindNote,
+			Title:       title,
+			Tags:        []string{"manual", "note"},
+			BodyPreview: bodyPreview,
+		},
+	}
+
+	projection, newEvent, err := persistItemMutation(state, itemRecord, "", "2026-03-31T10:02:15Z")
+	if err != nil {
+		return err
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			Item      domain.VaultItem `json:"item"`
+			EventID   string           `json:"eventId"`
+			LatestSeq int              `json:"latestSeq"`
+			ItemCount int              `json:"itemCount"`
+		}{
+			Item:      itemRecord.Item,
+			EventID:   newEvent.EventID,
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
+	fmt.Fprintln(out, "secret add-note:")
+	fmt.Fprintf(out, "- added=%s event=%s latestSeq=%d items=%d\n", title, newEvent.EventID, projection.LatestSeq, len(projection.Items))
+	return nil
+}
+
 func secretUpdate(out io.Writer, state cliState, options cliOptions, itemID, title, username string, password ...string) error {
 	projection, err := loadProjection(state)
 	if err != nil {
@@ -1367,4 +1474,229 @@ func fetchAccountAccess(httpClient *http.Client, baseURL string, session devSess
 	}
 
 	return payload, nil
+}
+
+type localDeviceMaterial struct {
+	SchemaVersion        int    `json:"schemaVersion"`
+	AccountID            string `json:"accountId"`
+	DeviceID             string `json:"deviceId"`
+	SigningPrivateKey    string `json:"signingPrivateKey"`
+	SigningPublicKey     string `json:"signingPublicKey"`
+	EncryptionPrivateKey string `json:"encryptionPrivateKey"`
+	EncryptionPublicKey  string `json:"encryptionPublicKey"`
+}
+
+func syncPush(out io.Writer, state cliState, options cliOptions) error {
+	deviceMaterial, err := loadOrCreateLocalDeviceMaterial(state)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureRemoteDeviceRecord(state, deviceMaterial); err != nil {
+		return err
+	}
+
+	remoteProjection, err := safesync.NewSyncReader(state.remoteStore, nil).IncrementalSync(
+		state.session.AccountID,
+		state.accountConfig.DefaultCollectionID,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+
+	localEvents, err := loadEvents(state)
+	if err != nil {
+		return err
+	}
+
+	writer := safesync.NewSyncWriter(state.remoteStore, nil, func(head domain.CollectionHeadRecord) (safesync.SignedCollectionHead, error) {
+		return safesync.SignCollectionHead(head, deviceMaterial.signingPrivateKey())
+	})
+
+	pushed := 0
+	for _, event := range localEvents {
+		if event.Sequence <= remoteProjection.LatestSeq {
+			continue
+		}
+		var itemRecord *domain.VaultItemRecord
+		if event.Action == domain.VaultEventActionPutItem {
+			record := event.ItemRecord
+			itemRecord = &record
+		}
+		if err := writer.CommitSyncMutation(safesync.SyncMutation{
+			AccountID:    event.AccountID,
+			CollectionID: event.CollectionID,
+			EventRecord:  event,
+			ItemRecord:   itemRecord,
+		}); err != nil {
+			return err
+		}
+		pushed++
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			Pushed    int    `json:"pushed"`
+			LatestSeq int    `json:"latestSeq"`
+			DeviceID  string `json:"deviceId"`
+		}{
+			Pushed:    pushed,
+			LatestSeq: state.head.LatestSeq,
+			DeviceID:  state.session.DeviceID,
+		})
+	}
+
+	fmt.Fprintln(out, "sync push:")
+	fmt.Fprintf(out, "- pushed=%d device=%s remotePrefix=%s\n", pushed, state.session.DeviceID, state.access.Capability.Prefix)
+	return nil
+}
+
+func syncPull(out io.Writer, state cliState, options cliOptions) error {
+	head, events, projection, err := loadRemoteProjection(state)
+	if err != nil {
+		return err
+	}
+
+	if _, err := storage.StoreAccountConfigRecord(state.store, state.accountConfig); err != nil {
+		return err
+	}
+	for _, event := range events {
+		if _, err := storage.StoreEventRecord(state.store, event); err != nil {
+			return err
+		}
+	}
+	for _, record := range projection.Items {
+		if _, err := storage.StoreItemRecord(state.store, state.accountConfig.AccountID, state.accountConfig.DefaultCollectionID, record); err != nil {
+			return err
+		}
+	}
+	if _, err := storage.StoreCollectionHeadRecord(state.store, head); err != nil {
+		return err
+	}
+
+	if options.json {
+		return writeJSON(out, struct {
+			LatestSeq int `json:"latestSeq"`
+			ItemCount int `json:"itemCount"`
+		}{
+			LatestSeq: projection.LatestSeq,
+			ItemCount: len(projection.Items),
+		})
+	}
+
+	fmt.Fprintln(out, "sync pull:")
+	fmt.Fprintf(out, "- latestSeq=%d items=%d remotePrefix=%s\n", projection.LatestSeq, len(projection.Items), state.access.Capability.Prefix)
+	return nil
+}
+
+func loadRemoteProjection(state cliState) (domain.CollectionHeadRecord, []domain.VaultEventRecord, safesync.Projection, error) {
+	projection, err := safesync.NewSyncReader(state.remoteStore, nil).IncrementalSync(
+		state.session.AccountID,
+		state.accountConfig.DefaultCollectionID,
+		0,
+	)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, nil, safesync.Projection{}, err
+	}
+	if projection.LatestSeq == 0 {
+		return domain.CollectionHeadRecord{
+			SchemaVersion: 1,
+			AccountID:     state.session.AccountID,
+			CollectionID:  state.accountConfig.DefaultCollectionID,
+		}, nil, projection, nil
+	}
+
+	events, err := storage.LoadCollectionEventRecords(state.remoteStore, state.session.AccountID, state.accountConfig.DefaultCollectionID)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, nil, safesync.Projection{}, err
+	}
+	headPayload, err := state.remoteStore.Get(storage.CollectionHeadKey(state.session.AccountID, state.accountConfig.DefaultCollectionID))
+	if err != nil {
+		return domain.CollectionHeadRecord{}, nil, safesync.Projection{}, err
+	}
+	signedHead, err := safesync.ParseSignedCollectionHeadJSON(headPayload)
+	if err != nil {
+		return domain.CollectionHeadRecord{}, nil, safesync.Projection{}, err
+	}
+	return signedHead.Record, events, projection, nil
+}
+
+func loadOrCreateLocalDeviceMaterial(state cliState) (localDeviceMaterial, error) {
+	deviceMaterialPath := filepath.Join(state.localStoreDir, "device-material.json")
+	if payload, err := os.ReadFile(deviceMaterialPath); err == nil {
+		var material localDeviceMaterial
+		if err := json.Unmarshal(payload, &material); err != nil {
+			return localDeviceMaterial{}, err
+		}
+		return material, nil
+	}
+
+	keyPair, err := safecrypto.GenerateDeviceKeyPair()
+	if err != nil {
+		return localDeviceMaterial{}, err
+	}
+	material := localDeviceMaterial{
+		SchemaVersion:        1,
+		AccountID:            state.session.AccountID,
+		DeviceID:             state.session.DeviceID,
+		SigningPrivateKey:    base64.RawURLEncoding.EncodeToString(keyPair.SigningPrivateKey),
+		SigningPublicKey:     base64.RawURLEncoding.EncodeToString(keyPair.SigningPublicKey),
+		EncryptionPrivateKey: base64.RawURLEncoding.EncodeToString(keyPair.EncryptionPrivateKey),
+		EncryptionPublicKey:  base64.RawURLEncoding.EncodeToString(keyPair.EncryptionPublicKey),
+	}
+	if err := os.MkdirAll(state.localStoreDir, 0o755); err != nil {
+		return localDeviceMaterial{}, err
+	}
+	payload, err := json.MarshalIndent(material, "", "  ")
+	if err != nil {
+		return localDeviceMaterial{}, err
+	}
+	if err := os.WriteFile(deviceMaterialPath, payload, 0o600); err != nil {
+		return localDeviceMaterial{}, err
+	}
+	return material, nil
+}
+
+func ensureRemoteDeviceRecord(state cliState, material localDeviceMaterial) error {
+	deviceRecord, err := safecrypto.CreateDeviceRecord(
+		state.session.AccountID,
+		state.session.DeviceID,
+		"Safe CLI "+state.session.DeviceID,
+		"cli",
+		safecrypto.DeviceKeyPair{
+			SigningPublicKey:     material.signingPublicKey(),
+			EncryptionPublicKey:  material.encryptionPublicKey(),
+			SigningPrivateKey:    material.signingPrivateKey(),
+			EncryptionPrivateKey: material.encryptionPrivateKey(),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	payload, err := deviceRecord.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	return state.remoteStore.Put(fmt.Sprintf("accounts/%s/devices/%s.json", state.session.AccountID, state.session.DeviceID), payload)
+}
+
+func (m localDeviceMaterial) signingPrivateKey() []byte {
+	key, _ := base64.RawURLEncoding.DecodeString(m.SigningPrivateKey)
+	return key
+}
+
+func (m localDeviceMaterial) signingPublicKey() []byte {
+	key, _ := base64.RawURLEncoding.DecodeString(m.SigningPublicKey)
+	return key
+}
+
+func (m localDeviceMaterial) encryptionPrivateKey() []byte {
+	key, _ := base64.RawURLEncoding.DecodeString(m.EncryptionPrivateKey)
+	return key
+}
+
+func (m localDeviceMaterial) encryptionPublicKey() []byte {
+	key, _ := base64.RawURLEncoding.DecodeString(m.EncryptionPublicKey)
+	return key
 }

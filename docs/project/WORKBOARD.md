@@ -546,6 +546,7 @@ Write scope:
 Output:
 
 - reproducible two-device sync proof through the shipped clients
+- CLI `sync push` and `sync pull` prove the real object-store path across two devices; web consumes the merged account-access capability route during identify
 
 Dependencies:
 

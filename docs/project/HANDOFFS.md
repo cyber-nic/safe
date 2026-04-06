@@ -67,14 +67,12 @@ Outcome:
 - the web client now requests account-scoped remote access during identify and surfaces the granted prefix and actions in the unlocked vault view
 - the CLI now requests account-scoped remote access during bootstrap and records the granted prefix, actions, and expiry in its bootstrap summary
 - both shipped clients now consume the merged W16 capability endpoint instead of treating control-plane access mediation as doc-only
-
-Current blocker:
-
-- the full two-device sync proof still needs a real shared `ObjectStoreWithCAS` adapter outside the W17 write scope; today the shipped clients still only have local file-store runtime paths
+- the CLI now ships `sync push` and `sync pull` against the merged S3-backed `ObjectStoreWithCAS`, persists local device signing material, and proves restart-safe two-device sync in tests
+- the W17 proof path now explicitly rejects tampered signed heads during `sync pull`
 
 Next action:
 
-- once the shared object-store adapter lands, wire the clients from capability fetch into the real sync path and complete the two-device proof
+- open the W17 PR and hand review over with the automated two-device CLI sync proof plus the web access-path consumption updates
 
 ### 2026-04-06 - Engineer1 completion note (W16)
 
