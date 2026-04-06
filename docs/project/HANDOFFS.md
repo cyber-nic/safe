@@ -36,8 +36,48 @@ Current planning issues:
 - `#20` W7
 - `#19` W8
 - `#18` W9
+- `#30` M2 milestone
+- `#31` W11
+- `#32` W16
+- `#33` W15
+- `#34` W14
+- `#35` W13
+- `#36` W12
+- `#37` W17
+- `#48` M3 milestone
+- `#49` W18
+- `#50` W19
+- `#51` W20
+- `#52` W21
+- `#53` W22
 
 ## Entries
+
+### 2026-04-06 - Engineer1 progress note (W18)
+
+Task:
+
+- `W18 - Freeze M3 web-product scope and acceptance`
+
+Status:
+
+- in progress; refs #49
+
+Files touched:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the workboard now advances from closed M2 to active M3, with W18-W22 defined as the live queue
+- M3 is frozen around four slices: production OAuth identity, web onboarding, web vault CRUD, and web sync or device-management visibility
+- sharing, revocation, browser extension work, and broader product polish remain explicit follow-up scope rather than hidden milestone drift
+
+Next action:
+
+- update GitHub issue `#49` and the project item to match repo state, then open the W18 PR for review
 
 ### 2026-04-06 - Engineer1 completion note (W17)
 
