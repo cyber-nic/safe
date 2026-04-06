@@ -11,12 +11,15 @@ import {
 import {
   createLocalRuntimeStore,
   type ClientIdentity,
+  type PreparedFirstUse,
+  type UnlockedLocalVault,
 } from "./local-runtime.ts";
 
 type SessionState = {
   identity: ClientIdentity | null;
   remoteAccess: AccountAccessResponse | null;
   accountKey: Buffer | null;
+  pendingOnboarding: PreparedFirstUse | null;
 };
 
 type ControlPlaneSession = {
@@ -101,7 +104,15 @@ export function createWebClientServer(
 
     if (request.method === "GET" && url.pathname === "/") {
       if (session.identity) {
-        redirect(response, session.accountKey ? "/vault" : "/unlock");
+        if (session.accountKey) {
+          redirect(response, "/vault");
+          return;
+        }
+        if (session.pendingOnboarding) {
+          redirect(response, "/onboarding/recovery");
+          return;
+        }
+        redirect(response, "/unlock");
         return;
       }
 
@@ -113,6 +124,7 @@ export function createWebClientServer(
       session.identity = await resolveIdentity();
       session.remoteAccess = await resolveRemoteAccess(session.identity);
       session.accountKey = null;
+      session.pendingOnboarding = null;
       redirect(response, "/unlock");
       return;
     }
@@ -120,6 +132,10 @@ export function createWebClientServer(
     if (request.method === "GET" && url.pathname === "/unlock") {
       if (!session.identity) {
         redirect(response, "/");
+        return;
+      }
+      if (session.pendingOnboarding) {
+        redirect(response, "/onboarding/recovery");
         return;
       }
 
@@ -140,13 +156,25 @@ export function createWebClientServer(
         redirect(response, "/");
         return;
       }
+      if (session.pendingOnboarding) {
+        redirect(response, "/onboarding/recovery");
+        return;
+      }
 
       const form = await readForm(request);
       const password = form.get("password")?.trim() ?? "";
       const firstUse = !(await store.hasUnlockRecord(session.identity.accountId));
 
       try {
+        if (firstUse) {
+          session.pendingOnboarding = store.prepareFirstUse(session.identity, password);
+          session.accountKey = null;
+          redirect(response, "/onboarding/recovery");
+          return;
+        }
+
         const unlocked = await store.unlock(session.identity, password);
+        session.pendingOnboarding = null;
         session.accountKey = unlocked.accountKey;
         redirect(response, "/vault");
         return;
@@ -167,6 +195,53 @@ export function createWebClientServer(
       }
     }
 
+    if (request.method === "GET" && url.pathname === "/onboarding/recovery") {
+      if (!session.identity || !session.pendingOnboarding) {
+        redirect(response, session.identity ? "/unlock" : "/");
+        return;
+      }
+
+      writeHTML(
+        response,
+        200,
+        renderRecoveryPage({
+          identity: session.identity,
+          recoveryMnemonic: session.pendingOnboarding.recoveryMnemonic,
+        }),
+      );
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/onboarding/recovery") {
+      if (!session.identity || !session.pendingOnboarding) {
+        redirect(response, session.identity ? "/unlock" : "/");
+        return;
+      }
+
+      const form = await readForm(request);
+      if (form.get("confirmed") !== "yes") {
+        writeHTML(
+          response,
+          200,
+          renderRecoveryPage({
+            identity: session.identity,
+            recoveryMnemonic: session.pendingOnboarding.recoveryMnemonic,
+            error: "You must confirm that the recovery key is stored before continuing.",
+          }),
+        );
+        return;
+      }
+
+      const unlocked = await store.finalizeFirstUse(
+        session.identity,
+        session.pendingOnboarding,
+      );
+      session.accountKey = unlocked.accountKey;
+      session.pendingOnboarding = null;
+      redirect(response, "/vault");
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/lock") {
       session.accountKey = null;
       redirect(response, "/unlock");
@@ -176,6 +251,7 @@ export function createWebClientServer(
     if (request.method === "POST" && url.pathname === "/logout") {
       session.identity = null;
       session.accountKey = null;
+      session.pendingOnboarding = null;
       redirect(response, "/");
       return;
     }
@@ -285,6 +361,7 @@ export function createWebClientServer(
       identity: null,
       remoteAccess: null,
       accountKey: null,
+      pendingOnboarding: null,
     };
     sessions.set(sessionId, session);
     response.setHeader("Set-Cookie", serializeCookie("safe_web_session", sessionId));
@@ -366,10 +443,47 @@ function renderUnlockPage(input: {
   });
 }
 
+function renderRecoveryPage(input: {
+  identity: ClientIdentity;
+  recoveryMnemonic: string;
+  error?: string;
+}): string {
+  return renderPage({
+    title: "Safe Recovery Key",
+    body: `
+      <section class="panel stack">
+        <p class="eyebrow">Recovery Key</p>
+        <h1>Store this recovery key before entering the vault.</h1>
+        <p>
+          Safe will only show this mnemonic during account creation. Store it offline before you continue.
+        </p>
+        ${input.error ? `<p class="error">${escapeHTML(input.error)}</p>` : ""}
+        <dl class="meta-grid">
+          <div><dt>Account</dt><dd>${escapeHTML(input.identity.accountId)}</dd></div>
+          <div><dt>Device</dt><dd>${escapeHTML(input.identity.deviceId)}</dd></div>
+        </dl>
+        <section class="panel stack">
+          <p class="eyebrow">24-word mnemonic</p>
+          <p class="recovery-phrase">${escapeHTML(input.recoveryMnemonic)}</p>
+        </section>
+        <form class="stack" method="post" action="/onboarding/recovery">
+          <label class="checkbox">
+            <input name="confirmed" type="checkbox" value="yes" />
+            <span>I stored this recovery key somewhere durable and offline.</span>
+          </label>
+          <div class="actions">
+            <button class="button button-primary" type="submit">Continue to vault</button>
+          </div>
+        </form>
+      </section>
+    `,
+  });
+}
+
 function renderVaultPage(input: {
   identity: ClientIdentity;
   remoteAccess: AccountAccessResponse | null;
-  unlocked: Awaited<ReturnType<ReturnType<typeof createLocalRuntimeStore>["unlock"]>>;
+  unlocked: UnlockedLocalVault;
   itemId: string | null;
   error?: string;
 }): string {

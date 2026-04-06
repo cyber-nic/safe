@@ -4,6 +4,7 @@ import {
   createDecipheriv,
   randomBytes,
 } from "node:crypto";
+import bip39 from "bip39";
 import {
   access,
   mkdir,
@@ -31,12 +32,15 @@ import {
 
 const localUnlockSchemaVersion = 1;
 const localUnlockAADPrefix = "safe.local-unlock.v1/";
+const localRecoverySchemaVersion = 1;
+const localRecoveryAADPrefix = "safe.local-recovery.v1/";
 const secretEnvelopeSchemaVersion = 1;
 const secretEnvelopeAAD = "safe.secret-material.v1";
 const argonMemoryKiB = 64 * 1024;
 const argonTimeCost = 3;
 const argonParallelism = 4;
 const accountKeyBytes = 32;
+const recoveryKeyBytes = 32;
 const gcmNonceBytes = 12;
 const gcmTagBytes = 16;
 const defaultCollectionId = "vault-personal";
@@ -65,6 +69,16 @@ export type LocalUnlockRecord = {
   };
 };
 
+export type LocalRecoveryRecord = {
+  schemaVersion: 1;
+  accountId: string;
+  wrappedKey: {
+    algorithm: "aes-256-gcm";
+    nonce: string;
+    ciphertext: string;
+  };
+};
+
 type SecretMaterialEnvelope = {
   schemaVersion: 1;
   algorithm: "aes-256-gcm";
@@ -82,33 +96,45 @@ export type LocalRuntimeStoreOptions = {
   baseDir: string;
 };
 
+export type PreparedFirstUse = {
+  recoveryMnemonic: string;
+  accountKey: Buffer;
+  unlockRecord: LocalUnlockRecord;
+  recoveryRecord: LocalRecoveryRecord;
+};
+
 export function createLocalRuntimeStore(options: LocalRuntimeStoreOptions) {
   return {
     hasUnlockRecord(accountId: string): Promise<boolean> {
       return fileExists(unlockRecordPath(options.baseDir, accountId));
     },
 
-    async unlock(
+    prepareFirstUse(
       identity: ClientIdentity,
       password: string,
-    ): Promise<{ firstUse: boolean } & UnlockedLocalVault> {
-      const firstUse = !(await fileExists(
-        unlockRecordPath(options.baseDir, identity.accountId),
-      ));
+    ): PreparedFirstUse {
+      return createFirstUseVault(identity, password);
+    },
 
-      if (firstUse) {
-        const unlocked = await createFirstUseVault(options.baseDir, identity, password);
-        return {
-          firstUse: true,
-          ...unlocked,
-        };
-      }
+    finalizeFirstUse(
+      identity: ClientIdentity,
+      prepared: PreparedFirstUse,
+    ): Promise<UnlockedLocalVault> {
+      return persistFirstUseVault(options.baseDir, identity, prepared);
+    },
 
-      const unlocked = await loadUnlockedVault(options.baseDir, identity, password);
-      return {
-        firstUse: false,
+    unlock(
+      identity: ClientIdentity,
+      password: string,
+    ): Promise<{ firstUse: false } & UnlockedLocalVault> {
+      return loadUnlockedVault(options.baseDir, identity, password).then((unlocked) => ({
+        firstUse: false as const,
         ...unlocked,
-      };
+      }));
+    },
+
+    hasRecoveryRecord(accountId: string): Promise<boolean> {
+      return fileExists(recoveryRecordPath(options.baseDir, accountId));
     },
 
     loadUnlockedWithAccountKey(
@@ -131,16 +157,37 @@ export function createLocalRuntimeStore(options: LocalRuntimeStoreOptions) {
   };
 }
 
-async function createFirstUseVault(
-  baseDir: string,
+function createFirstUseVault(
   identity: ClientIdentity,
   password: string,
-): Promise<UnlockedLocalVault> {
+): PreparedFirstUse {
   if (password.trim() === "") {
     throw new Error("password is required");
   }
 
-  const { record, accountKey } = createLocalUnlockRecord(identity.accountId, password);
+  const { record: unlockRecord, accountKey } = createLocalUnlockRecord(
+    identity.accountId,
+    password,
+  );
+  const recoveryKey = randomBytes(recoveryKeyBytes);
+
+  return {
+    recoveryMnemonic: bip39.entropyToMnemonic(recoveryKey.toString("hex")),
+    accountKey,
+    unlockRecord,
+    recoveryRecord: createLocalRecoveryRecord(
+      identity.accountId,
+      recoveryKey,
+      accountKey,
+    ),
+  };
+}
+
+async function persistFirstUseVault(
+  baseDir: string,
+  identity: ClientIdentity,
+  prepared: PreparedFirstUse,
+): Promise<UnlockedLocalVault> {
   const workspace = createVaultWorkspace({
     accountConfig: createDefaultAccountConfig(identity),
     head: null,
@@ -149,14 +196,16 @@ async function createFirstUseVault(
   const unlocked = {
     workspace,
     secretMaterial: {},
-    accountKey,
+    accountKey: prepared.accountKey,
   };
 
+  await writeJSON(unlockRecordPath(baseDir, identity.accountId), prepared.unlockRecord);
   await writeJSON(
-    unlockRecordPath(baseDir, identity.accountId),
-    record,
+    recoveryRecordPath(baseDir, identity.accountId),
+    prepared.recoveryRecord,
   );
   await persistUnlockedVault(baseDir, identity, unlocked);
+
   return unlocked;
 }
 
@@ -342,6 +391,35 @@ function openLocalUnlockRecord(
   }
 }
 
+function createLocalRecoveryRecord(
+  accountId: string,
+  recoveryKey: Buffer,
+  accountKey: Buffer,
+): LocalRecoveryRecord {
+  if (accountId.trim() === "") {
+    throw new Error("accountId is required");
+  }
+  if (recoveryKey.length !== recoveryKeyBytes) {
+    throw new Error("recovery key is invalid");
+  }
+
+  const wrappedKey = encryptBytes(
+    recoveryKey,
+    accountKey,
+    Buffer.from(localRecoveryAAD(accountId), "utf8"),
+  );
+
+  return {
+    schemaVersion: localRecoverySchemaVersion,
+    accountId,
+    wrappedKey: {
+      algorithm: "aes-256-gcm",
+      nonce: encodeBase64Url(wrappedKey.nonce),
+      ciphertext: encodeBase64Url(wrappedKey.ciphertext),
+    },
+  };
+}
+
 function encryptSecretMaterial(
   accountKey: Buffer,
   plaintext: Buffer,
@@ -484,6 +562,38 @@ function parseLocalUnlockRecord(value: unknown): LocalUnlockRecord {
   };
 }
 
+function parseLocalRecoveryRecord(value: unknown): LocalRecoveryRecord {
+  if (!isRecord(value)) {
+    throw new Error("invalid local recovery record");
+  }
+  if (value.schemaVersion !== 1) {
+    throw new Error("invalid local recovery record field: schemaVersion");
+  }
+  if (typeof value.accountId !== "string" || value.accountId === "") {
+    throw new Error("invalid local recovery record field: accountId");
+  }
+  if (!isRecord(value.wrappedKey)) {
+    throw new Error("invalid local recovery record field: wrappedKey");
+  }
+  if (
+    value.wrappedKey.algorithm !== "aes-256-gcm" ||
+    typeof value.wrappedKey.nonce !== "string" ||
+    typeof value.wrappedKey.ciphertext !== "string"
+  ) {
+    throw new Error("invalid local recovery record field: wrappedKey");
+  }
+
+  return {
+    schemaVersion: 1,
+    accountId: value.accountId,
+    wrappedKey: {
+      algorithm: "aes-256-gcm",
+      nonce: value.wrappedKey.nonce,
+      ciphertext: value.wrappedKey.ciphertext,
+    },
+  };
+}
+
 async function readEvents(
   baseDir: string,
   accountId: string,
@@ -596,6 +706,10 @@ function localUnlockAAD(accountId: string): string {
   return `${localUnlockAADPrefix}${accountId}`;
 }
 
+function localRecoveryAAD(accountId: string): string {
+  return `${localRecoveryAADPrefix}${accountId}`;
+}
+
 function accountBaseDir(baseDir: string, accountId: string): string {
   return path.join(baseDir, "accounts", accountId);
 }
@@ -614,6 +728,10 @@ function accountConfigPath(baseDir: string, accountId: string): string {
 
 function unlockRecordPath(baseDir: string, accountId: string): string {
   return path.join(accountBaseDir(baseDir, accountId), "unlock.json");
+}
+
+function recoveryRecordPath(baseDir: string, accountId: string): string {
+  return path.join(accountBaseDir(baseDir, accountId), "recovery.json");
 }
 
 function collectionHeadPath(
