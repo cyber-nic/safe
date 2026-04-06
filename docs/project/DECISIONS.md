@@ -411,6 +411,76 @@ Refs:
 - `#30`
 - `#31`
 
+### D13 - Device enrollment uses X25519-ECDH + HKDF-SHA256 + AES-256-GCM for AMK transfer
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-06
+
+Owner:
+
+- Engineer2 (Claude), cross-boundary per W13 (`refs #35`)
+
+Decision:
+
+- existing-device approval wraps the AMK using an ECIES-like scheme: ephemeral X25519 key agreement, HKDF-SHA256 for key derivation, and AES-256-GCM for authenticated encryption
+- the ECDH shared secret is never used directly as an encryption key; HKDF-SHA256 is always applied with the enrollment AAD as the info string
+- the approving device generates a fresh ephemeral X25519 key pair for each bundle; the ephemeral private key is discarded after sealing
+- AAD binds the ciphertext to its account ID and prevents cross-account bundle transplant
+
+Rationale:
+
+- X25519 + HKDF + AES-256-GCM is the same primitive combination used in Signal, TLS 1.3, and Noise; it is well-audited and maps cleanly onto `golang.org/x/crypto`
+- HKDF step ensures the raw ECDH output (which has structure) is properly extracted before use as a symmetric key
+- this avoids inventing a new protocol and stays consistent with the project's existing AES-256-GCM envelope pattern
+
+Downstream impact:
+
+- W14 implementation uses `golang.org/x/crypto/curve25519` for X25519 and `golang.org/x/crypto/hkdf` for key derivation
+- no additional dependencies beyond what is already in go.mod
+
+Refs:
+
+- `#35`
+
+### D14 - Device IDs are random 16-byte values hex-encoded without separators
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-06
+
+Owner:
+
+- Engineer2 (Claude), cross-boundary per W13 (`refs #35`)
+
+Decision:
+
+- device IDs are 16 random bytes from `crypto/rand`, hex-encoded as a 32-character lowercase string (no hyphens, no UUID formatting)
+- device IDs are generated once at enrollment time and are stable for the lifetime of the device record
+
+Rationale:
+
+- 128-bit random ID space is sufficient for collision avoidance in a personal secret manager
+- avoiding UUID formatting removes a UUID library dependency; the ID is opaque and never parsed, only compared
+- hex encoding is unambiguous and embeds safely in storage paths without escaping
+
+Downstream impact:
+
+- device record path is `accounts/<accountID>/devices/<deviceID>.json` where `<deviceID>` is the 32-character hex string
+- generation requires only `crypto/rand` and `encoding/hex`
+
+Refs:
+
+- `#35`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary
