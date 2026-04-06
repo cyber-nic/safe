@@ -4,9 +4,22 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  addApiKeyToVaultWorkspace,
   addLoginToVaultWorkspace,
+  addNoteToVaultWorkspace,
+  addSshKeyToVaultWorkspace,
+  addTotpToVaultWorkspace,
+  createUnlockedVaultWorkspace,
+  deleteItemFromVaultWorkspace,
   getVaultItemDetail,
   getVaultLoginCredentialDetail,
+  listDeletedVaultItems,
+  restoreItemToVaultWorkspace,
+  updateApiKeyInVaultWorkspace,
+  updateLoginInVaultWorkspace,
+  updateNoteInVaultWorkspace,
+  updateSshKeyInVaultWorkspace,
+  updateTotpInVaultWorkspace,
 } from "./index.ts";
 import {
   createLocalRuntimeStore,
@@ -262,9 +275,9 @@ export function createWebClientServer(
         return;
       }
 
-      const unlocked = await store.loadUnlockedWithAccountKey(
-        session.identity,
-        session.accountKey,
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQuery(url),
       );
       writeHTML(
         response,
@@ -286,29 +299,21 @@ export function createWebClientServer(
       }
 
       const form = await readForm(request);
-      const unlocked = await store.loadUnlockedWithAccountKey(
-        session.identity,
-        session.accountKey,
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQueryFromForm(form),
       );
 
       try {
-        const result = await addLoginToVaultWorkspace({
-          workspace: unlocked.workspace,
-          secretMaterial: unlocked.secretMaterial,
-          deviceId: session.identity.deviceId,
-          title: form.get("title") ?? "",
-          username: form.get("username") ?? "",
-          url: form.get("url") ?? "",
-          password: form.get("password") ?? "",
-          tags: ["manual", "m1"],
-          at: now(),
-        });
-
-        await store.persistUnlockedVault(session.identity, {
-          workspace: result.workspace,
-          secretMaterial: result.secretMaterial,
-          accountKey: session.accountKey,
-        });
+        const result = await addLoginToVaultWorkspace(
+          buildLoginMutationInput(form, {
+            workspace: unlocked.workspace,
+            secretMaterial: unlocked.secretMaterial,
+            deviceId: session.identity.deviceId,
+            at: now(),
+          }),
+        );
+        await persistVaultMutation(session, result);
         redirect(response, `/vault?item=${encodeURIComponent(result.itemId)}`);
         return;
       } catch (error) {
@@ -324,6 +329,175 @@ export function createWebClientServer(
               error instanceof Error
                 ? error.message
                 : "Safe could not save that secret.",
+          }),
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/items") {
+      if (!session.identity || !session.accountKey) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      const form = await readForm(request);
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQueryFromForm(form),
+      );
+
+      try {
+        const result = await createVaultItemFromForm(
+          form,
+          unlocked,
+          session.identity.deviceId,
+          now(),
+        );
+        await persistVaultMutation(session, result);
+        redirect(response, `/vault?item=${encodeURIComponent(result.itemId)}`);
+        return;
+      } catch (error) {
+        writeHTML(
+          response,
+          200,
+          renderVaultPage({
+            identity: session.identity,
+            remoteAccess: session.remoteAccess,
+            unlocked,
+            itemId: form.get("itemId")?.trim() ?? null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Safe could not save that vault item.",
+          }),
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/items/update") {
+      if (!session.identity || !session.accountKey) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      const form = await readForm(request);
+      const itemId = form.get("itemId")?.trim() ?? "";
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQueryFromForm(form),
+      );
+
+      try {
+        const result = await updateVaultItemFromForm(
+          form,
+          unlocked,
+          session.identity.deviceId,
+          now(),
+        );
+        await persistVaultMutation(session, result);
+        redirect(response, `/vault?item=${encodeURIComponent(result.itemId)}`);
+        return;
+      } catch (error) {
+        writeHTML(
+          response,
+          200,
+          renderVaultPage({
+            identity: session.identity,
+            remoteAccess: session.remoteAccess,
+            unlocked,
+            itemId: itemId || null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Safe could not update that vault item.",
+          }),
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/items/delete") {
+      if (!session.identity || !session.accountKey) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      const form = await readForm(request);
+      const itemId = form.get("itemId")?.trim() ?? "";
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQueryFromForm(form),
+      );
+
+      try {
+        const result = await deleteItemFromVaultWorkspace({
+          workspace: unlocked.workspace,
+          secretMaterial: unlocked.secretMaterial,
+          deviceId: session.identity.deviceId,
+          itemId,
+          at: now(),
+        });
+        await persistVaultMutation(session, result);
+        redirect(response, "/vault?deleted=1");
+        return;
+      } catch (error) {
+        writeHTML(
+          response,
+          200,
+          renderVaultPage({
+            identity: session.identity,
+            remoteAccess: session.remoteAccess,
+            unlocked,
+            itemId: itemId || null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Safe could not delete that vault item.",
+          }),
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/items/restore") {
+      if (!session.identity || !session.accountKey) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      const form = await readForm(request);
+      const itemId = form.get("itemId")?.trim() ?? "";
+      const unlocked = await loadUnlockedVaultForQuery(
+        session,
+        readVaultQueryFromForm(form),
+      );
+
+      try {
+        const result = await restoreItemToVaultWorkspace({
+          workspace: unlocked.workspace,
+          secretMaterial: unlocked.secretMaterial,
+          deviceId: session.identity.deviceId,
+          itemId,
+          at: now(),
+        });
+        await persistVaultMutation(session, result);
+        redirect(response, `/vault?item=${encodeURIComponent(result.itemId)}`);
+        return;
+      } catch (error) {
+        writeHTML(
+          response,
+          200,
+          renderVaultPage({
+            identity: session.identity,
+            remoteAccess: session.remoteAccess,
+            unlocked,
+            itemId: itemId || null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Safe could not restore that vault item.",
           }),
         );
         return;
@@ -366,6 +540,44 @@ export function createWebClientServer(
     sessions.set(sessionId, session);
     response.setHeader("Set-Cookie", serializeCookie("safe_web_session", sessionId));
     return session;
+  }
+
+  async function loadUnlockedVaultForQuery(
+    session: SessionState,
+    query: ReturnType<typeof readVaultQuery>,
+  ): Promise<UnlockedLocalVault> {
+    const unlocked = await store.loadUnlockedWithAccountKey(
+      session.identity!,
+      session.accountKey!,
+    );
+    const workspace = await createUnlockedVaultWorkspace({
+      accountConfig: unlocked.workspace.accountConfig,
+      head: unlocked.workspace.head,
+      events: unlocked.workspace.events,
+      starterRecords: unlocked.workspace.starterRecords,
+      query,
+      secretMaterial: unlocked.secretMaterial,
+      at: now(),
+    });
+
+    return {
+      ...unlocked,
+      workspace,
+    };
+  }
+
+  async function persistVaultMutation(
+    session: SessionState,
+    result: {
+      workspace: UnlockedLocalVault["workspace"];
+      secretMaterial: UnlockedLocalVault["secretMaterial"];
+    },
+  ): Promise<void> {
+    await store.persistUnlockedVault(session.identity!, {
+      workspace: result.workspace,
+      secretMaterial: result.secretMaterial,
+      accountKey: session.accountKey!,
+    });
   }
 }
 
@@ -488,58 +700,73 @@ function renderVaultPage(input: {
   error?: string;
 }): string {
   const selectedItemId =
-    input.itemId ??
-    input.unlocked.workspace.itemRecords.find((record) => record.item.kind === "login")?.item.id ??
-    null;
-  const selectedLogin =
+    input.itemId ?? input.unlocked.workspace.items[0]?.id ?? null;
+  const selectedDetail =
     selectedItemId === null
+      ? null
+      : getVaultItemDetail(input.unlocked.workspace, selectedItemId);
+  const selectedRecord =
+    selectedItemId === null
+      ? null
+      : input.unlocked.workspace.itemRecords.find((record) => record.item.id === selectedItemId) ??
+        null;
+  const selectedLogin =
+    selectedRecord?.item.kind !== "login"
       ? null
       : getSafeLoginDetail(
           input.unlocked.workspace,
           input.unlocked.secretMaterial,
-          selectedItemId,
+          selectedRecord.item.id,
         );
+  const selectedAuthenticator =
+    selectedRecord?.item.kind === "totp"
+      ? input.unlocked.workspace.authenticators.find(
+          (card) => card.id === selectedRecord.item.id,
+        ) ?? null
+      : null;
+  const deletedItems = listDeletedVaultItems(input.unlocked.workspace);
   const itemsMarkup =
-    input.unlocked.workspace.itemRecords.length === 0
-      ? `<p class="empty">No secrets yet. Save one login below to complete the M1 loop.</p>`
+    input.unlocked.workspace.items.length === 0
+      ? `<p class="empty">No secrets yet. No vault items match the current filter.</p>`
       : `
         <ul class="item-list">
-          ${input.unlocked.workspace.itemRecords
-            .map((record) => {
-              const detail = getVaultItemDetail(input.unlocked.workspace, record.item.id);
-              return `
+          ${input.unlocked.workspace.items
+            .map((item) => `
                 <li>
-                  <a class="item-link" href="/vault?item=${encodeURIComponent(record.item.id)}">
-                    <span class="item-title">${escapeHTML(detail.title)}</span>
-                    <span class="item-summary">${escapeHTML(detail.summary)}</span>
+                  <a class="item-link${item.id === selectedItemId ? " is-selected" : ""}" href="/vault?${buildVaultLocation({
+                    item: item.id,
+                    q: input.unlocked.workspace.query.text,
+                    kind: input.unlocked.workspace.query.kind,
+                    tag: input.unlocked.workspace.query.tag,
+                  })}">
+                    <span class="item-kicker">${escapeHTML(item.kind)}</span>
+                    <span class="item-title">${escapeHTML(item.title)}</span>
+                    <span class="item-summary">${escapeHTML(item.summary)}</span>
+                    ${item.matchedFields.length > 0
+                      ? `<span class="item-meta">Matched ${escapeHTML(item.matchedFields.join(", "))}</span>`
+                      : ""}
                   </a>
                 </li>
-              `;
-            })
+              `)
             .join("")}
         </ul>
       `;
   const detailMarkup =
-    selectedLogin === null
+    selectedDetail === null
       ? `
         <div class="detail-empty">
-          <p class="eyebrow">Read Path</p>
-          <h2>No login selected</h2>
-          <p>Save a login, then lock or restart and unlock again to confirm the durable read path.</p>
+          <p class="eyebrow">Vault Detail</p>
+          <h2>No item selected</h2>
+          <p>Create or filter vault items, then select one to inspect and edit it.</p>
         </div>
       `
-      : `
-        <div class="detail-card stack">
-          <p class="eyebrow">Selected Secret</p>
-          <h2>${escapeHTML(selectedLogin.title)}</h2>
-          <dl class="detail-grid">
-            <div><dt>Username</dt><dd>${escapeHTML(selectedLogin.username)}</dd></div>
-            <div><dt>URL</dt><dd>${escapeHTML(selectedLogin.primaryURL ?? "n/a")}</dd></div>
-            <div><dt>Password</dt><dd><code>${escapeHTML(selectedLogin.password ?? "locked")}</code></dd></div>
-            <div><dt>Status</dt><dd>${escapeHTML(selectedLogin.passwordStatus)}</dd></div>
-          </dl>
-        </div>
-      `;
+      : renderVaultDetail({
+          detail: selectedDetail,
+          record: selectedRecord,
+          login: selectedLogin,
+          authenticator: selectedAuthenticator,
+          query: input.unlocked.workspace.query,
+        });
 
   return renderPage({
     title: "Safe Vault",
@@ -584,17 +811,49 @@ function renderVaultPage(input: {
 
       ${input.error ? `<p class="error">${escapeHTML(input.error)}</p>` : ""}
 
+      <section class="panel stack">
+        <p class="eyebrow">Search</p>
+        <h2>Filter the vault</h2>
+        <form class="filter-grid" method="get" action="/vault">
+          <label class="field">
+            <span>Search</span>
+            <input name="q" type="search" value="${escapeHTML(input.unlocked.workspace.query.text ?? "")}" />
+          </label>
+          <label class="field">
+            <span>Kind</span>
+            <select name="kind">
+              ${input.unlocked.workspace.availableKinds
+                .map(
+                  (kind) =>
+                    `<option value="${escapeHTML(kind)}"${(input.unlocked.workspace.query.kind ?? "all") === kind ? " selected" : ""}>${escapeHTML(kind === "all" ? "all kinds" : kind)}</option>`,
+                )
+                .join("")}
+            </select>
+          </label>
+          <label class="field">
+            <span>Tag</span>
+            <select name="tag">
+              <option value="all">all tags</option>
+              ${input.unlocked.workspace.availableTags
+                .map(
+                  (tag) =>
+                    `<option value="${escapeHTML(tag)}"${(input.unlocked.workspace.query.tag ?? "all") === tag ? " selected" : ""}>${escapeHTML(tag)}</option>`,
+                )
+                .join("")}
+            </select>
+          </label>
+          <div class="actions">
+            <button class="button button-primary" type="submit">Apply filters</button>
+            <a class="button button-secondary" href="/vault">Clear</a>
+          </div>
+        </form>
+      </section>
+
       <section class="vault-grid">
         <section class="panel stack">
-          <p class="eyebrow">Save Secret</p>
-          <h2>Add one login</h2>
-          <form class="stack" method="post" action="/vault/login">
-            <label class="field"><span>Title</span><input name="title" type="text" value="GitHub" required /></label>
-            <label class="field"><span>Username</span><input name="username" type="text" value="alice" required /></label>
-            <label class="field"><span>URL</span><input name="url" type="url" value="https://github.com/login" required /></label>
-            <label class="field"><span>Password</span><input name="password" type="text" value="ghp-secret-123" required /></label>
-            <button class="button button-primary" type="submit">Save secret</button>
-          </form>
+          <p class="eyebrow">Create</p>
+          <h2>Add vault item</h2>
+          ${renderCreateForm(input.unlocked.workspace.query)}
         </section>
 
         <section class="panel stack">
@@ -607,8 +866,274 @@ function renderVaultPage(input: {
       <section class="panel">
         ${detailMarkup}
       </section>
+
+      <section class="panel stack">
+        <p class="eyebrow">Deleted Items</p>
+        <h2>Recently removed</h2>
+        ${deletedItems.length === 0
+          ? `<p class="empty">No deleted items yet.</p>`
+          : `
+            <ul class="item-list">
+              ${deletedItems
+                .map(
+                  (item) => `
+                    <li class="deleted-row">
+                      <a class="item-link" href="/vault?${buildVaultLocation({
+                        item: item.id,
+                        q: input.unlocked.workspace.query.text,
+                        kind: input.unlocked.workspace.query.kind,
+                        tag: input.unlocked.workspace.query.tag,
+                      })}">
+                        <span class="item-kicker">${escapeHTML(item.kind)}</span>
+                        <span class="item-title">${escapeHTML(item.title)}</span>
+                        <span class="item-summary">${escapeHTML(item.summary)}</span>
+                      </a>
+                      <form method="post" action="/vault/items/restore">
+                        ${renderVaultQueryHiddenFields(input.unlocked.workspace.query)}
+                        <input name="itemId" type="hidden" value="${escapeHTML(item.id)}" />
+                        <button class="button button-secondary" type="submit">Restore</button>
+                      </form>
+                    </li>
+                  `,
+                )
+                .join("")}
+            </ul>
+          `}
+      </section>
     `,
   });
+}
+
+function renderVaultDetail(input: {
+  detail: ReturnType<typeof getVaultItemDetail>;
+  record: UnlockedLocalVault["workspace"]["itemRecords"][number] | null;
+  login: ReturnType<typeof getSafeLoginDetail>;
+  authenticator: UnlockedLocalVault["workspace"]["authenticators"][number] | null;
+  query: {
+    text?: string;
+    kind?: string;
+    tag?: string;
+  };
+}): string {
+  const tagValue = input.detail.tags.length > 0 ? input.detail.tags.join(", ") : "none";
+
+  if (input.detail.status === "deleted") {
+    return `
+      <div class="detail-card stack">
+        <p class="eyebrow">Deleted Item</p>
+        <h2>${escapeHTML(input.detail.title)}</h2>
+        <p>${escapeHTML(input.detail.summary)}</p>
+        <dl class="detail-grid">
+          <div><dt>Kind</dt><dd>${escapeHTML(input.detail.kind)}</dd></div>
+          <div><dt>Status</dt><dd>${escapeHTML(input.detail.status)}</dd></div>
+          <div><dt>Tags</dt><dd>${escapeHTML(tagValue)}</dd></div>
+          <div><dt>History</dt><dd>${input.detail.history.length}</dd></div>
+        </dl>
+        <form method="post" action="/vault/items/restore">
+          ${renderVaultQueryHiddenFields(input.query)}
+          <input name="itemId" type="hidden" value="${escapeHTML(input.detail.id)}" />
+          <button class="button button-primary" type="submit">Restore item</button>
+        </form>
+      </div>
+    `;
+  }
+
+  const deleteForm = `
+    <form method="post" action="/vault/items/delete">
+      ${renderVaultQueryHiddenFields(input.query)}
+      <input name="itemId" type="hidden" value="${escapeHTML(input.detail.id)}" />
+      <button class="button button-secondary" type="submit">Delete item</button>
+    </form>
+  `;
+
+  if (input.record?.item.kind === "login" && input.login) {
+    return `
+      <div class="detail-card stack">
+        <p class="eyebrow">Selected Login</p>
+        <h2>${escapeHTML(input.login.title)}</h2>
+        <dl class="detail-grid">
+          <div><dt>Kind</dt><dd>${escapeHTML(input.detail.kind)}</dd></div>
+          <div><dt>Username</dt><dd>${escapeHTML(input.login.username)}</dd></div>
+          <div><dt>URL</dt><dd>${escapeHTML(input.login.primaryURL ?? "n/a")}</dd></div>
+          <div><dt>Password</dt><dd><code>${escapeHTML(input.login.password ?? "locked")}</code></dd></div>
+          <div><dt>Status</dt><dd>${escapeHTML(input.login.passwordStatus)}</dd></div>
+          <div><dt>Authenticator</dt><dd>${escapeHTML(input.login.relatedAuthenticatorTitle ?? "none")}</dd></div>
+          <div><dt>TOTP Code</dt><dd><code>${escapeHTML(input.login.relatedAuthenticatorCode ?? "n/a")}</code></dd></div>
+          <div><dt>Tags</dt><dd>${escapeHTML(tagValue)}</dd></div>
+        </dl>
+        ${renderEditForm({
+          itemId: input.record.item.id,
+          item: input.record.item,
+          query: input.query,
+        })}
+        ${deleteForm}
+      </div>
+    `;
+  }
+
+  if (input.record?.item.kind === "totp" && input.authenticator) {
+    return `
+      <div class="detail-card stack">
+        <p class="eyebrow">Selected Authenticator</p>
+        <h2>${escapeHTML(input.authenticator.title)}</h2>
+        <dl class="detail-grid">
+          <div><dt>Kind</dt><dd>${escapeHTML(input.detail.kind)}</dd></div>
+          <div><dt>Issuer</dt><dd>${escapeHTML(input.authenticator.issuer)}</dd></div>
+          <div><dt>Account</dt><dd>${escapeHTML(input.authenticator.accountName)}</dd></div>
+          <div><dt>Code</dt><dd><code>${escapeHTML(input.authenticator.code ?? "locked")}</code></dd></div>
+          <div><dt>Status</dt><dd>${escapeHTML(input.authenticator.status)}</dd></div>
+          <div><dt>Related Login</dt><dd>${escapeHTML(input.authenticator.relatedLoginTitle ?? "none")}</dd></div>
+          <div><dt>Tags</dt><dd>${escapeHTML(tagValue)}</dd></div>
+        </dl>
+        ${renderEditForm({
+          itemId: input.record.item.id,
+          item: input.record.item,
+          query: input.query,
+        })}
+        ${deleteForm}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="detail-card stack">
+      <p class="eyebrow">Selected Item</p>
+      <h2>${escapeHTML(input.detail.title)}</h2>
+      <p>${escapeHTML(input.detail.summary)}</p>
+      <dl class="detail-grid">
+        <div><dt>Kind</dt><dd>${escapeHTML(input.detail.kind)}</dd></div>
+        <div><dt>Status</dt><dd>${escapeHTML(input.detail.status)}</dd></div>
+        <div><dt>Tags</dt><dd>${escapeHTML(tagValue)}</dd></div>
+        <div><dt>History</dt><dd>${input.detail.history.length}</dd></div>
+      </dl>
+      ${input.record
+        ? renderEditForm({
+            itemId: input.record.item.id,
+            item: input.record.item,
+            query: input.query,
+          })
+        : ""}
+      ${deleteForm}
+    </div>
+  `;
+}
+
+function renderCreateForm(query: {
+  text?: string;
+  kind?: string;
+  tag?: string;
+}): string {
+  return `
+    <form class="stack" method="post" action="/vault/items">
+      ${renderVaultQueryHiddenFields(query)}
+      <label class="field">
+        <span>Kind</span>
+        <select name="itemKind">
+          <option value="login">login</option>
+          <option value="totp">totp</option>
+          <option value="note">note</option>
+          <option value="apiKey">apiKey</option>
+          <option value="sshKey">sshKey</option>
+        </select>
+      </label>
+      <label class="field"><span>Title</span><input name="title" type="text" value="GitHub" required /></label>
+      <label class="field"><span>Username</span><input name="username" type="text" value="alice" /></label>
+      <label class="field"><span>URL</span><input name="url" type="url" value="https://github.com/login" /></label>
+      <label class="field"><span>Password</span><input name="password" type="text" value="ghp-secret-123" /></label>
+      <label class="field"><span>Issuer</span><input name="issuer" type="text" value="GitHub" /></label>
+      <label class="field"><span>Account Name</span><input name="accountName" type="text" value="alice@example.com" /></label>
+      <label class="field"><span>TOTP Secret</span><input name="secretBase32" type="text" value="JBSWY3DPEHPK3PXP" /></label>
+      <label class="field"><span>Note Preview</span><input name="bodyPreview" type="text" value="Backup codes stored offline." /></label>
+      <label class="field"><span>API Service</span><input name="service" type="text" value="GitHub API" /></label>
+      <label class="field"><span>SSH Host</span><input name="host" type="text" value="github.com" /></label>
+      <label class="field"><span>Tags</span><input name="tags" type="text" value="manual,m3" /></label>
+      <button class="button button-primary" type="submit">Save item</button>
+    </form>
+  `;
+}
+
+function renderEditForm(input: {
+  itemId: string;
+  item: UnlockedLocalVault["workspace"]["itemRecords"][number]["item"];
+  query: {
+    text?: string;
+    kind?: string;
+    tag?: string;
+  };
+}): string {
+  return `
+    <form class="stack" method="post" action="/vault/items/update">
+      ${renderVaultQueryHiddenFields(input.query)}
+      <input name="itemId" type="hidden" value="${escapeHTML(input.itemId)}" />
+      <input name="itemKind" type="hidden" value="${escapeHTML(input.item.kind)}" />
+      <label class="field"><span>Title</span><input name="title" type="text" value="${escapeHTML(input.item.title)}" required /></label>
+      ${renderEditFields(input.item)}
+      <label class="field"><span>Tags</span><input name="tags" type="text" value="${escapeHTML(input.item.tags.join(", "))}" /></label>
+      <button class="button button-primary" type="submit">Update item</button>
+    </form>
+  `;
+}
+
+function renderEditFields(
+  item: UnlockedLocalVault["workspace"]["itemRecords"][number]["item"],
+): string {
+  switch (item.kind) {
+    case "login":
+      return `
+        <label class="field"><span>Username</span><input name="username" type="text" value="${escapeHTML(item.username)}" required /></label>
+        <label class="field"><span>URL</span><input name="url" type="url" value="${escapeHTML(item.urls[0] ?? "")}" required /></label>
+        <label class="field"><span>Password</span><input name="password" type="text" value="" placeholder="Leave blank to keep current password" /></label>
+      `;
+    case "totp":
+      return `
+        <label class="field"><span>Issuer</span><input name="issuer" type="text" value="${escapeHTML(item.issuer)}" required /></label>
+        <label class="field"><span>Account Name</span><input name="accountName" type="text" value="${escapeHTML(item.accountName)}" required /></label>
+        <label class="field"><span>TOTP Secret</span><input name="secretBase32" type="text" value="" placeholder="Leave blank to keep current secret" /></label>
+      `;
+    case "note":
+      return `<label class="field"><span>Note Preview</span><input name="bodyPreview" type="text" value="${escapeHTML(item.bodyPreview)}" required /></label>`;
+    case "apiKey":
+      return `<label class="field"><span>Service</span><input name="service" type="text" value="${escapeHTML(item.service)}" required /></label>`;
+    case "sshKey":
+      return `
+        <label class="field"><span>Username</span><input name="username" type="text" value="${escapeHTML(item.username)}" required /></label>
+        <label class="field"><span>Host</span><input name="host" type="text" value="${escapeHTML(item.host)}" required /></label>
+      `;
+  }
+}
+
+function renderVaultQueryHiddenFields(query: {
+  text?: string;
+  kind?: string;
+  tag?: string;
+}): string {
+  return [
+    `<input name="q" type="hidden" value="${escapeHTML(query.text ?? "")}" />`,
+    `<input name="kind" type="hidden" value="${escapeHTML(query.kind ?? "all")}" />`,
+    `<input name="tag" type="hidden" value="${escapeHTML(query.tag ?? "all")}" />`,
+  ].join("");
+}
+
+function buildVaultLocation(input: {
+  item?: string | null;
+  q?: string;
+  kind?: string;
+  tag?: string;
+}): string {
+  const search = new URLSearchParams();
+  if (input.item) {
+    search.set("item", input.item);
+  }
+  if (input.q) {
+    search.set("q", input.q);
+  }
+  if (input.kind && input.kind !== "all") {
+    search.set("kind", input.kind);
+  }
+  if (input.tag && input.tag !== "all") {
+    search.set("tag", input.tag);
+  }
+  return search.toString();
 }
 
 async function defaultResolveIdentity(): Promise<ClientIdentity> {
@@ -761,6 +1286,211 @@ function getSafeLoginDetail(
   }
 }
 
+function readVaultQuery(url: URL) {
+  return normalizeVaultQuery({
+    q: url.searchParams.get("q"),
+    kind: url.searchParams.get("kind"),
+    tag: url.searchParams.get("tag"),
+  });
+}
+
+function readVaultQueryFromForm(form: URLSearchParams) {
+  return normalizeVaultQuery({
+    q: form.get("q"),
+    kind: form.get("kind"),
+    tag: form.get("tag"),
+  });
+}
+
+function normalizeVaultQuery(input: {
+  q: string | null;
+  kind: string | null;
+  tag: string | null;
+}) {
+  const query: {
+    text?: string;
+    kind?: "all" | "login" | "note" | "apiKey" | "sshKey" | "totp";
+    tag?: string;
+  } = {};
+  const text = input.q?.trim() ?? "";
+  const tag = input.tag?.trim() ?? "";
+  const kind = normalizeKind(input.kind);
+
+  if (text !== "") {
+    query.text = text;
+  }
+  if (kind) {
+    query.kind = kind;
+  }
+  if (tag !== "" && tag !== "all") {
+    query.tag = tag;
+  }
+
+  return query;
+}
+
+function normalizeKind(
+  value: string | null,
+): "all" | "login" | "note" | "apiKey" | "sshKey" | "totp" | undefined {
+  switch (value) {
+    case "all":
+    case "login":
+    case "note":
+    case "apiKey":
+    case "sshKey":
+    case "totp":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function readTags(form: URLSearchParams, fallback: string[]): string[] {
+  const raw = form.get("tags")?.trim() ?? "";
+  if (raw === "") {
+    return fallback;
+  }
+
+  const tags = raw
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : fallback;
+}
+
+function buildLoginMutationInput(
+  form: URLSearchParams,
+  base: {
+    workspace: UnlockedLocalVault["workspace"];
+    secretMaterial: UnlockedLocalVault["secretMaterial"];
+    deviceId: string;
+    at: Date;
+  },
+) {
+  return {
+    ...base,
+    title: form.get("title") ?? "",
+    username: form.get("username") ?? "",
+    url: form.get("url") ?? "",
+    password: form.get("password") ?? "",
+    tags: readTags(form, ["manual", "m3"]),
+  };
+}
+
+async function createVaultItemFromForm(
+  form: URLSearchParams,
+  unlocked: UnlockedLocalVault,
+  deviceId: string,
+  at: Date,
+) {
+  const base = {
+    workspace: unlocked.workspace,
+    secretMaterial: unlocked.secretMaterial,
+    deviceId,
+    at,
+  };
+
+  switch (form.get("itemKind")) {
+    case "login":
+      return addLoginToVaultWorkspace(buildLoginMutationInput(form, base));
+    case "totp":
+      return addTotpToVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        issuer: form.get("issuer") ?? "",
+        accountName: form.get("accountName") ?? "",
+        secretBase32: form.get("secretBase32") ?? "",
+        tags: readTags(form, ["2fa", "authenticator"]),
+      });
+    case "note":
+      return addNoteToVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        bodyPreview: form.get("bodyPreview") ?? "",
+        tags: readTags(form, ["note"]),
+      });
+    case "apiKey":
+      return addApiKeyToVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        service: form.get("service") ?? "",
+        tags: readTags(form, ["api", "key"]),
+      });
+    case "sshKey":
+      return addSshKeyToVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        username: form.get("username") ?? "",
+        host: form.get("host") ?? "",
+        tags: readTags(form, ["ssh"]),
+      });
+    default:
+      throw new Error("invalid vault item kind");
+  }
+}
+
+async function updateVaultItemFromForm(
+  form: URLSearchParams,
+  unlocked: UnlockedLocalVault,
+  deviceId: string,
+  at: Date,
+) {
+  const base = {
+    workspace: unlocked.workspace,
+    secretMaterial: unlocked.secretMaterial,
+    deviceId,
+    itemId: form.get("itemId")?.trim() ?? "",
+    at,
+  };
+
+  switch (form.get("itemKind")) {
+    case "login":
+      return updateLoginInVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        username: form.get("username") ?? "",
+        url: form.get("url") ?? "",
+        password: form.get("password")?.trim() ? form.get("password")! : undefined,
+        tags: readTags(form, []),
+      });
+    case "totp":
+      return updateTotpInVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        issuer: form.get("issuer") ?? "",
+        accountName: form.get("accountName") ?? "",
+        secretBase32: form.get("secretBase32")?.trim()
+          ? form.get("secretBase32")!
+          : undefined,
+        tags: readTags(form, []),
+      });
+    case "note":
+      return updateNoteInVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        bodyPreview: form.get("bodyPreview") ?? "",
+        tags: readTags(form, []),
+      });
+    case "apiKey":
+      return updateApiKeyInVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        service: form.get("service") ?? "",
+        tags: readTags(form, []),
+      });
+    case "sshKey":
+      return updateSshKeyInVaultWorkspace({
+        ...base,
+        title: form.get("title") ?? "",
+        username: form.get("username") ?? "",
+        host: form.get("host") ?? "",
+        tags: readTags(form, []),
+      });
+    default:
+      throw new Error("invalid vault item kind");
+  }
+}
+
 function renderPage(input: {
   title: string;
   body: string;
@@ -804,7 +1534,7 @@ function renderPage(input: {
         line-height: 1.05;
       }
 
-      p, li, dd, dt, span, a, button, input, code { font-size: 1rem; }
+      p, li, dd, dt, span, a, button, input, select, code { font-size: 1rem; }
 
       main {
         max-width: 1120px;
@@ -891,7 +1621,7 @@ function renderPage(input: {
       }
       .stat-card strong { font-size: 2rem; }
 
-      .vault-grid { grid-template-columns: 1fr 1fr; }
+      .vault-grid, .filter-grid { grid-template-columns: 1fr 1fr; }
       .field { display: block; }
       .field span {
         display: block;
@@ -900,7 +1630,7 @@ function renderPage(input: {
         font-weight: 700;
       }
 
-      input {
+      input, select {
         width: 100%;
         border-radius: 16px;
         border: 1px solid rgba(93, 70, 44, 0.22);
@@ -926,8 +1656,26 @@ function renderPage(input: {
         border: 1px solid rgba(93, 70, 44, 0.1);
       }
 
+      .item-link.is-selected {
+        border-color: rgba(160, 77, 31, 0.45);
+        background: rgba(255, 245, 236, 0.98);
+      }
+
       .item-title { display: block; font-weight: 700; }
+      .item-kicker, .item-meta {
+        display: block;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
       .item-summary, .empty, .error, dt { color: var(--muted); }
+      .deleted-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+      }
       .meta-grid, .detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -956,7 +1704,7 @@ function renderPage(input: {
       }
 
       @media (max-width: 820px) {
-        .hero, .vault-grid, .stats-grid, .meta-grid, .detail-grid {
+        .hero, .vault-grid, .filter-grid, .stats-grid, .meta-grid, .detail-grid {
           grid-template-columns: 1fr;
         }
 

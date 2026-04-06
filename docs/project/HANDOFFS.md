@@ -53,6 +53,37 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W21)
+
+Task:
+
+- `W21 - Web vault CRUD UX`
+
+Status:
+
+- in progress; refs #52
+
+Files touched:
+
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the web vault now exposes query-backed list and detail views after unlock, with local search, kind and tag filters, and richer item selection
+- the server now supports create, update, delete, and restore flows for login, TOTP, note, API key, and SSH key items using the existing replay-backed workspace helpers
+- selected TOTP entries now surface a live local code in the detail pane, and deleted items can be inspected and restored from the web surface
+
+Verification:
+
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- commit the W21 delta, open the PR, and hand review over on issue `#52`
+
 ### 2026-04-06 - Engineer1 progress note (W20)
 
 Task:
