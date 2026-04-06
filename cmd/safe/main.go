@@ -112,6 +112,8 @@ func runWithIO(args []string, in io.Reader, out io.Writer) error {
 		return runSecretCommand(in, out, state, options, args[1:])
 	case "sync":
 		return runSyncCommand(out, state, options, args[1:])
+	case "device":
+		return runDeviceCommand(out, state, options, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -415,6 +417,65 @@ func runSyncCommand(out io.Writer, state cliState, options cliOptions, args []st
 	default:
 		return fmt.Errorf("unknown sync subcommand: %s", args[0])
 	}
+}
+
+func runDeviceCommand(out io.Writer, state cliState, options cliOptions, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("device command requires a subcommand")
+	}
+
+	switch args[0] {
+	case "list":
+		return deviceList(out, state, options)
+	default:
+		return fmt.Errorf("unknown device subcommand: %s", args[0])
+	}
+}
+
+func deviceList(out io.Writer, state cliState, options cliOptions) error {
+	keys, err := state.remoteStore.List(fmt.Sprintf("accounts/%s/devices/", state.session.AccountID))
+	if err != nil {
+		return err
+	}
+
+	devices := make([]domain.LocalDeviceRecord, 0, len(keys))
+	for _, key := range keys {
+		payload, err := state.remoteStore.Get(key)
+		if err != nil {
+			return err
+		}
+
+		record, err := domain.ParseLocalDeviceRecordJSON(payload)
+		if err != nil {
+			return err
+		}
+		devices = append(devices, record)
+	}
+
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].CreatedAt == devices[j].CreatedAt {
+			return devices[i].DeviceID < devices[j].DeviceID
+		}
+		return devices[i].CreatedAt < devices[j].CreatedAt
+	})
+
+	if options.json {
+		return writeJSON(out, devices)
+	}
+
+	fmt.Fprintln(out, "devices:")
+	for _, device := range devices {
+		fmt.Fprintf(
+			out,
+			"- id=%s label=%s type=%s status=%s createdAt=%s\n",
+			device.DeviceID,
+			device.Label,
+			device.DeviceType,
+			device.Status,
+			device.CreatedAt,
+		)
+	}
+	return nil
 }
 
 func secretList(out io.Writer, state cliState, options cliOptions) error {

@@ -421,6 +421,62 @@ func TestSyncPushPullAcrossTwoDevices(t *testing.T) {
 	})
 }
 
+func TestDeviceListReturnsRemoteDeviceRecords(t *testing.T) {
+	withEmptyBootstrap(t, func(_ string) {
+		state, err := bootstrapCLIState()
+		if err != nil {
+			t.Fatalf("bootstrap state: %v", err)
+		}
+
+		sharedRemote := storage.NewMemoryObjectStoreWithCAS()
+		state.remoteStore = sharedRemote
+		state.session.DeviceID = "dev-cli-001"
+		state.accountConfig.DeviceIDs = []string{"dev-cli-001"}
+
+		material, err := loadOrCreateLocalDeviceMaterial(state)
+		if err != nil {
+			t.Fatalf("load or create local device material: %v", err)
+		}
+		if err := ensureRemoteDeviceRecord(state, material); err != nil {
+			t.Fatalf("ensure remote device record: %v", err)
+		}
+
+		otherKeys, err := safecrypto.GenerateDeviceKeyPair()
+		if err != nil {
+			t.Fatalf("generate device key pair: %v", err)
+		}
+		otherRecord, err := safecrypto.CreateDeviceRecord(
+			state.session.AccountID,
+			"dev-web-002",
+			"Safe Web dev-web-002",
+			"web",
+			otherKeys,
+		)
+		if err != nil {
+			t.Fatalf("create other device record: %v", err)
+		}
+		if _, err := storage.StoreLocalDeviceRecord(sharedRemote, otherRecord); err != nil {
+			t.Fatalf("store other device record: %v", err)
+		}
+
+		var output bytes.Buffer
+		if err := deviceList(&output, state, cliOptions{json: true}); err != nil {
+			t.Fatalf("device list: %v", err)
+		}
+
+		var records []domain.LocalDeviceRecord
+		if err := json.Unmarshal(output.Bytes(), &records); err != nil {
+			t.Fatalf("decode device list: %v", err)
+		}
+		if len(records) != 2 {
+			t.Fatalf("expected 2 device records, got %d", len(records))
+		}
+		if records[0].DeviceID != "dev-cli-001" || records[1].DeviceID != "dev-web-002" {
+			t.Fatalf("unexpected device list ordering or contents: %+v", records)
+		}
+	})
+}
+
 func TestSyncPullRejectsTamperedRemoteHead(t *testing.T) {
 	withEmptyBootstrap(t, func(_ string) {
 		writerState, err := bootstrapCLIState()
