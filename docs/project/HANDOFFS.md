@@ -408,3 +408,98 @@ Contract updates:
 Next action:
 
 - future sync and sharing implementation should add authenticated record envelopes and stale-state rejection tests against the frozen W9 contract
+
+### 2026-04-06 - Engineer1 internal note (M2 planning reset)
+
+Task:
+
+- `M2 - Multi-Device Single-User Sync Foundations`
+
+Status:
+
+- planned (`refs #30`)
+
+Files touched:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+
+Next action:
+
+- move the board from closed M1 work to the explicit M2 queue and keep browser-native adapter work out of the critical path until two-device sync is proven
+
+### 2026-04-06 - Engineer1 to Engineer1
+
+Task:
+
+- `W11 - Freeze M2 sync-foundation scope and acceptance`
+- `W12 - Implement signed mutable-metadata verification in code`
+- `W13 - Freeze device-enrollment contract for account recovery and new devices`
+
+Status:
+
+- assigned (`refs #31`, `#36`, `#35`)
+
+Write scope:
+
+- `docs/project/**`
+- `docs/architecture/IMPLEMENTATION_PLAN.md` for wording alignment only
+- `docs/architecture/PROTOCOL.md` and `docs/architecture/SYSTEM_DESIGN.md` for contract alignment only
+- `internal/sync/**`
+- `internal/domain/**` if authenticated-record types are needed
+- `packages/test-vectors/**` if shared fixtures are needed
+
+Next action:
+
+- freeze the M2 acceptance boundary first, then land signed mutable-metadata verification and the device-enrollment contract before downstream sync or client wiring starts
+
+### 2026-04-06 - Engineer1 to Engineer2
+
+Task:
+
+- `W14 - Implement device-enrollment primitives and persisted tests`
+- `W15 - Implement account-path object-store sync and commit protocol`
+
+Status:
+
+- planned; pending assignment acceptance (`refs #34`, `#33`)
+
+Write scope:
+
+- `internal/crypto/**`
+- `internal/domain/**` for enrollment records
+- `internal/sync/**`
+- `internal/storage/**` if the object-store adapter boundary needs expansion
+- `packages/test-vectors/**` if shared fixtures are needed
+
+Do not edit:
+
+- `apps/web/**`
+- `cmd/safe/**`
+- `cmd/control-plane/**`
+- `internal/auth/**`
+
+Next action:
+
+- wait for W12 and W13 to freeze the verification and enrollment boundaries, then implement the persisted enrollment and account-path sync slices against those contracts
+
+### 2026-04-06 - Engineer1 completion note (W11)
+
+Task:
+
+- `W11 - Freeze M2 sync-foundation scope and acceptance`
+
+Status:
+
+- completed; refs #31
+
+Files touched:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+
+Next action:
+
+- carry the M2 planning reset through GitHub project status and issue updates, then start W12 and W13 against the accepted M2 boundary
