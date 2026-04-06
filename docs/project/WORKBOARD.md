@@ -96,7 +96,9 @@ Status:
 
 - W2 complete (`refs #4`)
 - W8 complete (`refs #19`)
-- W14 and W15 queued for M2 (`refs #34`, `#33`)
+- W13 cross-boundary complete, Engineer1 review pending (`refs #35`)
+- W14 in progress (`refs #34`)
+- W15 queued (`refs #33`)
 
 Current owner:
 
@@ -397,22 +399,23 @@ GitHub issue:
 
 Owner:
 
-- Engineer1
+- Engineer1 (default); completed cross-boundary by Engineer2 (`refs #35`)
 
 Status:
 
-- planned (`refs #35`)
+- completed cross-boundary; Engineer1 review pending (`refs #35`)
 
 Write scope:
 
 - `docs/project/INTERFACES.md`
 - `docs/project/DECISIONS.md`
 - `docs/project/HANDOFFS.md`
-- alignment-only notes in `docs/architecture/SYSTEM_DESIGN.md` and `docs/architecture/PROTOCOL.md` if needed
 
 Output:
 
-- frozen contract for existing-device approval and recovery-key bootstrap
+- I8 device-enrollment contract: device record schema, DeviceEnrollmentBundle (X25519+HKDF+AES-256-GCM), two enrollment flows, negative test requirements
+- D13: ECIES variant for AMK transfer
+- D14: DeviceID format (16-byte random hex)
 
 Dependencies:
 
@@ -444,7 +447,7 @@ Owner:
 
 Status:
 
-- planned (`refs #34`)
+- in progress (`refs #34`)
 
 Write scope:
 
@@ -552,16 +555,6 @@ Dependencies:
 GitHub issue:
 
 - `#37`
-
-## Merge Order
-
-1. W11 planning reset
-2. W12 signed-metadata verification
-3. W13 device-enrollment contract
-4. W14 enrollment primitives
-5. W15 object-store sync and commit protocol
-6. W16 control-plane access mediation
-7. W17 two-device smoke path
 
 ## PR Template
 

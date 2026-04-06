@@ -39,6 +39,34 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer2 cross-boundary note (W13)
+
+Task:
+
+- `W13 - Freeze device-enrollment contract for account recovery and new devices`
+
+Status:
+
+- completed cross-boundary; refs #35
+
+Reason for cross-boundary edit:
+
+- W14 (my task, #34) is blocked on W13 and W11; no W13 branch was open and Engineer1 had not started
+- same pattern as W7 (Engineer2 took W7 cross-boundary to unblock W8)
+- Engineer1 must review I8, D12, D13 before W14 merges
+
+Files touched:
+
+- `docs/project/INTERFACES.md` (new I8 — device enrollment contract)
+- `docs/project/DECISIONS.md` (new D12 — ECIES for AMK transfer; new D13 — device ID format)
+- `docs/project/HANDOFFS.md` (this entry)
+- `docs/project/WORKBOARD.md` (W13 and W14 entries updated)
+
+Next action:
+
+- W14 implementation is unblocked on this branch
+- Engineer1 should review I8, D12, D13 and flag any contract changes before W14 merges
+
 ### 2026-04-05 - Engineer1 to Engineer1
 
 Task:

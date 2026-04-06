@@ -1,0 +1,16 @@
+{
+  "deviceEncPrivKeyHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "deviceId": "deadbeefdeadbeefdeadbeefdeadbeef",
+  "amkHex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+  "bundle": {
+    "schemaVersion": 1,
+    "accountId": "acct-fixture-001",
+    "deviceId": "deadbeefdeadbeefdeadbeefdeadbeef",
+    "wrappedKey": {
+      "algorithm": "x25519-hkdf-aes-256-gcm",
+      "ephemeralPublicKey": "n7apBSaVnQcDs5K0WY5FYPNcJi4yeUFaSRkJWar-VyY",
+      "nonce": "gPc9UAjpN5ahamUb",
+      "ciphertext": "XtPhbY0uvWsAG4c7pR0G0GUykhXIOEzzZnuzK_4D5sSEd-7KMcY0EZ9ASsS6S63g"
+    }
+  }
+}
