@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import {
   addApiKeyToVaultWorkspace,
@@ -33,6 +35,9 @@ type SessionState = {
   remoteAccess: AccountAccessResponse | null;
   accountKey: Buffer | null;
   pendingOnboarding: PreparedFirstUse | null;
+  pendingPassword: string | null;
+  vaultPassword: string | null;
+  flash: string | null;
 };
 
 type ControlPlaneSession = {
@@ -63,6 +68,38 @@ type AccountAccessResponse = {
   capability: AccountAccessCapability;
 };
 
+type SafeCommandResult = {
+  stdout: string;
+  stderr: string;
+};
+
+type SafeCommandRunner = (
+  args: string[],
+  env: NodeJS.ProcessEnv,
+) => Promise<SafeCommandResult>;
+
+type DeviceRecord = {
+  schemaVersion: number;
+  accountId: string;
+  deviceId: string;
+  label: string;
+  deviceType: string;
+  signingPublicKey: string;
+  encryptionPublicKey: string;
+  createdAt: string;
+  status: string;
+};
+
+type EnrollmentRequest = {
+  schemaVersion: number;
+  accountId: string;
+  deviceId: string;
+  label: string;
+  deviceType: string;
+  encryptionPublicKey: string;
+  requestedAt: string;
+};
+
 export type WebClientServerOptions = {
   dataDir?: string;
   now?: () => Date;
@@ -70,11 +107,13 @@ export type WebClientServerOptions = {
   resolveRemoteAccess?: (
     identity: ClientIdentity,
   ) => Promise<AccountAccessResponse | null>;
+  runSafeCommand?: SafeCommandRunner;
 };
 
 export function createWebClientServer(
   options: WebClientServerOptions = {},
 ): http.RequestListener {
+  const runSafeCommand = options.runSafeCommand ?? defaultRunSafeCommand;
   const dataDir =
     options.dataDir ??
     process.env.SAFE_WEB_DATA_DIR ??
@@ -138,6 +177,9 @@ export function createWebClientServer(
       session.remoteAccess = await resolveRemoteAccess(session.identity);
       session.accountKey = null;
       session.pendingOnboarding = null;
+      session.pendingPassword = null;
+      session.vaultPassword = null;
+      session.flash = null;
       redirect(response, "/unlock");
       return;
     }
@@ -181,6 +223,7 @@ export function createWebClientServer(
       try {
         if (firstUse) {
           session.pendingOnboarding = store.prepareFirstUse(session.identity, password);
+          session.pendingPassword = password;
           session.accountKey = null;
           redirect(response, "/onboarding/recovery");
           return;
@@ -188,7 +231,9 @@ export function createWebClientServer(
 
         const unlocked = await store.unlock(session.identity, password);
         session.pendingOnboarding = null;
+        session.pendingPassword = null;
         session.accountKey = unlocked.accountKey;
+        session.vaultPassword = password;
         redirect(response, "/vault");
         return;
       } catch {
@@ -250,13 +295,16 @@ export function createWebClientServer(
         session.pendingOnboarding,
       );
       session.accountKey = unlocked.accountKey;
+      session.vaultPassword = session.pendingPassword;
       session.pendingOnboarding = null;
+      session.pendingPassword = null;
       redirect(response, "/vault");
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/lock") {
       session.accountKey = null;
+      session.vaultPassword = null;
       redirect(response, "/unlock");
       return;
     }
@@ -265,6 +313,9 @@ export function createWebClientServer(
       session.identity = null;
       session.accountKey = null;
       session.pendingOnboarding = null;
+      session.pendingPassword = null;
+      session.vaultPassword = null;
+      session.flash = null;
       redirect(response, "/");
       return;
     }
@@ -279,6 +330,9 @@ export function createWebClientServer(
         session,
         readVaultQuery(url),
       );
+      const flash = session.flash;
+      session.flash = null;
+      const remoteState = await loadRemoteState(session);
       writeHTML(
         response,
         200,
@@ -287,6 +341,10 @@ export function createWebClientServer(
           remoteAccess: session.remoteAccess,
           itemId: url.searchParams.get("item"),
           unlocked,
+          devices: remoteState.devices,
+          pendingEnrollments: remoteState.pendingEnrollments,
+          syncError: remoteState.error,
+          flash,
         }),
       );
       return;
@@ -325,6 +383,10 @@ export function createWebClientServer(
             remoteAccess: session.remoteAccess,
             unlocked,
             itemId: null,
+            devices: [],
+            pendingEnrollments: [],
+            syncError: null,
+            flash: null,
             error:
               error instanceof Error
                 ? error.message
@@ -366,6 +428,10 @@ export function createWebClientServer(
             remoteAccess: session.remoteAccess,
             unlocked,
             itemId: form.get("itemId")?.trim() ?? null,
+            devices: [],
+            pendingEnrollments: [],
+            syncError: null,
+            flash: null,
             error:
               error instanceof Error
                 ? error.message
@@ -408,6 +474,10 @@ export function createWebClientServer(
             remoteAccess: session.remoteAccess,
             unlocked,
             itemId: itemId || null,
+            devices: [],
+            pendingEnrollments: [],
+            syncError: null,
+            flash: null,
             error:
               error instanceof Error
                 ? error.message
@@ -451,6 +521,10 @@ export function createWebClientServer(
             remoteAccess: session.remoteAccess,
             unlocked,
             itemId: itemId || null,
+            devices: [],
+            pendingEnrollments: [],
+            syncError: null,
+            flash: null,
             error:
               error instanceof Error
                 ? error.message
@@ -494,11 +568,101 @@ export function createWebClientServer(
             remoteAccess: session.remoteAccess,
             unlocked,
             itemId: itemId || null,
+            devices: [],
+            pendingEnrollments: [],
+            syncError: null,
+            flash: null,
             error:
               error instanceof Error
                 ? error.message
                 : "Safe could not restore that vault item.",
           }),
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/sync/push") {
+      if (!session.identity || !session.accountKey || !session.vaultPassword) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      try {
+        await runSafeVaultCommand(session, ["sync", "push"]);
+        session.flash = "Sync push completed against the account remote path.";
+        redirect(response, "/vault");
+        return;
+      } catch (error) {
+        await renderVaultErrorPage(
+          response,
+          session,
+          null,
+          error instanceof Error ? error.message : "Sync push failed.",
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/sync/pull") {
+      if (!session.identity || !session.accountKey || !session.vaultPassword) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      try {
+        await runSafeVaultCommand(session, ["sync", "pull"]);
+        session.flash = "Sync pull completed and reloaded the local vault snapshot.";
+        redirect(response, "/vault");
+        return;
+      } catch (error) {
+        await renderVaultErrorPage(
+          response,
+          session,
+          null,
+          error instanceof Error ? error.message : "Sync pull failed.",
+        );
+        return;
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/vault/devices/approve") {
+      if (!session.identity || !session.accountKey || !session.vaultPassword) {
+        redirect(response, "/unlock");
+        return;
+      }
+
+      const form = await readForm(request);
+      const deviceId = form.get("deviceId")?.trim() ?? "";
+      if (deviceId === "") {
+        writeHTML(
+          response,
+          400,
+          renderPage({
+            title: "Safe",
+            body: `
+              <section class="panel stack">
+                <p class="eyebrow">Bad Request</p>
+                <h1>Missing device ID</h1>
+                <p><a class="link" href="/vault">Return to vault</a></p>
+              </section>
+            `,
+          }),
+        );
+        return;
+      }
+
+      try {
+        await runSafeVaultCommand(session, ["device", "approve", deviceId]);
+        session.flash = `Approved enrollment request for ${deviceId}.`;
+        redirect(response, "/vault");
+        return;
+      } catch (error) {
+        await renderVaultErrorPage(
+          response,
+          session,
+          null,
+          error instanceof Error ? error.message : "Device approval failed.",
         );
         return;
       }
@@ -536,6 +700,9 @@ export function createWebClientServer(
       remoteAccess: null,
       accountKey: null,
       pendingOnboarding: null,
+      pendingPassword: null,
+      vaultPassword: null,
+      flash: null,
     };
     sessions.set(sessionId, session);
     response.setHeader("Set-Cookie", serializeCookie("safe_web_session", sessionId));
@@ -578,6 +745,76 @@ export function createWebClientServer(
       secretMaterial: result.secretMaterial,
       accountKey: session.accountKey!,
     });
+  }
+
+  async function runSafeVaultCommand(
+    session: SessionState,
+    args: string[],
+  ): Promise<string> {
+    const { stdout, stderr } = await runSafeCommand(
+      ["--json", ...args],
+      buildSafeCommandEnv(dataDir, session),
+    );
+    if (stderr.trim() !== "") {
+      return stdout;
+    }
+    return stdout;
+  }
+
+  async function loadRemoteState(session: SessionState): Promise<{
+    devices: DeviceRecord[];
+    pendingEnrollments: EnrollmentRequest[];
+    error: string | null;
+  }> {
+    if (!session.identity || !session.accountKey || !session.vaultPassword || !session.remoteAccess) {
+      return {
+        devices: [],
+        pendingEnrollments: [],
+        error: null,
+      };
+    }
+
+    try {
+      const [devicesRaw, pendingRaw] = await Promise.all([
+        runSafeVaultCommand(session, ["device", "list"]),
+        runSafeVaultCommand(session, ["device", "pending"]),
+      ]);
+      return {
+        devices: parseDeviceRecords(devicesRaw),
+        pendingEnrollments: parseEnrollmentRequests(pendingRaw),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        devices: [],
+        pendingEnrollments: [],
+        error: error instanceof Error ? error.message : "Remote sync state is unavailable.",
+      };
+    }
+  }
+
+  async function renderVaultErrorPage(
+    response: ServerResponse,
+    session: SessionState,
+    itemId: string | null,
+    error: string,
+  ): Promise<void> {
+    const unlocked = await loadUnlockedVaultForQuery(session, {});
+    const remoteState = await loadRemoteState(session);
+    writeHTML(
+      response,
+      200,
+      renderVaultPage({
+        identity: session.identity!,
+        remoteAccess: session.remoteAccess,
+        unlocked,
+        itemId,
+        devices: remoteState.devices,
+        pendingEnrollments: remoteState.pendingEnrollments,
+        syncError: error,
+        flash: null,
+      }),
+    );
   }
 }
 
@@ -697,6 +934,10 @@ function renderVaultPage(input: {
   remoteAccess: AccountAccessResponse | null;
   unlocked: UnlockedLocalVault;
   itemId: string | null;
+  devices: DeviceRecord[];
+  pendingEnrollments: EnrollmentRequest[];
+  syncError: string | null;
+  flash: string | null;
   error?: string;
 }): string {
   const selectedItemId =
@@ -805,10 +1046,20 @@ function renderVaultPage(input: {
         <p>Prefix <code>${escapeHTML(input.remoteAccess.capability.prefix)}</code></p>
         <p>Actions <code>${escapeHTML(input.remoteAccess.capability.allowedActions.join(", "))}</code></p>
         <p>Expires ${escapeHTML(input.remoteAccess.capability.expiresAt)}</p>
+        <div class="actions">
+          <form method="post" action="/vault/sync/push">
+            <button class="button button-primary" type="submit">Sync push</button>
+          </form>
+          <form method="post" action="/vault/sync/pull">
+            <button class="button button-secondary" type="submit">Sync pull</button>
+          </form>
+        </div>
       </section>
       `
         : ""}
 
+      ${input.flash ? `<p class="success">${escapeHTML(input.flash)}</p>` : ""}
+      ${input.syncError ? `<p class="error">${escapeHTML(input.syncError)}</p>` : ""}
       ${input.error ? `<p class="error">${escapeHTML(input.error)}</p>` : ""}
 
       <section class="panel stack">
@@ -899,6 +1150,62 @@ function renderVaultPage(input: {
                 .join("")}
             </ul>
           `}
+      </section>
+
+      <section class="vault-grid">
+        <section class="panel stack">
+          <p class="eyebrow">Devices</p>
+          <h2>Enrolled devices</h2>
+          ${input.devices.length === 0
+            ? `<p class="empty">No remote device records visible yet.</p>`
+            : `
+              <ul class="item-list">
+                ${input.devices
+                  .map(
+                    (device) => `
+                      <li class="device-row">
+                        <div class="item-link">
+                          <span class="item-kicker">${escapeHTML(device.deviceType)}</span>
+                          <span class="item-title">${escapeHTML(device.label)}</span>
+                          <span class="item-summary">${escapeHTML(device.deviceId)}</span>
+                          <span class="item-meta">Status ${escapeHTML(device.status)} • Created ${escapeHTML(device.createdAt)}</span>
+                        </div>
+                      </li>
+                    `,
+                  )
+                  .join("")}
+              </ul>
+            `}
+        </section>
+
+        <section class="panel stack">
+          <p class="eyebrow">Approvals</p>
+          <h2>Pending enrollment requests</h2>
+          ${input.pendingEnrollments.length === 0
+            ? `<p class="empty">No pending device enrollment requests.</p>`
+            : `
+              <ul class="item-list">
+                ${input.pendingEnrollments
+                  .map(
+                    (request) => `
+                      <li class="deleted-row">
+                        <div class="item-link">
+                          <span class="item-kicker">${escapeHTML(request.deviceType)}</span>
+                          <span class="item-title">${escapeHTML(request.label)}</span>
+                          <span class="item-summary">${escapeHTML(request.deviceId)}</span>
+                          <span class="item-meta">Requested ${escapeHTML(request.requestedAt)}</span>
+                        </div>
+                        <form method="post" action="/vault/devices/approve">
+                          <input name="deviceId" type="hidden" value="${escapeHTML(request.deviceId)}" />
+                          <button class="button button-secondary" type="submit">Approve</button>
+                        </form>
+                      </li>
+                    `,
+                  )
+                  .join("")}
+              </ul>
+            `}
+        </section>
       </section>
     `,
   });
@@ -1491,6 +1798,57 @@ async function updateVaultItemFromForm(
   }
 }
 
+const execFileAsync = promisify(execFile);
+
+async function defaultRunSafeCommand(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<SafeCommandResult> {
+  const result = await execFileAsync("go", ["run", "./cmd/safe", ...args], {
+    cwd: process.cwd(),
+    env,
+  });
+
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function buildSafeCommandEnv(
+  dataDir: string,
+  session: SessionState,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    SAFE_LOCAL_RUNTIME_DIR: path.join(dataDir, "accounts"),
+    SAFE_LOCAL_PASSWORD: session.vaultPassword ?? "",
+  };
+
+  if (session.identity) {
+    env.SAFE_DEVICE_ID = session.identity.deviceId;
+  }
+
+  if (!env.SAFE_CONTROL_PLANE_URL && process.env.SAFE_WEB_CONTROL_PLANE_URL) {
+    env.SAFE_CONTROL_PLANE_URL = process.env.SAFE_WEB_CONTROL_PLANE_URL;
+  }
+  if (!env.SAFE_OAUTH_ACCESS_TOKEN && process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN) {
+    env.SAFE_OAUTH_ACCESS_TOKEN = process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN;
+  }
+
+  return env;
+}
+
+function parseDeviceRecords(raw: string): DeviceRecord[] {
+  const payload = JSON.parse(raw);
+  return Array.isArray(payload) ? payload as DeviceRecord[] : [];
+}
+
+function parseEnrollmentRequests(raw: string): EnrollmentRequest[] {
+  const payload = JSON.parse(raw);
+  return Array.isArray(payload) ? payload as EnrollmentRequest[] : [];
+}
+
 function renderPage(input: {
   title: string;
   body: string;
@@ -1669,13 +2027,14 @@ function renderPage(input: {
         text-transform: uppercase;
         letter-spacing: 0.08em;
       }
-      .item-summary, .empty, .error, dt { color: var(--muted); }
+      .item-summary, .empty, .error, .success, dt { color: var(--muted); }
       .deleted-row {
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 12px;
         align-items: center;
       }
+      .device-row { display: block; }
       .meta-grid, .detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -1701,6 +2060,14 @@ function renderPage(input: {
         border-radius: 16px;
         background: rgba(194, 73, 31, 0.08);
         border: 1px solid rgba(194, 73, 31, 0.16);
+      }
+
+      .success {
+        margin: 0;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(70, 126, 84, 0.09);
+        border: 1px solid rgba(70, 126, 84, 0.18);
       }
 
       @media (max-width: 820px) {

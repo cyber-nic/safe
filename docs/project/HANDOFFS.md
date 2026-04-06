@@ -53,6 +53,40 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W22)
+
+Task:
+
+- `W22 - Web sync and device management UX`
+
+Status:
+
+- in progress; refs #53
+
+Files touched:
+
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `cmd/safe/main.go`
+- `cmd/safe/main_test.go`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the web vault now surfaces sync push and pull actions against the existing CLI sync path, with explicit success or failure feedback rendered back into the unlocked vault surface
+- the web app now lists enrolled remote devices, shows pending enrollment requests, and can approve a pending request by invoking the merged enrollment bundle helper path
+- `cmd/safe` now exposes JSON-friendly `device list`, `device pending`, and `device approve <device-id>` commands so the web surface can reuse the shipped Go sync and enrollment logic instead of reimplementing it in TypeScript
+
+Verification:
+
+- `go test ./cmd/safe/...`
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- finish reviewing the W22 delta, then commit, push, and open the PR on issue `#53`
+
 ### 2026-04-06 - Engineer1 progress note (W21)
 
 Task:
