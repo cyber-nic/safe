@@ -374,6 +374,43 @@ Refs:
 
 - `#18`
 
+### D12 - Post-M1 execution moves to multi-device single-user sync foundations
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-06
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- the next milestone after M1 is `M2 - Multi-Device Single-User Sync Foundations`
+- M2 prioritizes signed mutable-metadata verification in code, device-enrollment contracts and primitives, object-store sync, and the narrow control-plane path needed to prove two-device single-user sync
+- browser-native adapter redesign, multi-user sharing, and broad web-product polish stay out of the critical path until the two-device sync proof exists
+
+Rationale:
+
+- M1 is closed, so the next highest-risk gap is not another local-runtime surface change; it is whether Safe can move from one trusted device to two without losing integrity guarantees
+- the security and implementation docs both identify rollback protection, device enrollment, and object-store sync as the hard blockers between a local demo and a real zero-knowledge product
+- keeping browser-adapter work and broader UX polish explicitly deferred prevents the team from rebuilding surface area before the sync and trust model is proven
+
+Downstream impact:
+
+- W11-W17 become the active queue under milestone issue `#30`
+- W12 and W13 are contract and trust-boundary gates for downstream implementation work
+- future planning should treat browser-native storage questions as a follow-up stream, not as grounds to dilute M2 acceptance
+
+Refs:
+
+- `#30`
+- `#31`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary

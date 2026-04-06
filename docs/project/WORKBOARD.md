@@ -28,39 +28,37 @@ Important:
 
 ## Current Milestone
 
-Milestone: `M1 - First Trustworthy Local Loop`
+Milestone: `M2 - Multi-Device Single-User Sync Foundations`
 
 GitHub issue:
 
-- `#1`
+- `#30`
 
 Goal:
 
-- a user can identify into a real client surface
-- unlock local state with a real password-derived path
-- save one secret into durable encrypted local storage
-- close or lock the client
-- reopen or unlock and read that secret back
+- two trusted devices can converge on one account through a real object-storage sync path
+- clients verify signed mutable metadata and reject stale or replayed state before trusting it
+- device enrollment requires existing-device approval or recovery-key bootstrap
+- the shipped clients can prove the account loop across two devices, not only one local runtime
 
 Current status:
 
-- CLI local-runtime save or read is shipped and test-backed
-- a local server-rendered web client now ships in `apps/web` and completes the same identify, unlock, save, lock, and reopen loop
-- M1 is complete on `main`; remaining work is post-M1 hardening and expansion, not a hidden milestone gap
+- M1 remains complete on `main`; the CLI and local web client already close the first trustworthy local loop (`refs #1`, `#22`)
+- post-M1 groundwork is in place: recovery-key wrap and unwrap shipped in code (`refs #19`) and rollback rules are now frozen as a contract (`refs #18`)
+- M2 planning is now live in GitHub and in repo docs; no M2 implementation slice has landed yet (`refs #30`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`)
 
 Non-goals for this milestone:
 
-- sharing
-- invites
-- multi-device sync
-- OAuth production hardening
-- rich vault UX beyond what is needed to prove the loop
+- multi-user sharing and revocation
+- browser-native adapter redesign
+- broad web-product UX polish beyond the sync proof path
+- OAuth production hardening beyond the narrow control-plane access path needed for single-account sync
 
-Milestone closeout status:
+Milestone kickoff status:
 
-- implementation slices W1-W7 and W10 are complete (`refs #2`, `#3`, `#4`, `#5`, `#6`, `#20`, `#22`)
-- the first trustworthy local loop is now closed for both the CLI and the local web client (`refs #1`)
-- remaining queued work is explicitly post-M1: recovery implementation, rollback rules, and broader browser-native adapter decisions
+- W11 defines the M2 boundary and closes the planning reset (`refs #31`)
+- W12, W13, and W15 are the critical-path contract and implementation slices for sync integrity (`refs #36`, `#35`, `#33`)
+- W14, W16, and W17 stay explicit downstream tasks rather than hidden scope (`refs #34`, `#32`, `#37`)
 
 ## Execution Rules
 
@@ -92,11 +90,13 @@ Current owner:
 
 Role:
 
-- implementation owner for the first durable local runtime slice
+- implementation owner for crypto and sync-heavy implementation slices
 
 Status:
 
-- W2 complete (`refs #4`); W4 merged (`refs #3`); W7 in progress (`refs #20`)
+- W2 complete (`refs #4`)
+- W8 complete (`refs #19`)
+- W14 and W15 queued for M2 (`refs #34`, `#33`)
 
 Current owner:
 
@@ -334,18 +334,7 @@ GitHub issue:
 
 - `#21`
 
-## Next Assignment
-
-No new implementation slice is assigned on this branch.
-
-Current focus:
-
-- keep M1 closed and avoid reintroducing hidden milestone scope
-- move the queue forward through recovery implementation, rollback rules, and next-milestone definition
-
-## Queued Tasks
-
-### W10 - Deliver a real M1 client surface
+### W11 - Freeze M2 sync-foundation scope and acceptance
 
 Owner:
 
@@ -353,62 +342,101 @@ Owner:
 
 Status:
 
-- completed (`refs #22`)
+- completed (`refs #31`)
 
 Write scope:
 
-- `apps/web/**`
-- `cmd/control-plane/**` if the client surface needs the existing dev identity bootstrap path
-- minimal doc updates in `docs/project/**` if the surface contract changes
+- `docs/project/WORKBOARD.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- minimal alignment notes in `docs/architecture/IMPLEMENTATION_PLAN.md` if wording drifts
 
 Output:
 
-- a navigable client surface where a user can identify, save one secret, lock or reload, and read it back
-
-Outcome:
-
-- `apps/web` now ships a local server-rendered client surface with real routes for identify, unlock, save, lock, and reopen
-- the local web client persists account config, collection head, replayable events, item records, and encrypted secret material on disk
-- the local web client uses the accepted account-scoped Argon2id plus AES-256-GCM unlock contract rather than inventing a second web-only unlock format
+- explicit M2 milestone boundary, acceptance checks, and deferred-work list
 
 Dependencies:
 
-- W5
+- M2 milestone issue `#30`
 
 GitHub issue:
 
-- `#22`
+- `#31`
 
-### W7 - Freeze recovery-key account contract
+### W12 - Implement signed mutable-metadata verification in code
 
 Owner:
 
-- Engineer2 (Claude), cross-boundary per D3
+- Engineer1
 
 Status:
 
-- completed (`refs #20`)
+- planned (`refs #36`)
+
+Write scope:
+
+- `internal/sync/**`
+- `internal/domain/**` if shared authenticated-record types are required
+- `packages/test-vectors/**` if shared fixtures are needed
+- narrow contract clarifications only in `docs/project/**`
+
+Output:
+
+- one verification path for signed mutable metadata plus stale-state rejection tests
+
+Dependencies:
+
+- W9
+- W11
+
+GitHub issue:
+
+- `#36`
+
+### W13 - Freeze device-enrollment contract for account recovery and new devices
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- planned (`refs #35`)
 
 Write scope:
 
 - `docs/project/INTERFACES.md`
 - `docs/project/DECISIONS.md`
 - `docs/project/HANDOFFS.md`
+- alignment-only notes in `docs/architecture/SYSTEM_DESIGN.md` and `docs/architecture/PROTOCOL.md` if needed
 
 Output:
 
-- frozen persisted recovery-key contract for account bootstrap and account recovery
+- frozen contract for existing-device approval and recovery-key bootstrap
 
 Dependencies:
 
-- W1
-- W3
+- W8
+- W9
+- W11
 
 GitHub issue:
 
-- `#20`
+- `#35`
 
-### W8 - Implement recovery-key wrap and recovery tests
+## Next Assignment
+
+The next implementation wave is now defined and on the board.
+
+Current focus:
+
+- merge W11 so the repo workboard, decisions log, and GitHub project stay aligned on M2
+- treat W12 and W13 as the contract and integrity gates before downstream sync or client wiring
+- keep browser-native adapter work explicitly deferred until the two-device sync proof exists
+
+## Queued Tasks
+
+### W14 - Implement device-enrollment primitives and persisted tests
 
 Owner:
 
@@ -416,28 +444,57 @@ Owner:
 
 Status:
 
-- completed (`refs #19`)
+- planned (`refs #34`)
 
 Write scope:
 
 - `internal/crypto/**`
-- supporting account-domain records if required
-- test vectors or fixtures if needed
+- `internal/domain/**` for enrollment records
+- `packages/test-vectors/**` if cross-runtime fixtures are required
 
 Output:
 
-- recovery-key generation plus AMK wrap and unwrap support
-- persisted-account recovery tests and wrong-key or corrupted-payload coverage
+- device-enrollment primitives plus persisted success and failure tests
 
 Dependencies:
 
-- W7
+- W13
+- W8
 
 GitHub issue:
 
-- `#19`
+- `#34`
 
-### W9 - Freeze signed mutable metadata and rollback rules
+### W15 - Implement account-path object-store sync and commit protocol
+
+Owner:
+
+- Engineer2
+
+Status:
+
+- planned (`refs #33`)
+
+Write scope:
+
+- `internal/sync/**`
+- `internal/storage/**` if the object-store adapter boundary needs expansion
+- `packages/test-vectors/**` if integration fixtures are needed
+
+Output:
+
+- single-user object-store sync path with explicit commit semantics and stale-head rejection
+
+Dependencies:
+
+- W12
+- W11
+
+GitHub issue:
+
+- `#33`
+
+### W16 - Implement minimal control-plane access mediation for single-account sync
 
 Owner:
 
@@ -445,34 +502,66 @@ Owner:
 
 Status:
 
-- completed (`refs #18`)
+- planned (`refs #32`)
 
 Write scope:
 
-- `docs/project/INTERFACES.md`
-- `docs/project/DECISIONS.md`
-- `docs/project/HANDOFFS.md`
-- architecture notes only where wording needs alignment
+- `cmd/control-plane/**`
+- `internal/auth/**`
+- integration tests only where required
 
 Output:
 
-- frozen contract for signed mutable metadata, freshness checks, and rollback-sensitive objects
+- narrow account-scoped object-access path for single-user sync
 
 Dependencies:
 
-- W1
+- W11
+- W13
 
 GitHub issue:
 
-- `#18`
+- `#32`
+
+### W17 - Deliver a two-device single-user sync smoke path
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- planned (`refs #37`)
+
+Write scope:
+
+- `apps/web/**`
+- `cmd/safe/**`
+- `docs/project/**` for milestone closeout only if needed
+
+Output:
+
+- reproducible two-device sync proof through the shipped clients
+
+Dependencies:
+
+- W14
+- W15
+- W16
+
+GitHub issue:
+
+- `#37`
 
 ## Merge Order
 
-1. W1 contract docs
-2. W2 persistence adapter
-3. W3 crypto primitives
-4. W4 CLI integration
-5. W5 web integration
+1. W11 planning reset
+2. W12 signed-metadata verification
+3. W13 device-enrollment contract
+4. W14 enrollment primitives
+5. W15 object-store sync and commit protocol
+6. W16 control-plane access mediation
+7. W17 two-device smoke path
 
 ## PR Template
 
