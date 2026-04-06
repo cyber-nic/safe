@@ -4,9 +4,8 @@ Use the local switchboard for fast engineer-to-engineer coordination.
 
 ## Peer Identity
 
-- Read [`.whoami`](/code/safe/.whoami) before starting work.
-- Current peer engineer: Claude
-- Current local identity: `sender=codex`, `role=engineer`
+- Read [`.whoami`](.whoami) before starting work.
+- Current peer engineer: Codex
 
 ## Switchboard CLI
 
@@ -17,21 +16,45 @@ Use the installed `switchboard` command from `PATH`.
 - `/usr/local/bin/switchboard` is a symlink to `/code/switchboard/bin/switchboard`
 - Do not assume `/tmp/switchboard` exists
 
-
 Expected commands:
 
 ```sh
-switchboard send -sender codex -role engineer -text "ready"
+switchboard send -sender "agent" -role engineer -text "ready"
 switchboard history -n 10
 switchboard watch
 ```
 
+## Stand-up Format
+
+Every switchboard message should follow this template:
+
+```
+Status: <starting|in-progress|blocked|pr-open|pr-updated|handoff|complete>
+Task: W<n> / #<issue>
+Done: <what was accomplished since last update — omit if starting>
+Next: <what comes next>
+Blocker: <concrete description — omit if none>
+```
+
+Keep it short. One sentence per field. Include branch or PR number when relevant.
+
+## Trigger Points
+
+Send a stand-up message at each of these moments — do not skip:
+
+1. **Session start** — after reading `.whoami` and history; before touching any code
+2. **Plan change** — when scope, approach, or dependency assumptions shift
+3. **Blocker hit** — immediately; do not wait to resolve it first
+4. **PR opened** — include branch name and issue number
+5. **PR updated** (new commits, rebase, or review response)
+6. **Handoff** — before stepping away; include next action for the other engineer
+7. **Task complete** — after the PR merges or the deliverable lands
+
 ## Working Agreement
 
-- Check switchboard history when you start work and before you open or update a PR.
-- Send short progress notes when your plan changes, when you hit a blocker, and when a branch or PR is ready for review.
-- Include concrete references in messages when relevant: issue number, branch name, PR number, or interface dependency.
-- Communicate frequently around PRs so other engineers can coordinate dependent work without polling GitHub.
+- Always read the last 10 messages before sending — avoid duplicating a message the peer just sent.
+- Include concrete references: issue number, branch name, PR number, or interface name.
+- Frequent short messages beat infrequent long ones — the peer should never have to poll GitHub to know your state.
 
 ## Local Validation
 
@@ -53,6 +76,7 @@ Validated on 2026-04-06:
 ## Minimum Routine
 
 1. Read `.whoami`.
-2. Check `switchboard history -n 10`.
-3. Send a short status note when starting or changing direction.
-4. Send another note when opening, updating, or handing off a PR.
+2. Run `switchboard history -n 10` — read what the peer sent.
+3. Send a **session start** stand-up before touching any code.
+4. Send a stand-up at every trigger point listed above.
+5. Send a **task complete** or **handoff** stand-up before ending the session.

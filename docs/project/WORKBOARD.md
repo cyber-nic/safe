@@ -569,8 +569,13 @@ Every PR should include:
 
 ## Daily Coordination
 
-- comment on the matching GitHub issue when work starts, blocks, hands off, or completes — do this first
-- update the GitHub Project item status to match the current task state
+- comment on the matching GitHub issue when work starts, blocks, hands off, or completes — do this first, every time
+- keep the GitHub Project item status current at all times:
+  - **Todo** → **In Progress** the moment work starts
+  - **In Progress** → **Blocked** immediately when a blocker is hit
+  - **In Progress** → **In Review** when the PR opens
+  - **In Review** → **Done** when the PR merges
+- send a switchboard stand-up at each of the same moments — see `docs/project/SWITHBOARD.md` for format and trigger list
 - update `Status` in this file when work starts or finishes; include the GitHub issue number in the entry
 - append handoffs to `docs/project/HANDOFFS.md`; post a matching comment on the GitHub issue
 - record durable decisions in `docs/project/DECISIONS.md`; reference the GitHub issue that drove the decision
