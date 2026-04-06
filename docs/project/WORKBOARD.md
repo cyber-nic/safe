@@ -98,7 +98,7 @@ Status:
 - W8 complete (`refs #19`)
 - W13 cross-boundary complete (`refs #35`)
 - W14 complete (`refs #34`)
-- W15 in progress (`refs #33`)
+- W15 complete (`refs #33`)
 
 Current owner:
 
@@ -476,7 +476,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #33`)
+- completed (`refs #33`)
 
 Write scope:
 
