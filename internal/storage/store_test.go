@@ -260,6 +260,39 @@ func TestStoreAndLoadSecretMaterial(t *testing.T) {
 	}
 }
 
+func TestStoreAndLoadLocalDeviceRecord(t *testing.T) {
+	store := NewMemoryObjectStore()
+	record := domain.LocalDeviceRecord{
+		SchemaVersion:       1,
+		AccountID:           "acct-dev-001",
+		DeviceID:            "dev-cli-001",
+		Label:               "Primary CLI",
+		DeviceType:          "cli",
+		SigningPublicKey:     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		EncryptionPublicKey: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+		CreatedAt:           "2026-04-06T00:00:00Z",
+		Status:              "active",
+	}
+
+	key, err := StoreLocalDeviceRecord(store, record)
+	if err != nil {
+		t.Fatalf("store device record: %v", err)
+	}
+
+	if key != "accounts/acct-dev-001/devices/dev-cli-001.json" {
+		t.Fatalf("unexpected device record key: %s", key)
+	}
+
+	loaded, err := LoadLocalDeviceRecord(store, "acct-dev-001", "dev-cli-001")
+	if err != nil {
+		t.Fatalf("load device record: %v", err)
+	}
+
+	if loaded.DeviceID != record.DeviceID || loaded.AccountID != record.AccountID || loaded.Status != record.Status {
+		t.Fatalf("unexpected loaded device record: %+v", loaded)
+	}
+}
+
 // TestCommitVaultMutationFull verifies that CommitVaultMutation writes all
 // records (secret, item, event, head) and that each can be read back.
 func TestCommitVaultMutationFull(t *testing.T) {

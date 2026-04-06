@@ -37,3 +37,7 @@ func SecretMaterialKey(accountID, collectionID, secretRef string) string {
 	encodedRef := base64.RawURLEncoding.EncodeToString([]byte(secretRef))
 	return fmt.Sprintf("accounts/%s/collections/%s/secrets/%s.txt", accountID, collectionID, encodedRef)
 }
+
+func DeviceRecordKey(accountID, deviceID string) string {
+	return fmt.Sprintf("accounts/%s/devices/%s.json", accountID, deviceID)
+}

@@ -211,6 +211,29 @@ func LoadLocalUnlockRecord(store ObjectStore, accountID string) (domain.LocalUnl
 	return domain.ParseLocalUnlockRecordJSON(payload)
 }
 
+func StoreLocalDeviceRecord(store ObjectStore, record domain.LocalDeviceRecord) (string, error) {
+	payload, err := record.CanonicalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	key := DeviceRecordKey(record.AccountID, record.DeviceID)
+	if err := store.Put(key, payload); err != nil {
+		return "", err
+	}
+
+	return key, nil
+}
+
+func LoadLocalDeviceRecord(store ObjectStore, accountID, deviceID string) (domain.LocalDeviceRecord, error) {
+	payload, err := store.Get(DeviceRecordKey(accountID, deviceID))
+	if err != nil {
+		return domain.LocalDeviceRecord{}, err
+	}
+
+	return domain.ParseLocalDeviceRecordJSON(payload)
+}
+
 func StoreSecretMaterialBytes(store ObjectStore, accountID, collectionID, secretRef string, secret []byte) (string, error) {
 	key := SecretMaterialKey(accountID, collectionID, secretRef)
 	if err := store.Put(key, secret); err != nil {
