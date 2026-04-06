@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 
 import { createWebClientServer } from "../src/server.ts";
 
@@ -113,6 +113,47 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
       }),
     });
     assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/onboarding/recovery");
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/unlock");
+
+    response = await invoke(app, {
+      url: "/onboarding/recovery",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Store this recovery key/);
+    assert.match(response.text, /24-word mnemonic/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/onboarding/recovery",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({}),
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /You must confirm/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/onboarding/recovery",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        confirmed: "yes",
+      }),
+    });
+    assert.equal(response.status, 303);
     assert.equal(response.headers.location, "/vault");
 
     response = await invoke(app, {
@@ -146,6 +187,15 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
     assert.equal(response.status, 200);
     assert.match(response.text, /ghp-secret-123/);
     assert.match(response.text, /login-github-primary/);
+
+    const recoveryRecord = JSON.parse(
+      await readFile(
+        path.join(dataDir, "accounts", "acct-dev-001", "recovery.json"),
+        "utf8",
+      ),
+    );
+    assert.equal(recoveryRecord.accountId, "acct-dev-001");
+    assert.equal(recoveryRecord.schemaVersion, 1);
 
     response = await invoke(app, {
       method: "POST",
@@ -305,6 +355,21 @@ test("web client requests remote account access during identify when control pla
       }),
     });
     assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/onboarding/recovery");
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/onboarding/recovery",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        confirmed: "yes",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault");
 
     response = await invoke(app, {
       url: "/vault",

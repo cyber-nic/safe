@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "dependencies": {
+    "bip39": "^3.1.0"
+  },
   "scripts": {
     "start": "node --experimental-strip-types src/main.ts",
     "build": "tsc -p tsconfig.json",

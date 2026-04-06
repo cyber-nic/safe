@@ -614,6 +614,39 @@ Out of scope for W19:
 - multi-account selection or provider-specific UI polish
 - device enrollment approval and revocation policy changes
 
+## I11 - Web First-Use Onboarding Contract
+
+Status:
+
+- accepted
+
+Owner:
+
+- Engineer1 (`refs #51`)
+
+Frozen for W20 (`refs #51`):
+
+Goals:
+
+- keep returning users on the normal unlock path
+- require first-time users to see and acknowledge the recovery key before the vault is considered initialized
+- keep the web onboarding flow aligned with the existing local unlock and recovery-record contracts
+
+Rules:
+
+- first-time web onboarding begins only when no local `unlock.json` exists for the account
+- entering a first-use password is not enough to enter the vault; the client must generate a recovery key, present the mnemonic once, and require explicit acknowledgement before finalizing account-local state
+- first-use persistence writes both `unlock.json` and `recovery.json`; the web client must not persist a partially initialized account that lacks the recovery record
+- after acknowledgement, later sessions for the same account go straight to unlock and must not replay onboarding
+- if the user abandons onboarding before acknowledgement, the vault remains unavailable until first-use is completed again
+
+Out of scope for W20:
+
+- recovery-key restore flow on the web client
+- mnemonic checksum validation during later recovery entry
+- device approval UX
+- broader vault CRUD or search polish
+
 ## I5 - Handoff Protocol
 
 Status:

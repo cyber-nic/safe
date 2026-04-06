@@ -53,6 +53,42 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W20)
+
+Task:
+
+- `W20 - Web account onboarding flow`
+
+Status:
+
+- in progress; refs #51
+
+Files touched:
+
+- `apps/web/package.json`
+- `apps/web/src/local-runtime.ts`
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `docs/project/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
+- `docs/project/HANDOFFS.md`
+- `pnpm-lock.yaml`
+
+Outcome:
+
+- first-use web onboarding now stages local unlock plus recovery state in memory, presents a one-time recovery mnemonic, and requires explicit acknowledgement before the vault is initialized
+- returning users still go through the normal unlock path instead of replaying onboarding
+- the web runtime now persists `recovery.json` alongside `unlock.json` when onboarding is confirmed
+
+Verification:
+
+- `pnpm --filter @safe/web test`
+- `pnpm --filter @safe/web check` still fails in this repo for existing TypeScript baseline issues outside W20
+
+Next action:
+
+- finish reviewing the W20 delta, then commit and open the onboarding PR on issue `#51`
+
 ### 2026-04-06 - Engineer1 progress note (W19)
 
 Task:
