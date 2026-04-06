@@ -505,7 +505,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #32`)
+- completed (`refs #32`, PR #43)
 
 Write scope:
 
@@ -535,7 +535,7 @@ Owner:
 
 Status:
 
-- planned (`refs #37`)
+- in progress (`refs #37`)
 
 Write scope:
 
@@ -546,6 +546,7 @@ Write scope:
 Output:
 
 - reproducible two-device sync proof through the shipped clients
+- CLI `sync push` and `sync pull` prove the real object-store path across two devices; web consumes the merged account-access capability route during identify
 
 Dependencies:
 

@@ -15,13 +15,37 @@ import {
 
 type SessionState = {
   identity: ClientIdentity | null;
+  remoteAccess: AccountAccessResponse | null;
   accountKey: Buffer | null;
+};
+
+type AccountAccessCapability = {
+  version: number;
+  accountId: string;
+  deviceId: string;
+  bucket: string;
+  prefix: string;
+  allowedActions: string[];
+  issuedAt: string;
+  expiresAt: string;
+};
+
+type AccountAccessResponse = {
+  bucket: string;
+  endpoint: string;
+  region: string;
+  keyId: string;
+  token: string;
+  capability: AccountAccessCapability;
 };
 
 export type WebClientServerOptions = {
   dataDir?: string;
   now?: () => Date;
   resolveIdentity?: () => Promise<ClientIdentity>;
+  resolveRemoteAccess?: (
+    identity: ClientIdentity,
+  ) => Promise<AccountAccessResponse | null>;
 };
 
 export function createWebClientServer(
@@ -34,6 +58,8 @@ export function createWebClientServer(
   const store = createLocalRuntimeStore({ baseDir: dataDir });
   const now = options.now ?? (() => new Date());
   const resolveIdentity = options.resolveIdentity ?? defaultResolveIdentity;
+  const resolveRemoteAccess =
+    options.resolveRemoteAccess ?? defaultResolveRemoteAccess;
   const sessions = new Map<string, SessionState>();
 
   return (request, response) => {
@@ -77,6 +103,7 @@ export function createWebClientServer(
 
     if (request.method === "POST" && url.pathname === "/identify") {
       session.identity = await resolveIdentity();
+      session.remoteAccess = await resolveRemoteAccess(session.identity);
       session.accountKey = null;
       redirect(response, "/unlock");
       return;
@@ -160,6 +187,7 @@ export function createWebClientServer(
         200,
         renderVaultPage({
           identity: session.identity,
+          remoteAccess: session.remoteAccess,
           itemId: url.searchParams.get("item"),
           unlocked,
         }),
@@ -205,6 +233,7 @@ export function createWebClientServer(
           200,
           renderVaultPage({
             identity: session.identity,
+            remoteAccess: session.remoteAccess,
             unlocked,
             itemId: null,
             error:
@@ -246,6 +275,7 @@ export function createWebClientServer(
     const sessionId = randomUUID();
     const session = {
       identity: null,
+      remoteAccess: null,
       accountKey: null,
     };
     sessions.set(sessionId, session);
@@ -330,6 +360,7 @@ function renderUnlockPage(input: {
 
 function renderVaultPage(input: {
   identity: ClientIdentity;
+  remoteAccess: AccountAccessResponse | null;
   unlocked: Awaited<ReturnType<ReturnType<typeof createLocalRuntimeStore>["unlock"]>>;
   itemId: string | null;
   error?: string;
@@ -417,6 +448,18 @@ function renderVaultPage(input: {
         </article>
       </section>
 
+      ${input.remoteAccess
+        ? `
+      <section class="panel stack">
+        <p class="eyebrow">Remote Sync</p>
+        <h2>Access ready</h2>
+        <p>Prefix <code>${escapeHTML(input.remoteAccess.capability.prefix)}</code></p>
+        <p>Actions <code>${escapeHTML(input.remoteAccess.capability.allowedActions.join(", "))}</code></p>
+        <p>Expires ${escapeHTML(input.remoteAccess.capability.expiresAt)}</p>
+      </section>
+      `
+        : ""}
+
       ${input.error ? `<p class="error">${escapeHTML(input.error)}</p>` : ""}
 
       <section class="vault-grid">
@@ -476,6 +519,49 @@ async function defaultResolveIdentity(): Promise<ClientIdentity> {
     deviceId: process.env.SAFE_DEV_DEVICE_ID ?? "dev-web-001",
     env: process.env.SAFE_ENV ?? "development",
   };
+}
+
+async function defaultResolveRemoteAccess(
+  identity: ClientIdentity,
+): Promise<AccountAccessResponse | null> {
+  const controlPlaneURL =
+    process.env.SAFE_WEB_CONTROL_PLANE_URL ??
+    process.env.SAFE_CONTROL_PLANE_URL;
+
+  if (!controlPlaneURL) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(new URL("/v1/access/account", controlPlaneURL), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        accountId: identity.accountId,
+        deviceId: identity.deviceId,
+      }),
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as AccountAccessResponse;
+    if (
+      payload.token &&
+      payload.capability?.prefix &&
+      Array.isArray(payload.capability.allowedActions) &&
+      payload.capability.allowedActions.length > 0 &&
+      payload.capability.expiresAt
+    ) {
+      return payload;
+    }
+  } catch {
+    // Fall back to local-only mode when remote access is unavailable.
+  }
+
+  return null;
 }
 
 async function readForm(request: IncomingMessage): Promise<URLSearchParams> {

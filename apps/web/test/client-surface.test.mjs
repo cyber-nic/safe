@@ -215,3 +215,110 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("web client requests remote account access during identify when control plane is configured", async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "safe-web-"));
+  const previousURL = process.env.SAFE_WEB_CONTROL_PLANE_URL;
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+
+  process.env.SAFE_WEB_CONTROL_PLANE_URL = "http://control-plane.test";
+  globalThis.fetch = async (input, init = {}) => {
+    const url = input instanceof URL ? input : new URL(input);
+    requests.push({
+      path: url.pathname,
+      method: init.method ?? "GET",
+      body: init.body ?? null,
+    });
+
+    if (url.pathname === "/v1/dev/session") {
+      return new Response(
+        JSON.stringify({
+          accountId: "acct-dev-001",
+          deviceId: "dev-web-001",
+          env: "test",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    if (url.pathname === "/v1/access/account") {
+      return new Response(
+        JSON.stringify({
+          bucket: "safe-test",
+          endpoint: "http://localstack:4566",
+          region: "us-east-1",
+          keyId: "dev-hmac-v1",
+          token: "signed-token",
+          capability: {
+            version: 1,
+            accountId: "acct-dev-001",
+            deviceId: "dev-web-001",
+            bucket: "safe-test",
+            prefix: "accounts/acct-dev-001/",
+            allowedActions: ["get", "put"],
+            issuedAt: "2026-04-06T08:00:00Z",
+            expiresAt: "2026-04-06T08:05:00Z",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected fetch ${url.pathname}`);
+  };
+
+  try {
+    const app = createWebClientServer({ dataDir });
+
+    let response = await invoke(app, {
+      method: "POST",
+      url: "/identify",
+    });
+    assert.equal(response.status, 303);
+    const cookie = getSetCookie(response);
+    assert.ok(cookie);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/unlock",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        password: "correct horse battery staple",
+      }),
+    });
+    assert.equal(response.status, 303);
+
+    response = await invoke(app, {
+      url: "/vault",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Remote Sync/);
+    assert.match(response.text, /accounts\/acct-dev-001\//);
+
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].path, "/v1/dev/session");
+    assert.equal(requests[1].path, "/v1/access/account");
+    assert.equal(requests[1].method, "POST");
+    assert.match(String(requests[1].body), /"accountId":"acct-dev-001"/);
+    assert.match(String(requests[1].body), /"deviceId":"dev-web-001"/);
+  } finally {
+    if (previousURL === undefined) {
+      delete process.env.SAFE_WEB_CONTROL_PLANE_URL;
+    } else {
+      process.env.SAFE_WEB_CONTROL_PLANE_URL = previousURL;
+    }
+    globalThis.fetch = previousFetch;
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});

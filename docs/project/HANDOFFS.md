@@ -39,6 +39,71 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W17)
+
+Task:
+
+- `W17 - Deliver a two-device single-user sync smoke path`
+
+Status:
+
+- in progress; refs #37
+
+Files requested:
+
+- `apps/web/**`
+- `cmd/safe/**`
+- `docs/project/**` for milestone closeout only if needed
+
+Files touched:
+
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `cmd/safe/main.go`
+- `cmd/safe/main_test.go`
+
+Outcome:
+
+- the web client now requests account-scoped remote access during identify and surfaces the granted prefix and actions in the unlocked vault view
+- the CLI now requests account-scoped remote access during bootstrap and records the granted prefix, actions, and expiry in its bootstrap summary
+- both shipped clients now consume the merged W16 capability endpoint instead of treating control-plane access mediation as doc-only
+- the CLI now ships `sync push` and `sync pull` against the merged S3-backed `ObjectStoreWithCAS`, persists local device signing material, and proves restart-safe two-device sync in tests
+- the W17 proof path now explicitly rejects tampered signed heads during `sync pull`
+
+Next action:
+
+- open the W17 PR and hand review over with the automated two-device CLI sync proof plus the web access-path consumption updates
+
+### 2026-04-06 - Engineer1 completion note (W16)
+
+Task:
+
+- `W16 - Implement minimal control-plane access mediation for single-account sync`
+
+Status:
+
+- completed; refs #32 — https://github.com/cyber-nic/safe/pull/43
+
+Files touched:
+
+- `docs/project/INTERFACES.md` (new I9 account-scoped access capability contract)
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+- `internal/auth/access.go`
+- `internal/auth/access_test.go`
+- `cmd/control-plane/main.go`
+- `cmd/control-plane/main_test.go`
+
+Outcome:
+
+- the control plane now issues short-lived signed account-path access capabilities via `POST /v1/access/account`
+- access is bound to `accountId`, `deviceId`, `bucket`, allowed actions, and the exact `accounts/<accountID>/` prefix
+- default issuance is `get` plus `put`; `list` remains explicit instead of implied
+
+Next action:
+
+- W17 can consume the merged W16 capability contract and endpoint from `main`
+
 ### 2026-04-06 - Engineer1 progress note (W16)
 
 Task:
