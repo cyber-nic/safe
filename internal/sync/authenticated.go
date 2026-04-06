@@ -17,8 +17,8 @@ type SignedAccountConfig struct {
 }
 
 type SignedCollectionHead struct {
-	Record    domain.CollectionHeadRecord
-	Signature string
+	Record    domain.CollectionHeadRecord `json:"record"`
+	Signature string                      `json:"signature"`
 }
 
 func VerifySignedAccountConfig(candidate SignedAccountConfig, trusted *SignedAccountConfig, accountPublicKey ed25519.PublicKey) error {
@@ -59,7 +59,18 @@ func VerifySignedAccountConfig(candidate SignedAccountConfig, trusted *SignedAcc
 	return nil
 }
 
-func VerifySignedCollectionHead(candidate SignedCollectionHead, trusted *SignedCollectionHead, latestEvent domain.VaultEventRecord, authoringDevice domain.LocalDeviceRecord) error {
+func SignCollectionHead(record domain.CollectionHeadRecord, privateKey ed25519.PrivateKey) (SignedCollectionHead, error) {
+	payload, err := record.CanonicalJSON()
+	if err != nil {
+		return SignedCollectionHead{}, err
+	}
+	return SignedCollectionHead{
+		Record:    record,
+		Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(privateKey, payload)),
+	}, nil
+}
+
+func VerifySignedCollectionHead(trusted domain.CollectionHeadRecord, candidate SignedCollectionHead, latestEvent domain.VaultEventRecord, authoringDevice domain.LocalDeviceRecord) error {
 	candidatePayload, err := candidate.canonicalPayload()
 	if err != nil {
 		return err
@@ -104,10 +115,20 @@ func VerifySignedCollectionHead(candidate SignedCollectionHead, trusted *SignedC
 		return ErrMutableMetadataSignature("collectionHead")
 	}
 
-	if trusted == nil {
+	if trusted.LatestEventID == "" {
+		if trusted.AccountID != "" && trusted.AccountID != candidate.Record.AccountID {
+			return ErrReplayInvariant("trustedHead.accountId")
+		}
+		if trusted.CollectionID != "" && trusted.CollectionID != candidate.Record.CollectionID {
+			return ErrReplayInvariant("trustedHead.collectionId")
+		}
+		if candidate.Record.LatestSeq < trusted.LatestSeq {
+			return ErrStaleHead(trusted, candidate.Record)
+		}
 		return nil
 	}
-	return EnsureMonotonicHead(trusted.Record, candidate.Record)
+
+	return EnsureMonotonicHead(trusted, candidate.Record)
 }
 
 func (record SignedAccountConfig) canonicalPayload() ([]byte, error) {
@@ -132,6 +153,46 @@ func (record SignedAccountConfig) canonicalPayload() ([]byte, error) {
 
 func (record SignedCollectionHead) canonicalPayload() ([]byte, error) {
 	return record.Record.CanonicalJSON()
+}
+
+func (record SignedCollectionHead) Validate() error {
+	if err := record.Record.Validate(); err != nil {
+		return err
+	}
+	_, err := decodeSignature(record.Signature)
+	return err
+}
+
+func (record SignedCollectionHead) CanonicalJSON() ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+
+	headJSON, err := record.Record.CanonicalJSON()
+	if err != nil {
+		return nil, err
+	}
+
+	type canonicalSignedCollectionHead struct {
+		Record    json.RawMessage `json:"record"`
+		Signature string          `json:"signature"`
+	}
+
+	return json.Marshal(canonicalSignedCollectionHead{
+		Record:    headJSON,
+		Signature: record.Signature,
+	})
+}
+
+func ParseSignedCollectionHeadJSON(data []byte) (SignedCollectionHead, error) {
+	var record SignedCollectionHead
+	if err := json.Unmarshal(data, &record); err != nil {
+		return SignedCollectionHead{}, err
+	}
+	if err := record.Validate(); err != nil {
+		return SignedCollectionHead{}, err
+	}
+	return record, nil
 }
 
 func decodeSignature(signature string) ([]byte, error) {

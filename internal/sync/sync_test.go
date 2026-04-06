@@ -1,12 +1,14 @@
 package sync
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	internalcrypto "github.com/ndelorme/safe/internal/crypto"
 	"github.com/ndelorme/safe/internal/domain"
 	"github.com/ndelorme/safe/internal/storage"
 )
@@ -65,12 +67,40 @@ func newStore() *storage.MemoryObjectStoreWithCAS {
 	return storage.NewMemoryObjectStoreWithCAS()
 }
 
+func mustStoreActiveDevice(t *testing.T, store storage.ObjectStore, accountID, deviceID string) ed25519.PrivateKey {
+	t.Helper()
+
+	keyPair, err := internalcrypto.GenerateDeviceKeyPair()
+	if err != nil {
+		t.Fatalf("generate device key pair: %v", err)
+	}
+	deviceRecord, err := internalcrypto.CreateDeviceRecord(accountID, deviceID, "Sync test device", "cli", keyPair)
+	if err != nil {
+		t.Fatalf("create device record: %v", err)
+	}
+	payload, err := deviceRecord.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonical device record: %v", err)
+	}
+	if err := store.Put(deviceRecordKey(accountID, deviceID), payload); err != nil {
+		t.Fatalf("store device record: %v", err)
+	}
+
+	return keyPair.SigningPrivateKey
+}
+
+func newSignedWriter(store *storage.MemoryObjectStoreWithCAS, signingKey ed25519.PrivateKey) *SyncWriter {
+	return NewSyncWriter(store, nil, func(head domain.CollectionHeadRecord) (SignedCollectionHead, error) {
+		return SignCollectionHead(head, signingKey)
+	})
+}
+
 // --- tests ---
 
-// TestSyncWriterSingleCommit verifies a single mutation is readable after commit.
 func TestSyncWriterSingleCommit(t *testing.T) {
 	store := newStore()
-	writer := NewSyncWriter(store, nil)
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writer := newSignedWriter(store, signingKey)
 	reader := NewSyncReader(store, nil)
 
 	if err := writer.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
@@ -89,15 +119,13 @@ func TestSyncWriterSingleCommit(t *testing.T) {
 	}
 }
 
-// TestTwoRuntimesConverge verifies that two independent SyncWriters sharing
-// one object store produce an identical projection when both sync.
 func TestTwoRuntimesConverge(t *testing.T) {
 	store := newStore()
-	writerA := NewSyncWriter(store, nil)
-	writerB := NewSyncWriter(store, nil)
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writerA := newSignedWriter(store, signingKey)
+	writerB := newSignedWriter(store, signingKey)
 	reader := NewSyncReader(store, nil)
 
-	// Runtime A writes seq=1 and seq=2.
 	if err := writerA.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("A commit seq=1: %v", err)
 	}
@@ -105,7 +133,6 @@ func TestTwoRuntimesConverge(t *testing.T) {
 		t.Fatalf("A commit seq=2: %v", err)
 	}
 
-	// Runtime B syncs to confirm it sees A's writes.
 	projB, err := reader.IncrementalSync(testAccountID, testCollectionID, 0)
 	if err != nil {
 		t.Fatalf("B sync: %v", err)
@@ -114,12 +141,10 @@ func TestTwoRuntimesConverge(t *testing.T) {
 		t.Fatalf("B expected LatestSeq=2, got %d", projB.LatestSeq)
 	}
 
-	// Runtime B appends seq=3.
 	if err := writerB.CommitSyncMutation(makeMutation(3, "item-c", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("B commit seq=3: %v", err)
 	}
 
-	// Final sync sees all three events converged.
 	finalProj, err := reader.IncrementalSync(testAccountID, testCollectionID, 0)
 	if err != nil {
 		t.Fatalf("final sync: %v", err)
@@ -134,17 +159,12 @@ func TestTwoRuntimesConverge(t *testing.T) {
 	}
 }
 
-// TestInterruptSafetyImmutablesWithoutHead verifies that immutable objects
-// uploaded without a head advancement are ignored during replay. The head is
-// the commit point; unreachable objects must not affect the projection.
 func TestInterruptSafetyImmutablesWithoutHead(t *testing.T) {
 	store := newStore()
 	reader := NewSyncReader(store, nil)
 
-	// Manually upload an event without advancing the head.
-	// This simulates a crash after step 2 (immutable upload) but before CAS.
 	ev := makeEvent(1, "orphan-item", domain.VaultEventActionPutItem)
-	evBytes, err := json.Marshal(ev)
+	evBytes, err := ev.CanonicalJSON()
 	if err != nil {
 		t.Fatalf("marshal orphan event: %v", err)
 	}
@@ -152,7 +172,6 @@ func TestInterruptSafetyImmutablesWithoutHead(t *testing.T) {
 		t.Fatalf("upload orphan event: %v", err)
 	}
 
-	// No head was written — the projection must be empty.
 	proj, err := reader.IncrementalSync(testAccountID, testCollectionID, 0)
 	if err != nil {
 		t.Fatalf("sync after orphan upload: %v", err)
@@ -162,11 +181,10 @@ func TestInterruptSafetyImmutablesWithoutHead(t *testing.T) {
 	}
 }
 
-// TestStaleHeadRejected verifies that IncrementalSync rejects a candidate head
-// that is behind the caller's claimed cursor (since value).
 func TestStaleHeadRejected(t *testing.T) {
 	store := newStore()
-	writer := NewSyncWriter(store, nil)
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writer := newSignedWriter(store, signingKey)
 
 	if err := writer.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("commit seq=1: %v", err)
@@ -175,19 +193,16 @@ func TestStaleHeadRejected(t *testing.T) {
 		t.Fatalf("commit seq=2: %v", err)
 	}
 
-	// Request sync with since=3 (ahead of the committed head at seq=2).
-	// The head (seq=2) is stale relative to the caller's cursor (3).
 	_, err := NewSyncReader(store, nil).IncrementalSync(testAccountID, testCollectionID, 3)
 	if err == nil {
 		t.Fatal("expected error when head is behind caller cursor, got nil")
 	}
 }
 
-// TestIdempotentCommit verifies that committing the same event twice succeeds
-// on the second attempt without error or duplication.
 func TestIdempotentCommit(t *testing.T) {
 	store := newStore()
-	writer := NewSyncWriter(store, nil)
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writer := newSignedWriter(store, signingKey)
 	m := makeMutation(1, "item-a", domain.VaultEventActionPutItem)
 
 	if err := writer.CommitSyncMutation(m); err != nil {
@@ -206,13 +221,11 @@ func TestIdempotentCommit(t *testing.T) {
 	}
 }
 
-// TestCASConflictIsDetected verifies ErrCASConflict is returned when a stale
-// ETag is presented to PutIfMatch.
 func TestCASConflictIsDetected(t *testing.T) {
 	store := newStore()
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
 
-	// Write seq=1 so we have an initial ETag.
-	writer := NewSyncWriter(store, nil)
+	writer := newSignedWriter(store, signingKey)
 	if err := writer.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("setup commit: %v", err)
 	}
@@ -223,20 +236,16 @@ func TestCASConflictIsDetected(t *testing.T) {
 		t.Fatalf("get head ETag: %v", err)
 	}
 
-	// A concurrent writer advances the head.
-	if err := NewSyncWriter(store, nil).CommitSyncMutation(makeMutation(2, "item-b", domain.VaultEventActionPutItem)); err != nil {
+	if err := newSignedWriter(store, signingKey).CommitSyncMutation(makeMutation(2, "item-b", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("concurrent commit: %v", err)
 	}
 
-	// The stale ETag must now cause a CAS conflict.
 	_, casErr := store.PutIfMatch(headKey, []byte(`{}`), etag)
 	if !errors.Is(casErr, storage.ErrCASConflict) {
 		t.Fatalf("expected ErrCASConflict, got %v", casErr)
 	}
 }
 
-// TestEmptyCollectionSync verifies sync on a collection with no committed
-// events returns an empty projection without error.
 func TestEmptyCollectionSync(t *testing.T) {
 	store := newStore()
 	reader := NewSyncReader(store, nil)
@@ -253,11 +262,10 @@ func TestEmptyCollectionSync(t *testing.T) {
 	}
 }
 
-// TestDeleteEventConverges verifies that a delete event removes the item from
-// the projection in both runtimes.
 func TestDeleteEventConverges(t *testing.T) {
 	store := newStore()
-	writer := NewSyncWriter(store, nil)
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writer := newSignedWriter(store, signingKey)
 
 	if err := writer.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
 		t.Fatalf("put: %v", err)
@@ -275,5 +283,38 @@ func TestDeleteEventConverges(t *testing.T) {
 	}
 	if proj.LatestSeq != 2 {
 		t.Fatalf("expected LatestSeq=2, got %d", proj.LatestSeq)
+	}
+}
+
+func TestReaderRejectsUnsignedHead(t *testing.T) {
+	store := newStore()
+	signingKey := mustStoreActiveDevice(t, store, testAccountID, testDeviceID)
+	writer := newSignedWriter(store, signingKey)
+
+	if err := writer.CommitSyncMutation(makeMutation(1, "item-a", domain.VaultEventActionPutItem)); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	headKey := storage.CollectionHeadKey(testAccountID, testCollectionID)
+	payload, _, err := store.GetWithETag(headKey)
+	if err != nil {
+		t.Fatalf("get signed head: %v", err)
+	}
+	var signedHead SignedCollectionHead
+	if err := json.Unmarshal(payload, &signedHead); err != nil {
+		t.Fatalf("unmarshal signed head: %v", err)
+	}
+	signedHead.Signature = ""
+	unsignedPayload, err := json.Marshal(signedHead)
+	if err != nil {
+		t.Fatalf("marshal unsigned head: %v", err)
+	}
+	if err := store.Put(headKey, unsignedPayload); err != nil {
+		t.Fatalf("overwrite unsigned head: %v", err)
+	}
+
+	_, err = NewSyncReader(store, nil).IncrementalSync(testAccountID, testCollectionID, 0)
+	if err == nil {
+		t.Fatal("expected unsigned head rejection")
 	}
 }

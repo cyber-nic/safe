@@ -318,9 +318,15 @@ Mutable record families in scope:
 
 Out of scope for I7:
 
-- the exact binary or JSON envelope used to carry signatures
+- exact signature envelopes for mutable metadata families other than the persisted collection-head path frozen below
 - control-plane storage schema
 - share-protocol implementation details beyond the trust checks consumers must enforce
+
+Frozen for W12 (`refs #36`):
+
+- sync stores the mutable collection head at `accounts/<accountID>/collections/<collectionID>/head.json` as `{"record": <CollectionHeadRecord>, "signature": <base64url-no-pad Ed25519 signature>}`
+- the signature covers the canonical JSON bytes of `record` only
+- sync readers and writers must load the signed head, the referenced latest event, and the active authoring device record before trusting or advancing the head
 
 ### Canonicalization and Authentication
 

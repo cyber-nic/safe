@@ -45,7 +45,7 @@ Current status:
 
 - M1 remains complete on `main`; the CLI and local web client already close the first trustworthy local loop (`refs #1`, `#22`)
 - post-M1 groundwork is in place: recovery-key wrap and unwrap shipped in code (`refs #19`) and rollback rules are now frozen as a contract (`refs #18`)
-- M2 planning is now live in GitHub and in repo docs; no M2 implementation slice has landed yet (`refs #30`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`)
+- M2 planning is live in GitHub and in repo docs, and the sync-integrity foundation slices are now on `main`: W12 signed-head verification, W13 device-enrollment contract, W14 enrollment primitives, and W15 object-store sync (`refs #30`, `#31`, `#33`, `#34`, `#35`, `#36`)
 
 Non-goals for this milestone:
 
@@ -57,8 +57,8 @@ Non-goals for this milestone:
 Milestone kickoff status:
 
 - W11 defines the M2 boundary and closes the planning reset (`refs #31`)
-- W12, W13, and W15 are the critical-path contract and implementation slices for sync integrity (`refs #36`, `#35`, `#33`)
-- W14, W16, and W17 stay explicit downstream tasks rather than hidden scope (`refs #34`, `#32`, `#37`)
+- W12, W13, and W15 have landed and now form the accepted sync-integrity foundation on `main` (`refs #36`, `#35`, `#33`)
+- W14 is complete and W16 plus W17 stay explicit downstream tasks rather than hidden scope (`refs #34`, `#32`, `#37`)
 
 ## Execution Rules
 
@@ -373,7 +373,7 @@ Owner:
 
 Status:
 
-- planned (`refs #36`)
+- completed (`refs #36`)
 
 Write scope:
 
@@ -433,9 +433,9 @@ The next implementation wave is now defined and on the board.
 
 Current focus:
 
-- merge W11 so the repo workboard, decisions log, and GitHub project stay aligned on M2
-- treat W12 and W13 as the contract and integrity gates before downstream sync or client wiring
+- carry the landed W12-W15 sync-integrity work into the remaining control-plane and client proof slices
 - keep browser-native adapter work explicitly deferred until the two-device sync proof exists
+- treat any further mutable-metadata contract changes as explicit doc-first work, not incidental implementation drift
 
 ## Queued Tasks
 

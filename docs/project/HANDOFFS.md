@@ -67,6 +67,31 @@ Next action:
 
 - W15 and W14 are complete; W16 (Engineer1) and W17 (Engineer1) are on the critical path to two-device sync proof
 
+### 2026-04-06 - Engineer1 completion note (W12)
+
+Task:
+
+- `W12 - Implement signed mutable-metadata verification in code`
+
+Status:
+
+- completed; refs #36
+
+Files touched:
+
+- `internal/sync/authenticated.go`, `internal/sync/verify.go`, `internal/sync/writer.go`, `internal/sync/reader.go`, `internal/sync/authenticated_test.go`, `internal/sync/sync_test.go`
+- `docs/project/WORKBOARD.md`, `docs/project/INTERFACES.md`, `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the shared sync path now persists signed collection-head envelopes at the head key instead of unsigned head records
+- sync readers and writers verify the signed head against the referenced latest event plus the active authoring device record before trusting or advancing mutable state
+- W15 no longer depends on the old monotonic-only stub integration note
+
+Next action:
+
+- W16 and W17 can consume the landed signed-head verification path on `main` without reopening the W12 boundary
+
 ### 2026-04-06 - Engineer2 progress note (W15)
 
 Task:
@@ -249,10 +274,11 @@ Files:
 - `docs/project/INTERFACES.md`
 - `docs/project/DECISIONS.md`
 - `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
 
 Next action:
 
-- implement the durable adapter and restart-survival tests against the frozen contract
+- begin the durable local persistence implementation against the frozen interface and decision set
 
 ### 2026-04-04 - Engineer1 internal note
 
@@ -262,27 +288,25 @@ Task:
 
 Status:
 
-- completed (`refs #5`)
+- completed
 
-Files:
+Files touched:
 
-- `internal/crypto/**`
-- `internal/domain/unlock.go`
+- `internal/crypto/local_unlock.go`
+- `internal/crypto/local_unlock_test.go`
+- `internal/crypto/testdata/local_unlock_fixture.json`
+- `internal/domain/account_config.go`
+- `internal/storage/store.go`
 - `docs/project/INTERFACES.md`
 - `docs/project/DECISIONS.md`
 - `docs/project/WORKBOARD.md`
-
-Contract updates:
-
-- froze `accounts/<accountID>/unlock.json` as the account-scoped unlock metadata path
-- froze the `LocalUnlockRecord` Argon2id plus AES-256-GCM schema for password-derived account unlock
-- froze the versioned AES-256-GCM JSON envelope used for encrypted secret material
+- `docs/project/HANDOFFS.md`
 
 Next action:
 
-- W4 can now wire `cmd/safe/**` to the durable adapter and real unlock flow without inventing new local crypto formats
+- W4 is unblocked once W2 merges; use the accepted account-local unlock record and storage key
 
-### 2026-04-04 - Engineer2 to Engineer1
+### 2026-04-04 - Engineer2 progress note (W2)
 
 Task:
 
@@ -290,13 +314,55 @@ Task:
 
 Status:
 
-- completed; refs #4
+- in progress
 
 Files touched:
 
-- `internal/storage/file_store.go` (new — FileObjectStore, atomic writes, path-mapped keys)
-- `internal/storage/file_store_test.go` (new — restart-survival tests for all five persisted units)
-- `internal/storage/store.go` (updated — VaultMutation + CommitVaultMutation)
+- `internal/storage/store.go`
+- `internal/storage/store_test.go`
+
+Blocker:
+
+- none
+
+Next action:
+
+- finish restart-safe persistence tests and mutation boundary handling, then request review
+
+### 2026-04-04 - Engineer2 completion note (W2)
+
+Task:
+
+- `W2 - Implement durable local persistence adapter`
+
+Status:
+
+- completed; refs #4 — https://github.com/cyber-nic/safe/pull/10
+
+Files touched:
+
+- `internal/storage/store.go`
+- `internal/storage/store_test.go`
+
+Next action:
+
+- Engineer1 review before merge
+- W4 remains blocked on W3
+
+### 2026-04-04 - Engineer1 contribution to W4
+
+Task:
+
+- `W4 - Replace CLI starter bootstrapping on the save/read path`
+
+Status:
+
+- merged on `main`; refs #3 — https://github.com/cyber-nic/safe/pull/14
+
+Files touched:
+
+- `cmd/safe/main.go` (durable bootstrap, encrypted secrets, CommitVaultMutation integration, no auto-seed)
+- `cmd/safe/main_test.go` (real tests for identify, save, read, reopen)
 - `internal/storage/store_test.go` (updated — CommitVaultMutation tests including partial-failure proof)
 
 Next action:

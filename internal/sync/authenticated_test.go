@@ -13,7 +13,7 @@ import (
 func TestVerifySignedAccountConfigAcceptsValidSignature(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		t.Fatalf("generate key: %v", err)
+		fatalf(t, "generate key: %v", err)
 	}
 
 	candidate := mustSignAccountConfig(t, privateKey, domain.StarterAccountConfigRecord(), 2)
@@ -29,11 +29,7 @@ func TestVerifySignedAccountConfigRejectsUnsignedMetadata(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	candidate := SignedAccountConfig{
-		Version: 1,
-		Record:  domain.StarterAccountConfigRecord(),
-	}
-
+	candidate := SignedAccountConfig{Version: 1, Record: domain.StarterAccountConfigRecord()}
 	if err := VerifySignedAccountConfig(candidate, nil, publicKey); err == nil {
 		t.Fatal("expected unsigned metadata rejection")
 	}
@@ -84,7 +80,7 @@ func TestVerifySignedCollectionHeadAcceptsValidSignature(t *testing.T) {
 	}
 
 	candidate := mustSignCollectionHead(t, keyPair.SigningPrivateKey, head)
-	if err := VerifySignedCollectionHead(candidate, nil, event, deviceRecord); err != nil {
+	if err := VerifySignedCollectionHead(domain.CollectionHeadRecord{}, candidate, event, deviceRecord); err != nil {
 		t.Fatalf("verify signed collection head: %v", err)
 	}
 }
@@ -103,7 +99,7 @@ func TestVerifySignedCollectionHeadRejectsWrongAuthoringDevice(t *testing.T) {
 	}
 
 	candidate := mustSignCollectionHead(t, keyPair.SigningPrivateKey, head)
-	if err := VerifySignedCollectionHead(candidate, nil, event, deviceRecord); err == nil {
+	if err := VerifySignedCollectionHead(domain.CollectionHeadRecord{}, candidate, event, deviceRecord); err == nil {
 		t.Fatal("expected authoring-device binding rejection")
 	}
 }
@@ -128,7 +124,7 @@ func TestVerifySignedCollectionHeadRejectsBadSignature(t *testing.T) {
 	deviceRecord.SigningPublicKey = base64.RawURLEncoding.EncodeToString(otherPublic)
 
 	candidate := mustSignCollectionHead(t, keyPair.SigningPrivateKey, head)
-	if err := VerifySignedCollectionHead(candidate, nil, event, deviceRecord); err == nil {
+	if err := VerifySignedCollectionHead(domain.CollectionHeadRecord{}, candidate, event, deviceRecord); err == nil {
 		t.Fatal("expected signature failure")
 	}
 }
@@ -153,10 +149,8 @@ func TestVerifySignedCollectionHeadRejectsRollback(t *testing.T) {
 		t.Fatalf("create device record: %v", err)
 	}
 
-	trusted := mustSignCollectionHead(t, keyPair.SigningPrivateKey, trustedHead)
 	candidate := mustSignCollectionHead(t, keyPair.SigningPrivateKey, domain.StarterCollectionHeadRecord())
-
-	if err := VerifySignedCollectionHead(candidate, &trusted, event, deviceRecord); err == nil {
+	if err := VerifySignedCollectionHead(trustedHead, candidate, event, deviceRecord); err == nil {
 		t.Fatal("expected stale head rejection")
 	}
 }
@@ -164,10 +158,7 @@ func TestVerifySignedCollectionHeadRejectsRollback(t *testing.T) {
 func mustSignAccountConfig(t *testing.T, privateKey ed25519.PrivateKey, record domain.AccountConfigRecord, version int) SignedAccountConfig {
 	t.Helper()
 
-	signed := SignedAccountConfig{
-		Version: version,
-		Record:  record,
-	}
+	signed := SignedAccountConfig{Version: version, Record: record}
 	payload, err := signed.canonicalPayload()
 	if err != nil {
 		t.Fatalf("canonical signed account config: %v", err)
@@ -179,13 +170,14 @@ func mustSignAccountConfig(t *testing.T, privateKey ed25519.PrivateKey, record d
 func mustSignCollectionHead(t *testing.T, privateKey ed25519.PrivateKey, record domain.CollectionHeadRecord) SignedCollectionHead {
 	t.Helper()
 
-	signed := SignedCollectionHead{
-		Record: record,
-	}
-	payload, err := signed.canonicalPayload()
+	signed, err := SignCollectionHead(record, privateKey)
 	if err != nil {
-		t.Fatalf("canonical signed collection head: %v", err)
+		t.Fatalf("sign collection head: %v", err)
 	}
-	signed.Signature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(privateKey, payload))
 	return signed
+}
+
+func fatalf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	t.Fatalf(format, args...)
 }
