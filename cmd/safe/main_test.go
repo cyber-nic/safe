@@ -22,35 +22,40 @@ func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error)
 	return fn(request)
 }
 
-func TestFetchDevSession(t *testing.T) {
+func TestFetchSession(t *testing.T) {
+	t.Setenv(oauthAccessTokenEnv, "oauth-token")
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/v1/dev/session" {
+			if r.URL.Path != "/v1/session" {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
-			if r.Method != http.MethodPost {
+			if r.Method != http.MethodGet {
 				t.Fatalf("unexpected method: %s", r.Method)
+			}
+			if r.Header.Get("Authorization") != "Bearer oauth-token" {
+				t.Fatalf("unexpected authorization header: %s", r.Header.Get("Authorization"))
 			}
 
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"accountId":"acct-test-001","deviceId":"dev-test-001","env":"test"}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"accountId":"acct-test-001","env":"test","bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1"}`)),
 			}, nil
 		}),
 	}
-	session, err := fetchDevSession(client, "http://control-plane.test")
+	session, err := fetchSession(client, "http://control-plane.test")
 	if err != nil {
 		t.Fatalf("fetch dev session: %v", err)
 	}
 
-	if session.AccountID != "acct-test-001" || session.DeviceID != "dev-test-001" || session.Env != "test" {
+	if session.AccountID != "acct-test-001" || session.Env != "test" || session.Bucket != "safe-test" {
 		t.Fatalf("unexpected session payload: %+v", session)
 	}
 }
 
-func TestFetchDevSessionRejectsIncompletePayload(t *testing.T) {
+func TestFetchSessionRejectsIncompletePayload(t *testing.T) {
+	t.Setenv(oauthAccessTokenEnv, "oauth-token")
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -61,7 +66,7 @@ func TestFetchDevSessionRejectsIncompletePayload(t *testing.T) {
 			}, nil
 		}),
 	}
-	_, err := fetchDevSession(client, "http://control-plane.test")
+	_, err := fetchSession(client, "http://control-plane.test")
 	if err == nil {
 		t.Fatal("expected incomplete payload error")
 	}
@@ -71,35 +76,8 @@ func TestFetchDevSessionRejectsIncompletePayload(t *testing.T) {
 	}
 }
 
-func TestFetchStorageConfig(t *testing.T) {
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/v1/dev/storage-config" {
-				t.Fatalf("unexpected path: %s", r.URL.Path)
-			}
-			if r.Method != http.MethodGet {
-				t.Fatalf("unexpected method: %s", r.Method)
-			}
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","accountId":"acct-test-001","deviceId":"dev-test-001"}`)),
-			}, nil
-		}),
-	}
-	config, err := fetchStorageConfig(client, "http://control-plane.test")
-	if err != nil {
-		t.Fatalf("fetch storage config: %v", err)
-	}
-
-	if config.Bucket != "safe-test" || config.Endpoint != "http://localstack:4566" || config.Region != "us-east-1" {
-		t.Fatalf("unexpected storage payload: %+v", config)
-	}
-}
-
 func TestFetchAccountAccess(t *testing.T) {
+	t.Setenv(oauthAccessTokenEnv, "oauth-token")
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -108,6 +86,9 @@ func TestFetchAccountAccess(t *testing.T) {
 			}
 			if r.Method != http.MethodPost {
 				t.Fatalf("unexpected method: %s", r.Method)
+			}
+			if r.Header.Get("Authorization") != "Bearer oauth-token" {
+				t.Fatalf("unexpected authorization header: %s", r.Header.Get("Authorization"))
 			}
 
 			return &http.Response{
@@ -120,7 +101,7 @@ func TestFetchAccountAccess(t *testing.T) {
 
 	payload, err := fetchAccountAccess(client, "http://control-plane.test", devSessionResponse{
 		AccountID: "acct-test-001",
-		DeviceID:  "dev-test-001",
+		DeviceID:  "dev-cli-001",
 		Env:       "test",
 	})
 	if err != nil {
@@ -1658,17 +1639,11 @@ func withBootstrapRuntime(t *testing.T, seedStarter bool, fn func(runtimeDir str
 	originalTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/v1/dev/session":
+		case "/v1/session":
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"accountId":"acct-dev-001","deviceId":"dev-web-001","env":"test"}`)),
-			}, nil
-		case "/v1/dev/storage-config":
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1","accountId":"acct-dev-001","deviceId":"dev-web-001"}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"accountId":"acct-dev-001","env":"test","bucket":"safe-test","endpoint":"http://localstack:4566","region":"us-east-1"}`)),
 			}, nil
 		case "/v1/access/account":
 			return &http.Response{
@@ -1686,11 +1661,19 @@ func withBootstrapRuntime(t *testing.T, seedStarter bool, fn func(runtimeDir str
 	}()
 
 	previousURL := os.Getenv("SAFE_CONTROL_PLANE_URL")
+	previousToken := os.Getenv(oauthAccessTokenEnv)
+	previousDeviceID := os.Getenv(deviceIDEnv)
 	previousPassword := os.Getenv(localPasswordEnv)
 	previousRuntimeDir := os.Getenv(localRuntimeDirEnv)
 	runtimeDir := t.TempDir()
 	if err := os.Setenv("SAFE_CONTROL_PLANE_URL", "http://control-plane.test"); err != nil {
 		t.Fatalf("set env: %v", err)
+	}
+	if err := os.Setenv(oauthAccessTokenEnv, "oauth-token"); err != nil {
+		t.Fatalf("set oauth token: %v", err)
+	}
+	if err := os.Setenv(deviceIDEnv, "dev-web-001"); err != nil {
+		t.Fatalf("set device id: %v", err)
 	}
 	if err := os.Setenv(localPasswordEnv, "test-password-123"); err != nil {
 		t.Fatalf("set password env: %v", err)
@@ -1703,6 +1686,16 @@ func withBootstrapRuntime(t *testing.T, seedStarter bool, fn func(runtimeDir str
 			_ = os.Unsetenv("SAFE_CONTROL_PLANE_URL")
 		} else {
 			_ = os.Setenv("SAFE_CONTROL_PLANE_URL", previousURL)
+		}
+		if previousToken == "" {
+			_ = os.Unsetenv(oauthAccessTokenEnv)
+		} else {
+			_ = os.Setenv(oauthAccessTokenEnv, previousToken)
+		}
+		if previousDeviceID == "" {
+			_ = os.Unsetenv(deviceIDEnv)
+		} else {
+			_ = os.Setenv(deviceIDEnv, previousDeviceID)
 		}
 		if previousPassword == "" {
 			_ = os.Unsetenv(localPasswordEnv)

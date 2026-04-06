@@ -22,16 +22,11 @@ import (
 
 type devSessionResponse struct {
 	AccountID string `json:"accountId"`
-	DeviceID  string `json:"deviceId"`
+	DeviceID  string `json:"deviceId,omitempty"`
 	Env       string `json:"env"`
-}
-
-type storageConfigResponse struct {
 	Bucket    string `json:"bucket"`
 	Endpoint  string `json:"endpoint"`
 	Region    string `json:"region"`
-	AccountID string `json:"accountId"`
-	DeviceID  string `json:"deviceId"`
 }
 
 type accessCapability struct {
@@ -56,7 +51,6 @@ type accountAccessResponse struct {
 
 type cliState struct {
 	session       devSessionResponse
-	storageConfig storageConfigResponse
 	access        accountAccessResponse
 	accountConfig domain.AccountConfigRecord
 	head          domain.CollectionHeadRecord
@@ -77,6 +71,8 @@ const (
 	localPasswordEnv    = "SAFE_LOCAL_PASSWORD"
 	localRuntimeDirEnv  = "SAFE_LOCAL_RUNTIME_DIR"
 	localStackPortEnv   = "LOCALSTACK_PORT"
+	oauthAccessTokenEnv = "SAFE_OAUTH_ACCESS_TOKEN"
+	deviceIDEnv         = "SAFE_DEVICE_ID"
 )
 
 func main() {
@@ -103,7 +99,7 @@ func runWithIO(args []string, in io.Reader, out io.Writer) error {
 	if !options.json {
 		fmt.Fprintln(out, "safe CLI bootstrap")
 		fmt.Fprintf(out, "control plane bootstrap:\n- env=%s account=%s device=%s\n", state.session.Env, state.session.AccountID, state.session.DeviceID)
-		fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.storageConfig.Bucket, state.storageConfig.Region, state.storageConfig.Endpoint)
+		fmt.Fprintf(out, "- storage bucket=%s region=%s endpoint=%s\n", state.session.Bucket, state.session.Region, state.session.Endpoint)
 		fmt.Fprintf(out, "- remote access prefix=%s actions=%s expiresAt=%s\n", state.access.Capability.Prefix, strings.Join(state.access.Capability.AllowedActions, ","), state.access.Capability.ExpiresAt)
 	}
 
@@ -144,15 +140,11 @@ func bootstrapCLIState() (cliState, error) {
 	}
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
-	session, err := fetchDevSession(httpClient, baseURL)
+	session, err := fetchSession(httpClient, baseURL)
 	if err != nil {
 		return cliState{}, err
 	}
-
-	storageConfig, err := fetchStorageConfig(httpClient, baseURL)
-	if err != nil {
-		return cliState{}, err
-	}
+	session.DeviceID = localDeviceID()
 
 	access, err := fetchAccountAccess(httpClient, baseURL, session)
 	if err != nil {
@@ -165,7 +157,7 @@ func bootstrapCLIState() (cliState, error) {
 	}
 	localStoreDir := localObjectStoreDir(session.AccountID)
 
-	remoteStore, err := openRemoteObjectStore(storageConfig)
+	remoteStore, err := openRemoteObjectStore(session)
 	if err != nil {
 		return cliState{}, err
 	}
@@ -182,7 +174,6 @@ func bootstrapCLIState() (cliState, error) {
 
 	return cliState{
 		session:       session,
-		storageConfig: storageConfig,
 		access:        access,
 		accountConfig: accountConfig,
 		head:          head,
@@ -211,7 +202,7 @@ func localObjectStoreDir(accountID string) string {
 	return filepath.Join(rootDir, accountID)
 }
 
-func openRemoteObjectStore(storageConfig storageConfigResponse) (storage.ObjectStoreWithCAS, error) {
+func openRemoteObjectStore(storageConfig devSessionResponse) (storage.ObjectStoreWithCAS, error) {
 	endpoint := os.Getenv("SAFE_S3_ENDPOINT")
 	if endpoint == "" {
 		endpoint = storageConfig.Endpoint
@@ -1384,12 +1375,12 @@ func loadSecretMaterial(state cliState, secretRef string) (string, error) {
 	return string(plaintext), nil
 }
 
-func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {
-	request, err := http.NewRequest(http.MethodPost, baseURL+"/v1/dev/session", bytes.NewReader([]byte("{}")))
+func fetchSession(httpClient *http.Client, baseURL string) (devSessionResponse, error) {
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/v1/session", nil)
 	if err != nil {
 		return devSessionResponse{}, err
 	}
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+oauthAccessToken())
 
 	response, err := httpClient.Do(request)
 	if err != nil {
@@ -1406,31 +1397,8 @@ func fetchDevSession(httpClient *http.Client, baseURL string) (devSessionRespons
 		return devSessionResponse{}, err
 	}
 
-	if payload.Env == "" || payload.AccountID == "" || payload.DeviceID == "" {
-		return devSessionResponse{}, fmt.Errorf("control plane session response incomplete; restart the control-plane service and verify /v1/dev/session")
-	}
-
-	return payload, nil
-}
-
-func fetchStorageConfig(httpClient *http.Client, baseURL string) (storageConfigResponse, error) {
-	response, err := httpClient.Get(baseURL + "/v1/dev/storage-config")
-	if err != nil {
-		return storageConfigResponse{}, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return storageConfigResponse{}, fmt.Errorf("control plane storage config request failed: %s", response.Status)
-	}
-
-	var payload storageConfigResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return storageConfigResponse{}, err
-	}
-
-	if payload.Bucket == "" || payload.Region == "" || payload.Endpoint == "" {
-		return storageConfigResponse{}, fmt.Errorf("control plane storage config response incomplete; restart the control-plane service and verify /v1/dev/storage-config")
+	if payload.Env == "" || payload.AccountID == "" || payload.Bucket == "" || payload.Endpoint == "" || payload.Region == "" {
+		return devSessionResponse{}, fmt.Errorf("control plane session response incomplete; restart the control-plane service and verify /v1/session")
 	}
 
 	return payload, nil
@@ -1453,6 +1421,7 @@ func fetchAccountAccess(httpClient *http.Client, baseURL string, session devSess
 		return accountAccessResponse{}, err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+oauthAccessToken())
 
 	response, err := httpClient.Do(request)
 	if err != nil {
@@ -1474,6 +1443,27 @@ func fetchAccountAccess(httpClient *http.Client, baseURL string, session devSess
 	}
 
 	return payload, nil
+}
+
+func oauthAccessToken() string {
+	token := os.Getenv(oauthAccessTokenEnv)
+	if token == "" {
+		panic(fmt.Sprintf("%s is required for control-plane identity", oauthAccessTokenEnv))
+	}
+
+	return token
+}
+
+func localDeviceID() string {
+	deviceID := os.Getenv(deviceIDEnv)
+	if deviceID == "" {
+		deviceID = os.Getenv("SAFE_DEV_DEVICE_ID")
+	}
+	if deviceID == "" {
+		deviceID = "dev-cli-001"
+	}
+
+	return deviceID
 }
 
 type localDeviceMaterial struct {
