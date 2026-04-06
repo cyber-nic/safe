@@ -289,6 +289,88 @@ Fields:
 - server-assisted recovery escrow
 - device enrollment via recovery key (separate protocol slice)
 
+## I7 - Signed Mutable Metadata and Rollback Contract
+
+Status:
+
+- accepted
+
+Owner:
+
+- Engineer1
+
+Frozen for W9 (`refs #18`):
+
+Goals:
+
+- freeze which mutable records are security-relevant trust anchors
+- define who authenticates each mutable record family
+- require freshness and rollback checks before a client trusts mutable state from storage or the control plane
+
+Mutable record families in scope:
+
+- account config
+- collection head pointers
+- snapshot pointers
+- device metadata
+- membership state
+- invite state
+
+Out of scope for I7:
+
+- the exact binary or JSON envelope used to carry signatures
+- control-plane storage schema
+- share-protocol implementation details beyond the trust checks consumers must enforce
+
+### Canonicalization and Authentication
+
+- every record family in scope must have canonical bytes before hashing or signing
+- clients must authenticate canonical bytes, not transport formatting, pretty-printed JSON, or field order as received
+- unsigned mutable metadata is invalid; clients must reject it rather than downgrade to best-effort replay
+- signature or MAC verification failures are hard failures, not telemetry-only warnings
+
+### Signer Ownership
+
+- account config is authenticated by account-level trust material
+- collection head pointers are authenticated by the device signing key that authored the committed event referenced by the head
+- snapshot pointers are authenticated by account-level trust material and must bind the referenced snapshot object plus the base event cursor
+- device metadata is authenticated by account-level trust material; device self-assertion alone is insufficient
+- membership state is authenticated by account-level trust material for collection-owner decisions
+- invite state is authenticated by account-level trust material for lifecycle transitions and must bind the intended recipient account and recipient device key when accepted
+
+### Required Binding Fields
+
+- every mutable record must bind `accountId`
+- collection-scoped mutable records must bind `collectionId`
+- device-scoped mutable records must bind `deviceId`
+- head pointers must bind `latestEventId` and the monotonic event cursor or sequence they advance to
+- snapshot pointers must bind the snapshot object identifier plus the event cursor the snapshot represents
+- membership and invite records must bind the member or recipient account identity and any recipient device key material they authorize
+
+### Freshness and Rollback Rules
+
+- clients must persist the highest trusted version of each mutable record family they have accepted
+- a candidate mutable record with a lower trusted counter, cursor, or version than the local trusted value is stale and must be rejected
+- if a candidate record presents the same trusted counter, cursor, or version but different authenticated contents, clients must reject it as a divergence attempt
+- clients may only clear trusted rollback state through an explicit local reset or account-recovery flow; ordinary restart, logout, or cache eviction must not erase trusted high-water marks
+- compare-and-swap success at the storage layer is necessary for writes but not sufficient for reads; readers must still verify signatures and monotonicity locally
+
+### Record-Specific Freshness Requirements
+
+- account config must advance monotonically whenever device membership, default collection wiring, or other security-relevant account metadata changes
+- collection head pointers must advance monotonically by event sequence or cursor; equal-sequence candidates are valid only when the authenticated `latestEventId` also matches
+- snapshot pointers must not move to an older base cursor than the highest trusted snapshot or committed head for the same scope
+- device metadata must reject removed or downgraded device state unless the change is authenticated by current account-level trust material
+- membership state must reject stale active or stale revoked states; revocation is forward-looking but rollback to pre-revocation metadata is invalid
+- invite state must reject replay to an earlier lifecycle state once acceptance, expiry, or revocation has been trusted
+
+### Consumer Behavior
+
+- clients must fetch mutable metadata before trusting referenced immutable objects
+- clients must verify the signer, scope bindings, and freshness of mutable metadata before applying events, snapshots, memberships, or invites
+- unreachable immutable objects that are not referenced by the latest trusted mutable metadata must not become authoritative
+- if mutable metadata verification fails, clients must stop the affected sync or access flow and surface an integrity failure instead of silently repairing state
+
 ## I5 - Handoff Protocol
 
 Status:

@@ -338,6 +338,42 @@ Refs:
 
 - `#22`
 
+### D11 - Signed mutable metadata is a mandatory trust boundary
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-05
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- account config, collection head pointers, snapshot pointers, device metadata, membership state, and invite state are mandatory authenticated mutable metadata
+- clients must verify canonical bytes plus signer ownership and monotonic freshness for those records before they trust referenced immutable state
+- stale, divergent, or unsigned mutable metadata is rejected as an integrity failure, not accepted with a warning or repaired heuristically
+
+Rationale:
+
+- the security review already identifies mutable metadata rollback as the main integrity risk after the local-runtime milestone
+- the repo has canonical account and head records plus monotonic head checks, but the project docs had not yet frozen the broader signer and freshness contract for sync-critical mutable state
+- freezing the trust boundary now lets later sync, sharing, and multi-device work build against one rule instead of each slice inventing its own rollback semantics
+
+Downstream impact:
+
+- future sync work must treat mutable metadata verification as blocking behavior before event replay or snapshot restore
+- device enrollment, membership, and invite flows must bind the exact account or device identities they authorize and must reject replay to earlier trusted states
+- protocol and test-vector work should add authenticated record fixtures and stale-state rejection cases rather than relying on control-plane honesty
+
+Refs:
+
+- `#18`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary
