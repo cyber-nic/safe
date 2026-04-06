@@ -447,3 +447,164 @@ func (s *failOnKeyStore) Put(key string, value []byte) error {
 	}
 	return s.ObjectStore.Put(key, value)
 }
+
+// --- W22 device listing and enrollment helpers ---
+
+func testDeviceRecord(accountID, deviceID, deviceType string) domain.LocalDeviceRecord {
+	return domain.LocalDeviceRecord{
+		SchemaVersion:       1,
+		AccountID:           accountID,
+		DeviceID:            deviceID,
+		Label:               "Test Device",
+		DeviceType:          deviceType,
+		SigningPublicKey:     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		EncryptionPublicKey: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+		CreatedAt:           "2026-04-06T00:00:00Z",
+		Status:              "active",
+	}
+}
+
+func testEnrollmentRequest(accountID, deviceID string) domain.DeviceEnrollmentRequest {
+	return domain.DeviceEnrollmentRequest{
+		SchemaVersion:       1,
+		AccountID:           accountID,
+		DeviceID:            deviceID,
+		Label:               "New Device",
+		DeviceType:          "cli",
+		EncryptionPublicKey: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		RequestedAt:         "2026-04-06T10:00:00Z",
+	}
+}
+
+func TestListDeviceRecordsEmpty(t *testing.T) {
+	store := NewMemoryObjectStore()
+	records, err := ListDeviceRecords(store, "acct-test")
+	if err != nil {
+		t.Fatalf("list devices: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected empty list, got %d records", len(records))
+	}
+}
+
+func TestListDeviceRecordsMultiple(t *testing.T) {
+	store := NewMemoryObjectStore()
+	acct := "acct-test"
+	r1 := testDeviceRecord(acct, "dev-001", "cli")
+	r2 := testDeviceRecord(acct, "dev-002", "web")
+	if _, err := StoreLocalDeviceRecord(store, r1); err != nil {
+		t.Fatalf("store r1: %v", err)
+	}
+	if _, err := StoreLocalDeviceRecord(store, r2); err != nil {
+		t.Fatalf("store r2: %v", err)
+	}
+	// Unrelated account must not appear.
+	r3 := testDeviceRecord("other-acct", "dev-001", "cli")
+	if _, err := StoreLocalDeviceRecord(store, r3); err != nil {
+		t.Fatalf("store r3: %v", err)
+	}
+
+	records, err := ListDeviceRecords(store, acct)
+	if err != nil {
+		t.Fatalf("list devices: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+}
+
+func TestStoreAndLoadEnrollmentRequest(t *testing.T) {
+	store := NewMemoryObjectStore()
+	req := testEnrollmentRequest("acct-test", "dev-new-001")
+
+	key, err := StoreEnrollmentRequest(store, req)
+	if err != nil {
+		t.Fatalf("store enrollment request: %v", err)
+	}
+	want := "accounts/acct-test/enrollments/dev-new-001/request.json"
+	if key != want {
+		t.Fatalf("unexpected key: got %s, want %s", key, want)
+	}
+
+	loaded, err := LoadEnrollmentRequest(store, "acct-test", "dev-new-001")
+	if err != nil {
+		t.Fatalf("load enrollment request: %v", err)
+	}
+	if loaded.DeviceID != req.DeviceID || loaded.AccountID != req.AccountID {
+		t.Fatalf("loaded request mismatch: %+v", loaded)
+	}
+}
+
+func TestListPendingEnrollmentsFiltersApproved(t *testing.T) {
+	store := NewMemoryObjectStore()
+	acct := "acct-test"
+
+	// Two pending requests.
+	req1 := testEnrollmentRequest(acct, "dev-pending-001")
+	req2 := testEnrollmentRequest(acct, "dev-pending-002")
+	if _, err := StoreEnrollmentRequest(store, req1); err != nil {
+		t.Fatalf("store req1: %v", err)
+	}
+	if _, err := StoreEnrollmentRequest(store, req2); err != nil {
+		t.Fatalf("store req2: %v", err)
+	}
+
+	// Approve req2 by writing a bundle — it should no longer appear as pending.
+	bundle := domain.DeviceEnrollmentBundle{
+		SchemaVersion: 1,
+		AccountID:     acct,
+		DeviceID:      "dev-pending-002",
+		WrappedKey: domain.DeviceEnrollmentWrappedKey{
+			Algorithm:          "x25519-hkdf-aes-256-gcm",
+			EphemeralPublicKey: "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+			Nonce:              "EEEEEEEEEEEEEEEEEEE",
+			Ciphertext:         "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+		},
+	}
+	if _, err := StoreEnrollmentBundle(store, bundle); err != nil {
+		t.Fatalf("store bundle: %v", err)
+	}
+
+	pending, err := ListPendingEnrollments(store, acct)
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending enrollment, got %d", len(pending))
+	}
+	if pending[0].DeviceID != "dev-pending-001" {
+		t.Fatalf("unexpected pending device: %s", pending[0].DeviceID)
+	}
+}
+
+func TestStoreAndLoadEnrollmentBundle(t *testing.T) {
+	store := NewMemoryObjectStore()
+	bundle := domain.DeviceEnrollmentBundle{
+		SchemaVersion: 1,
+		AccountID:     "acct-test",
+		DeviceID:      "dev-new-001",
+		WrappedKey: domain.DeviceEnrollmentWrappedKey{
+			Algorithm:          "x25519-hkdf-aes-256-gcm",
+			EphemeralPublicKey: "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+			Nonce:              "EEEEEEEEEEEEEEEEEEE",
+			Ciphertext:         "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+		},
+	}
+
+	key, err := StoreEnrollmentBundle(store, bundle)
+	if err != nil {
+		t.Fatalf("store bundle: %v", err)
+	}
+	want := "accounts/acct-test/enrollments/dev-new-001/bundle.json"
+	if key != want {
+		t.Fatalf("unexpected key: got %s, want %s", key, want)
+	}
+
+	loaded, err := LoadEnrollmentBundle(store, "acct-test", "dev-new-001")
+	if err != nil {
+		t.Fatalf("load bundle: %v", err)
+	}
+	if loaded.DeviceID != bundle.DeviceID || loaded.AccountID != bundle.AccountID {
+		t.Fatalf("loaded bundle mismatch: %+v", loaded)
+	}
+}

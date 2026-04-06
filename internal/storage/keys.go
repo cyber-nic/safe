@@ -41,3 +41,19 @@ func SecretMaterialKey(accountID, collectionID, secretRef string) string {
 func DeviceRecordKey(accountID, deviceID string) string {
 	return fmt.Sprintf("accounts/%s/devices/%s.json", accountID, deviceID)
 }
+
+func DeviceListPrefix(accountID string) string {
+	return fmt.Sprintf("accounts/%s/devices/", accountID)
+}
+
+func EnrollmentRequestKey(accountID, deviceID string) string {
+	return fmt.Sprintf("accounts/%s/enrollments/%s/request.json", accountID, deviceID)
+}
+
+func EnrollmentBundleKey(accountID, deviceID string) string {
+	return fmt.Sprintf("accounts/%s/enrollments/%s/bundle.json", accountID, deviceID)
+}
+
+func EnrollmentListPrefix(accountID string) string {
+	return fmt.Sprintf("accounts/%s/enrollments/", accountID)
+}

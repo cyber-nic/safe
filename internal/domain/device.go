@@ -146,6 +146,92 @@ func ParseDeviceEnrollmentBundleJSON(data []byte) (DeviceEnrollmentBundle, error
 	return b, nil
 }
 
+// DeviceEnrollmentRequest is published by a new device to request enrollment.
+// An existing trusted device reads this record, creates a DeviceEnrollmentBundle,
+// and writes the bundle at the corresponding enrollment bundle path.
+// Stored at accounts/<accountID>/enrollments/<deviceID>/request.json.
+type DeviceEnrollmentRequest struct {
+	SchemaVersion       int    `json:"schemaVersion"`
+	AccountID           string `json:"accountId"`
+	DeviceID            string `json:"deviceId"`
+	Label               string `json:"label"`
+	DeviceType          string `json:"deviceType"`
+	EncryptionPublicKey string `json:"encryptionPublicKey"`
+	RequestedAt         string `json:"requestedAt"`
+}
+
+func (r DeviceEnrollmentRequest) Validate() error {
+	if r.SchemaVersion != 1 {
+		return ErrInvalidDeviceEnrollmentRequest("schemaVersion")
+	}
+	if r.AccountID == "" {
+		return ErrInvalidDeviceEnrollmentRequest("accountId")
+	}
+	if r.DeviceID == "" {
+		return ErrInvalidDeviceEnrollmentRequest("deviceId")
+	}
+	if r.Label == "" {
+		return ErrInvalidDeviceEnrollmentRequest("label")
+	}
+	if r.DeviceType != "cli" && r.DeviceType != "web" {
+		return ErrInvalidDeviceEnrollmentRequest("deviceType")
+	}
+	if !isValidRawBase64(r.EncryptionPublicKey) {
+		return ErrInvalidDeviceEnrollmentRequest("encryptionPublicKey")
+	}
+	if r.RequestedAt == "" {
+		return ErrInvalidDeviceEnrollmentRequest("requestedAt")
+	}
+	return nil
+}
+
+func (r DeviceEnrollmentRequest) CanonicalJSON() ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+
+	type canonical struct {
+		SchemaVersion       int    `json:"schemaVersion"`
+		AccountID           string `json:"accountId"`
+		DeviceID            string `json:"deviceId"`
+		Label               string `json:"label"`
+		DeviceType          string `json:"deviceType"`
+		EncryptionPublicKey string `json:"encryptionPublicKey"`
+		RequestedAt         string `json:"requestedAt"`
+	}
+
+	return json.Marshal(canonical{
+		SchemaVersion:       r.SchemaVersion,
+		AccountID:           r.AccountID,
+		DeviceID:            r.DeviceID,
+		Label:               r.Label,
+		DeviceType:          r.DeviceType,
+		EncryptionPublicKey: r.EncryptionPublicKey,
+		RequestedAt:         r.RequestedAt,
+	})
+}
+
+func ParseDeviceEnrollmentRequestJSON(data []byte) (DeviceEnrollmentRequest, error) {
+	var r DeviceEnrollmentRequest
+	if err := json.Unmarshal(data, &r); err != nil {
+		return DeviceEnrollmentRequest{}, err
+	}
+	if err := r.Validate(); err != nil {
+		return DeviceEnrollmentRequest{}, err
+	}
+	return r, nil
+}
+
+type invalidDeviceEnrollmentRequestError string
+
+func (e invalidDeviceEnrollmentRequestError) Error() string {
+	return fmt.Sprintf("invalid device enrollment request field: %s", string(e))
+}
+
+func ErrInvalidDeviceEnrollmentRequest(field string) error {
+	return invalidDeviceEnrollmentRequestError(field)
+}
+
 type invalidLocalDeviceRecordError string
 
 func (e invalidLocalDeviceRecordError) Error() string {

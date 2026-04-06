@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -232,6 +233,107 @@ func LoadLocalDeviceRecord(store ObjectStore, accountID, deviceID string) (domai
 	}
 
 	return domain.ParseLocalDeviceRecordJSON(payload)
+}
+
+// ListDeviceRecords returns all device records stored under the account's device prefix,
+// sorted lexicographically by key. Returns an empty slice (not an error) when no devices exist.
+func ListDeviceRecords(store ObjectStore, accountID string) ([]domain.LocalDeviceRecord, error) {
+	keys, err := store.List(DeviceListPrefix(accountID))
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]domain.LocalDeviceRecord, 0, len(keys))
+	for _, key := range keys {
+		payload, err := store.Get(key)
+		if err != nil {
+			return nil, err
+		}
+		record, err := domain.ParseLocalDeviceRecordJSON(payload)
+		if err != nil {
+			return nil, fmt.Errorf("parse device record at %s: %w", key, err)
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+// StoreEnrollmentRequest persists a new device's enrollment request at the
+// canonical enrollment request path for the device.
+func StoreEnrollmentRequest(store ObjectStore, request domain.DeviceEnrollmentRequest) (string, error) {
+	payload, err := request.CanonicalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	key := EnrollmentRequestKey(request.AccountID, request.DeviceID)
+	if err := store.Put(key, payload); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// LoadEnrollmentRequest loads the pending enrollment request for the given device.
+func LoadEnrollmentRequest(store ObjectStore, accountID, deviceID string) (domain.DeviceEnrollmentRequest, error) {
+	payload, err := store.Get(EnrollmentRequestKey(accountID, deviceID))
+	if err != nil {
+		return domain.DeviceEnrollmentRequest{}, err
+	}
+	return domain.ParseDeviceEnrollmentRequestJSON(payload)
+}
+
+// ListPendingEnrollments returns enrollment requests for all devices that have
+// a request but no bundle yet. These are devices awaiting approval.
+func ListPendingEnrollments(store ObjectStore, accountID string) ([]domain.DeviceEnrollmentRequest, error) {
+	keys, err := store.List(EnrollmentListPrefix(accountID))
+	if err != nil {
+		return nil, err
+	}
+
+	requests := make([]domain.DeviceEnrollmentRequest, 0)
+	for _, key := range keys {
+		if !strings.HasSuffix(key, "/request.json") {
+			continue
+		}
+		payload, err := store.Get(key)
+		if err != nil {
+			return nil, err
+		}
+		request, err := domain.ParseDeviceEnrollmentRequestJSON(payload)
+		if err != nil {
+			return nil, fmt.Errorf("parse enrollment request at %s: %w", key, err)
+		}
+		// Only include requests that have no bundle yet.
+		bundleKey := EnrollmentBundleKey(accountID, request.DeviceID)
+		_, bundleErr := store.Get(bundleKey)
+		if IsObjectNotFound(bundleErr) {
+			requests = append(requests, request)
+		}
+	}
+	return requests, nil
+}
+
+// StoreEnrollmentBundle persists the enrollment bundle created by an approving device.
+func StoreEnrollmentBundle(store ObjectStore, bundle domain.DeviceEnrollmentBundle) (string, error) {
+	payload, err := json.Marshal(bundle)
+	if err != nil {
+		return "", err
+	}
+
+	key := EnrollmentBundleKey(bundle.AccountID, bundle.DeviceID)
+	if err := store.Put(key, payload); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// LoadEnrollmentBundle loads the enrollment bundle for a device waiting to complete enrollment.
+func LoadEnrollmentBundle(store ObjectStore, accountID, deviceID string) (domain.DeviceEnrollmentBundle, error) {
+	payload, err := store.Get(EnrollmentBundleKey(accountID, deviceID))
+	if err != nil {
+		return domain.DeviceEnrollmentBundle{}, err
+	}
+	return domain.ParseDeviceEnrollmentBundleJSON(payload)
 }
 
 func StoreSecretMaterialBytes(store ObjectStore, accountID, collectionID, secretRef string, secret []byte) (string, error) {
