@@ -4,6 +4,7 @@ Safe is a zero-knowledge secret manager for individuals and small trusted groups
 
 ## Current Docs
 
+- [COMMUNICATION.md](./COMMUNICATION.md)
 - [PRODUCT.md](./docs/architecture/PRODUCT.md)
 - [SYSTEM_DESIGN.md](./docs/architecture/SYSTEM_DESIGN.md)
 - [IMPLEMENTATION_PLAN.md](./docs/architecture/IMPLEMENTATION_PLAN.md)
@@ -115,3 +116,25 @@ Useful targets:
 - `make s3-ls`
 - `make test-go`
 - `make down`
+
+## Engineer Coordination
+
+Use the local switchboard for short coordination messages with other engineers and agents, especially around active branches and PRs.
+
+Expected CLI:
+
+```sh
+switchboard-cli send -sender codex -role engineer -text "ready"
+switchboard-cli history -n 10
+switchboard-cli watch
+```
+
+If the binary is not on `PATH`, invoke it by absolute path. In this sandbox, the binary was provided at `/tmp/switchboard`.
+
+Minimum expectation:
+
+- check history when you start work
+- send short updates when scope changes or blockers appear
+- communicate frequently with PRs, including open, update, and handoff moments
+
+See [COMMUNICATION.md](./COMMUNICATION.md) for the working agreement and validation notes.
