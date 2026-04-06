@@ -28,37 +28,37 @@ Important:
 
 ## Current Milestone
 
-Milestone: `M2 - Multi-Device Single-User Sync Foundations`
+Milestone: `M3 - Web Product MVP for Single User`
 
 GitHub issue:
 
-- `#30`
+- `#48`
 
 Goal:
 
-- two trusted devices can converge on one account through a real object-storage sync path
-- clients verify signed mutable metadata and reject stale or replayed state before trusting it
-- device enrollment requires existing-device approval or recovery-key bootstrap
-- the shipped clients can prove the account loop across two devices, not only one local runtime
+- a single developer can authenticate through the real OAuth path in both CLI and web (`refs #48`, `#50`)
+- the web app can onboard a first-time account, including recovery-key acknowledgement, without falling back to a dev session (`refs #48`, `#51`)
+- the web app can browse and mutate the personal vault after unlock instead of stopping at a thin proof surface (`refs #48`, `#52`)
+- sync and enrolled-device visibility are surfaced in the web product without reopening the single-user trust model (`refs #48`, `#53`)
 
 Current status:
 
-- M1 remains complete on `main`; the CLI and local web client already close the first trustworthy local loop (`refs #1`, `#22`)
-- post-M1 groundwork is in place: recovery-key wrap and unwrap shipped in code (`refs #19`) and rollback rules are now frozen as a contract (`refs #18`)
-- M2 planning is live in GitHub and in repo docs, and the sync-integrity foundation slices are now on `main`: W12 signed-head verification, W13 device-enrollment contract, W14 enrollment primitives, and W15 object-store sync (`refs #30`, `#31`, `#33`, `#34`, `#35`, `#36`)
+- M1 and M2 are complete on `main`; the repo now has a trustworthy local loop plus a restart-safe two-device sync proof through the shipped clients (`refs #1`, `#22`, `#30`, `#37`)
+- the remaining critical gap is productization of that foundation into a real single-user web surface rather than more protocol-only slices (`refs #48`, `#49`)
+- W18 is the active planning slice that freezes the M3 boundary before W19-W22 implementation begins (`refs #49`)
 
 Non-goals for this milestone:
 
-- multi-user sharing and revocation
-- browser-native adapter redesign
-- broad web-product UX polish beyond the sync proof path
-- OAuth production hardening beyond the narrow control-plane access path needed for single-account sync
+- multi-user sharing, revocation, and collection-key rotation
+- mobile clients, browser extension work, or browser-native adapter redesign
+- advanced audit UX, admin tooling, or organization features
+- broad polish outside the critical onboarding, vault, sync, and device-management loops
 
 Milestone kickoff status:
 
-- W11 defines the M2 boundary and closes the planning reset (`refs #31`)
-- W12, W13, and W15 have landed and now form the accepted sync-integrity foundation on `main` (`refs #36`, `#35`, `#33`)
-- W14 is complete and W16 plus W17 stay explicit downstream tasks rather than hidden scope (`refs #34`, `#32`, `#37`)
+- W18 defines the M3 boundary and acceptance checks before implementation starts (`refs #49`)
+- W19 replaces the dev-session identity shortcut with the real OAuth login path shared by CLI and web (`refs #50`)
+- W20, W21, and W22 layer onboarding, vault CRUD, and sync or device-management UX on top of the shipped M2 foundation (`refs #51`, `#52`, `#53`)
 
 ## Execution Rules
 
@@ -131,23 +131,27 @@ These are default owners. Cross-boundary edits require a note in `docs/project/H
 
 The following interfaces are considered active contracts for this milestone. Do not change them casually.
 
-1. Local runtime save or load contract
+1. Production identity path
    Output needed:
-   - initialize account-local storage
-   - persist account config, collection head, vault item records, vault event records, and secret material
-   - save encrypted secret material
-   - load encrypted secret material after restart
-   - lock and unlock boundaries
+   - CLI and web authenticate through the same non-dev identity boundary
+   - `/v1/access/account` validates real user identity before issuing account-scoped capabilities
 
-2. CLI integration path
+2. Web onboarding path
    Output needed:
-   - `cmd/safe` must stop bootstrapping from a fresh in-memory store for the main save/read path
+   - first-time users create local account state, see the recovery key once, and must acknowledge it before vault access
+   - returning users go straight to unlock instead of replaying onboarding
 
-3. Minimal web persistence path
+3. Web vault runtime path
    Output needed:
-   - web model can hydrate from a durable local snapshot only after the runtime contract is defined
+   - unlocked web state exposes real personal-vault list, item detail, create, edit, delete, and search flows
+   - vault access remains gated on the existing local unlock boundary
 
-If one of these contracts changes, update `docs/project/INTERFACES.md` and record the handoff.
+4. Web sync and device-management surface
+   Output needed:
+   - sync push and pull can be triggered from the web client and fail closed on stale or rejected state
+   - enrolled-device visibility and approval paths stay aligned with the M2 trust model
+
+If one of these contracts changes, update `docs/project/INTERFACES.md` and record the handoff (`refs #49`).
 
 ## Active Tasks
 
@@ -427,17 +431,17 @@ GitHub issue:
 
 - `#35`
 
-## Next Assignment
+## Current Focus
 
-The next implementation wave is now defined and on the board.
+The next implementation wave is now defined and on the board (`refs #48`, `#49`).
 
 Current focus:
 
-- carry the landed W12-W15 sync-integrity work into the remaining control-plane and client proof slices
-- keep browser-native adapter work explicitly deferred until the two-device sync proof exists
-- treat any further mutable-metadata contract changes as explicit doc-first work, not incidental implementation drift
+- freeze the M3 boundary first so the control-plane and web work stays scoped to a real single-user product loop
+- keep sharing, revocation, and broader collection work explicitly queued behind the web-product MVP
+- treat any contract changes that affect onboarding, identity, or device approval as explicit doc-first updates
 
-## Queued Tasks
+## Recent Completions
 
 ### W14 - Implement device-enrollment primitives and persisted tests
 
@@ -557,6 +561,148 @@ Dependencies:
 GitHub issue:
 
 - `#37`
+
+## Active M3 Queue
+
+### W18 - Freeze M3 web-product scope and acceptance
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- in progress (`refs #49`)
+
+Write scope:
+
+- `docs/project/WORKBOARD.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/HANDOFFS.md`
+- minimal alignment notes in `docs/architecture/IMPLEMENTATION_PLAN.md` if wording drifts
+
+Output:
+
+- explicit M3 milestone boundary, acceptance checks, and deferred-work list
+
+Dependencies:
+
+- M3 milestone issue `#48`
+
+GitHub issue:
+
+- `#49`
+
+### W19 - Replace dev-session identity with production OAuth login
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #50`)
+
+Write scope:
+
+- `cmd/control-plane/**`
+- `internal/auth/**`
+- `cmd/safe/**` for CLI login command wiring
+- `apps/web/**` for web login callback wiring
+
+Output:
+
+- CLI and web both authenticate through the same production identity path before account-scoped capability issuance
+
+Dependencies:
+
+- W18
+
+GitHub issue:
+
+- `#50`
+
+### W20 - Web account onboarding flow
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #51`)
+
+Write scope:
+
+- `apps/web/**`
+- `docs/project/**` for any updated onboarding contract
+
+Output:
+
+- first-time web onboarding that creates local account state and requires recovery-key acknowledgement
+- returning web users go through unlock instead of onboarding
+
+Dependencies:
+
+- W19
+
+GitHub issue:
+
+- `#51`
+
+### W21 - Web vault CRUD UX
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #52`)
+
+Write scope:
+
+- `apps/web/**`
+
+Output:
+
+- unlocked web vault list, item detail, create, edit, delete, local search, and TOTP display flows for the personal vault
+
+Dependencies:
+
+- W20
+
+GitHub issue:
+
+- `#52`
+
+### W22 - Web sync and device management UX
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #53`)
+
+Write scope:
+
+- `apps/web/**`
+- `cmd/safe/**` if CLI sync commands need narrow shared-hook adjustments
+
+Output:
+
+- sync push or pull visibility in the web app plus enrolled-device review and approval controls
+
+Dependencies:
+
+- W21
+- W17
+
+GitHub issue:
+
+- `#53`
 
 ## PR Template
 

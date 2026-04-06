@@ -481,6 +481,43 @@ Refs:
 
 - `#35`
 
+### D15 - M3 prioritizes the first real single-user web product loop after M2
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-06
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- the next milestone after M2 is `M3 - Web Product MVP for Single User`
+- M3 prioritizes four slices in order: production OAuth identity, web onboarding with recovery-key acknowledgement, real web vault CRUD, and web sync or device-management visibility
+- multi-user sharing, revocation, browser extension work, and broader product polish stay out of the M3 critical path
+
+Rationale:
+
+- M2 proved the trust model and object-store path, but the shipped web surface is still a narrow proof client rather than the first product users will judge
+- the implementation plan already prefers a single-user product before shared collections, so the next milestone should productize the current single-account foundation instead of reopening storage or protocol scope
+- explicit deferral prevents the team from smuggling collection or sharing work into the web-product milestone
+
+Downstream impact:
+
+- W18-W22 are now the active Engineer1 queue under milestone issue `#48`
+- W19 must establish one real identity path consumed by both CLI and web before onboarding or vault UX expands
+- M3 acceptance is measured by user-visible web flows, not by additional protocol helpers without product exposure
+
+Refs:
+
+- `#48`
+- `#49`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary
