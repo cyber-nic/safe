@@ -188,6 +188,132 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
     assert.match(response.text, /ghp-secret-123/);
     assert.match(response.text, /login-github-primary/);
 
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/items",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        itemKind: "totp",
+        title: "GitHub OTP",
+        issuer: "GitHub",
+        accountName: "alice@example.com",
+        secretBase32: "JBSWY3DPEHPK3PXP",
+        tags: "2fa,authenticator",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault?item=totp-github-primary");
+
+    response = await invoke(app, {
+      url: "/vault?item=totp-github-primary",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Selected Authenticator/);
+    assert.match(response.text, /GitHub OTP/);
+    assert.match(response.text, /<code>\d{6}<\/code>/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/items",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        itemKind: "note",
+        title: "Deployment Runbook",
+        bodyPreview: "Backup codes stored offline.",
+        tags: "ops,note",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault?item=note-deployment-runbook-primary");
+
+    response = await invoke(app, {
+      url: "/vault?q=backup&kind=note",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Deployment Runbook/);
+    assert.doesNotMatch(response.text, /login-github-primary/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/items/update",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        itemId: "login-github-primary",
+        itemKind: "login",
+        title: "GitHub",
+        username: "alice-updated",
+        url: "https://github.com/login",
+        tags: "manual,m3",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault?item=login-github-primary");
+
+    response = await invoke(app, {
+      url: "/vault?item=login-github-primary",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /alice-updated/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/items/delete",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        itemId: "note-deployment-runbook-primary",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/vault?deleted=1");
+
+    response = await invoke(app, {
+      url: "/vault?item=note-deployment-runbook-primary",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Deleted Item/);
+    assert.match(response.text, /Restore item/);
+
+    response = await invoke(app, {
+      method: "POST",
+      url: "/vault/items/restore",
+      headers: {
+        cookie,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        itemId: "note-deployment-runbook-primary",
+      }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(
+      response.headers.location,
+      "/vault?item=note-deployment-runbook-primary",
+    );
+
+    response = await invoke(app, {
+      url: "/vault?item=note-deployment-runbook-primary",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Deployment Runbook/);
+    assert.match(response.text, /Backup codes stored offline/);
+
     const recoveryRecord = JSON.parse(
       await readFile(
         path.join(dataDir, "accounts", "acct-dev-001", "recovery.json"),
