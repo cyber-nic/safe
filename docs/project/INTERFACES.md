@@ -510,6 +510,66 @@ When no trusted device is available:
 - device revocation flows
 - mutable metadata signing (separate slice)
 
+## I9 - Account-Scoped Object Access Capability Contract
+
+Status:
+
+- accepted
+
+Owner:
+
+- Engineer1 (`refs #32`)
+
+Frozen for W16 (`refs #32`):
+
+Goals:
+
+- define the minimal control-plane-issued access contract needed for single-account sync
+- keep object-store access short-lived, path-scoped, and operation-bound
+- leave sharing and broader collection-scoped authorization for later milestones
+
+Capability payload:
+
+```json
+{
+  "version": 1,
+  "accountId": "<accountID>",
+  "deviceId": "<deviceID>",
+  "bucket": "<bucket name>",
+  "prefix": "accounts/<accountID>/",
+  "allowedActions": ["get", "put"],
+  "issuedAt": "<RFC 3339 timestamp>",
+  "expiresAt": "<RFC 3339 timestamp>"
+}
+```
+
+Fields:
+
+- `version`: integer, must be `1`
+- `accountId`: the authenticated account receiving access
+- `deviceId`: the authenticated device receiving access; must identify an active device record for the same account
+- `bucket`: the object-store bucket the capability is valid against
+- `prefix`: the only authorized object prefix for this capability; for W16 it is always `accounts/<accountID>/`
+- `allowedActions`: non-empty set drawn from `"get"`, `"put"`, and `"list"`; `"list"` is optional and must never be implied by `"get"` or `"put"`
+- `issuedAt`: RFC 3339 issuance time recorded by the control plane
+- `expiresAt`: RFC 3339 expiry time recorded by the control plane
+
+Capability rules:
+
+- capabilities are authenticated by the control plane as signed opaque tokens whose payload matches the fields above
+- W16 capabilities are account-scoped only; they must not grant collection-specific sharing access or any prefix outside `accounts/<accountID>/`
+- the control plane must bind the capability to both `accountId` and `deviceId`; cross-account or cross-device reuse is invalid
+- default issuance for single-account sync is `"get"` plus `"put"` only; `"list"` requires explicit request and must remain off by default
+- clients and storage-facing adapters must treat `expiresAt` as a hard limit; expired capabilities are invalid even if the signature is otherwise correct
+- verification must reject method escalation, prefix escape, empty prefixes, bucket mismatch, and non-account-local object paths
+
+Out of scope for W16:
+
+- durable control-plane storage for session state
+- one-time-use capability tracking
+- shared-collection authorization
+- provider-specific IAM policies or pre-signed URL formats
+
 ## I5 - Handoff Protocol
 
 Status:
