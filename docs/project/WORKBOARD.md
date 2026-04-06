@@ -535,7 +535,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #37`)
+- completed (`refs #37`, PR #46)
 
 Write scope:
 

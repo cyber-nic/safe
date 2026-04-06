@@ -39,6 +39,42 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 completion note (W17)
+
+Task:
+
+- `W17 - Deliver a two-device single-user sync smoke path`
+
+Status:
+
+- completed; refs #37 — https://github.com/cyber-nic/safe/pull/46
+
+Files touched:
+
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `cmd/safe/main.go`
+- `cmd/safe/main_test.go`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the CLI now ships `sync push` and `sync pull` against the merged S3-backed object-store adapter
+- the CLI persists local device signing material, uploads device records for signed-head verification, and proves restart-safe two-device sync in tests
+- the proof path rejects tampered signed heads during `sync pull`
+- the web client consumes the W16 account-access route during identify and surfaces the granted remote prefix and actions
+
+Verification:
+
+- `go test ./cmd/safe/...`
+- `go test ./...`
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- mark GitHub issue `#37` and the project item done; carry any residual web TypeScript cleanup as separate follow-up work rather than hidden W17 scope
+
 ### 2026-04-06 - Engineer1 progress note (W17)
 
 Task:
