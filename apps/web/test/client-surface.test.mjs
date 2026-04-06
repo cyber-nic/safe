@@ -83,7 +83,7 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
 
     let response = await invoke(app, { url: "/" });
     assert.equal(response.status, 200);
-    assert.match(response.text, /Start dev session/);
+    assert.match(response.text, /Sign in with OAuth/);
 
     response = await invoke(app, {
       method: "POST",
@@ -219,10 +219,14 @@ test("web client can identify, save, lock, restart, unlock, and read a secret", 
 test("web client requests remote account access during identify when control plane is configured", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "safe-web-"));
   const previousURL = process.env.SAFE_WEB_CONTROL_PLANE_URL;
+  const previousToken = process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN;
+  const previousDeviceID = process.env.SAFE_WEB_DEVICE_ID;
   const previousFetch = globalThis.fetch;
   const requests = [];
 
   process.env.SAFE_WEB_CONTROL_PLANE_URL = "http://control-plane.test";
+  process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN = "oauth-token";
+  process.env.SAFE_WEB_DEVICE_ID = "dev-web-001";
   globalThis.fetch = async (input, init = {}) => {
     const url = input instanceof URL ? input : new URL(input);
     requests.push({
@@ -231,12 +235,15 @@ test("web client requests remote account access during identify when control pla
       body: init.body ?? null,
     });
 
-    if (url.pathname === "/v1/dev/session") {
+    if (url.pathname === "/v1/session") {
+      assert.equal(init.headers.authorization, "Bearer oauth-token");
       return new Response(
         JSON.stringify({
           accountId: "acct-dev-001",
-          deviceId: "dev-web-001",
           env: "test",
+          bucket: "safe-test",
+          endpoint: "http://localstack:4566",
+          region: "us-east-1",
         }),
         {
           status: 200,
@@ -246,6 +253,7 @@ test("web client requests remote account access during identify when control pla
     }
 
     if (url.pathname === "/v1/access/account") {
+      assert.equal(init.headers.authorization, "Bearer oauth-token");
       return new Response(
         JSON.stringify({
           bucket: "safe-test",
@@ -307,7 +315,7 @@ test("web client requests remote account access during identify when control pla
     assert.match(response.text, /accounts\/acct-dev-001\//);
 
     assert.equal(requests.length, 2);
-    assert.equal(requests[0].path, "/v1/dev/session");
+    assert.equal(requests[0].path, "/v1/session");
     assert.equal(requests[1].path, "/v1/access/account");
     assert.equal(requests[1].method, "POST");
     assert.match(String(requests[1].body), /"accountId":"acct-dev-001"/);
@@ -317,6 +325,16 @@ test("web client requests remote account access during identify when control pla
       delete process.env.SAFE_WEB_CONTROL_PLANE_URL;
     } else {
       process.env.SAFE_WEB_CONTROL_PLANE_URL = previousURL;
+    }
+    if (previousToken === undefined) {
+      delete process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN;
+    } else {
+      process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN = previousToken;
+    }
+    if (previousDeviceID === undefined) {
+      delete process.env.SAFE_WEB_DEVICE_ID;
+    } else {
+      process.env.SAFE_WEB_DEVICE_ID = previousDeviceID;
     }
     globalThis.fetch = previousFetch;
     await rm(dataDir, { recursive: true, force: true });

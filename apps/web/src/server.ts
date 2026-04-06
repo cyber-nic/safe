@@ -19,6 +19,14 @@ type SessionState = {
   accountKey: Buffer | null;
 };
 
+type ControlPlaneSession = {
+  accountId: string;
+  env: string;
+  bucket: string;
+  endpoint: string;
+  region: string;
+};
+
 type AccountAccessCapability = {
   version: number;
   accountId: string;
@@ -294,20 +302,20 @@ function renderHomePage(): string {
     body: `
       <section class="hero">
         <div class="hero-copy stack">
-          <p class="eyebrow">M1 Client Surface</p>
-          <h1>Identify, unlock, save one secret, and read it back.</h1>
+          <p class="eyebrow">M3 Client Surface</p>
+          <h1>Sign in with OAuth, unlock locally, and keep the sync path real.</h1>
           <p class="lede">
-            This local web client runs the real runtime helpers instead of test-only package code.
-            It keeps account config, head state, replayable events, and encrypted secret material on disk.
+            This local web client resolves identity through the control plane's OAuth-backed session endpoint
+            before unlocking the durable local runtime and requesting account-scoped remote access.
           </p>
           <form method="post" action="/identify">
-            <button class="button button-primary" type="submit">Start dev session</button>
+            <button class="button button-primary" type="submit">Sign in with OAuth</button>
           </form>
         </div>
         <aside class="hero-panel stack">
           <p class="eyebrow">Flow</p>
           <ol class="steps">
-            <li>Identify into the local client.</li>
+            <li>Resolve the OAuth-backed account session.</li>
             <li>Create or reuse the account password unlock path.</li>
             <li>Save one login secret into the durable local runtime.</li>
             <li>Lock or restart, unlock again, and read the same secret back.</li>
@@ -493,20 +501,30 @@ async function defaultResolveIdentity(): Promise<ClientIdentity> {
   const controlPlaneURL =
     process.env.SAFE_WEB_CONTROL_PLANE_URL ??
     process.env.SAFE_CONTROL_PLANE_URL;
+  const deviceId =
+    process.env.SAFE_WEB_DEVICE_ID ??
+    process.env.SAFE_DEVICE_ID ??
+    process.env.SAFE_DEV_DEVICE_ID ??
+    "dev-web-001";
+  const oauthToken =
+    process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN ??
+    process.env.SAFE_OAUTH_ACCESS_TOKEN;
 
-  if (controlPlaneURL) {
+  if (controlPlaneURL && oauthToken) {
     try {
-      const response = await fetch(new URL("/v1/dev/session", controlPlaneURL), {
-        method: "POST",
+      const response = await fetch(new URL("/v1/session", controlPlaneURL), {
+        headers: {
+          authorization: `Bearer ${oauthToken}`,
+        },
       });
       if (response.ok) {
-        const payload = (await response.json()) as {
-          accountId: string;
-          deviceId: string;
-          env: string;
-        };
-        if (payload.accountId && payload.deviceId && payload.env) {
-          return payload;
+        const payload = (await response.json()) as ControlPlaneSession;
+        if (payload.accountId && payload.env) {
+          return {
+            accountId: payload.accountId,
+            deviceId,
+            env: payload.env,
+          };
         }
       }
     } catch {
@@ -515,8 +533,11 @@ async function defaultResolveIdentity(): Promise<ClientIdentity> {
   }
 
   return {
-    accountId: process.env.SAFE_DEV_ACCOUNT_ID ?? "acct-dev-001",
-    deviceId: process.env.SAFE_DEV_DEVICE_ID ?? "dev-web-001",
+    accountId:
+      process.env.SAFE_OAUTH_ACCOUNT_ID ??
+      process.env.SAFE_DEV_ACCOUNT_ID ??
+      "acct-dev-001",
+    deviceId,
     env: process.env.SAFE_ENV ?? "development",
   };
 }
@@ -527,8 +548,11 @@ async function defaultResolveRemoteAccess(
   const controlPlaneURL =
     process.env.SAFE_WEB_CONTROL_PLANE_URL ??
     process.env.SAFE_CONTROL_PLANE_URL;
+  const oauthToken =
+    process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN ??
+    process.env.SAFE_OAUTH_ACCESS_TOKEN;
 
-  if (!controlPlaneURL) {
+  if (!controlPlaneURL || !oauthToken) {
     return null;
   }
 
@@ -537,6 +561,7 @@ async function defaultResolveRemoteAccess(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        authorization: `Bearer ${oauthToken}`,
       },
       body: JSON.stringify({
         accountId: identity.accountId,

@@ -570,6 +570,50 @@ Out of scope for W16:
 - shared-collection authorization
 - provider-specific IAM policies or pre-signed URL formats
 
+## I10 - OAuth-Backed Account Session Contract
+
+Status:
+
+- accepted
+
+Owner:
+
+- Engineer1 (`refs #50`)
+
+Frozen for W19 (`refs #50`):
+
+Goals:
+
+- replace the dev-session shortcut with one stateless identity path consumed by both CLI and web
+- keep device identity local to the client while the control plane validates account identity from OAuth
+- reuse the same authenticated account identity for `/v1/session` bootstrap and `/v1/access/account` capability issuance
+
+Session endpoint:
+
+- `GET /v1/session`
+- requires `Authorization: Bearer <oauth access token>`
+- returns:
+  - `accountId`
+  - `env`
+  - `bucket`
+  - `endpoint`
+  - `region`
+
+Rules:
+
+- the control plane must validate the bearer token before returning account-scoped session metadata
+- the bearer token must carry an authenticated `accountId`; `/v1/access/account` must reject requests whose `accountId` does not match the validated token
+- the control plane does not assign the device ID during W19; the client provides its local `deviceId` when requesting account access
+- clients may keep local-only fallback behavior when no control plane is configured, but they must not call dev-session endpoints for the real remote-access path
+- the control plane remains stateless beyond bearer-token validation and capability issuance
+
+Out of scope for W19:
+
+- durable OAuth session storage
+- browser onboarding UX beyond the narrow callback or bootstrap plumbing
+- multi-account selection or provider-specific UI polish
+- device enrollment approval and revocation policy changes
+
 ## I5 - Handoff Protocol
 
 Status:

@@ -53,6 +53,46 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer1 progress note (W19)
+
+Task:
+
+- `W19 - Replace dev-session identity with production OAuth login`
+
+Status:
+
+- in progress; refs #50
+
+Files touched:
+
+- `internal/auth/oauth.go`
+- `internal/auth/oauth_test.go`
+- `cmd/control-plane/main.go`
+- `cmd/control-plane/main_test.go`
+- `cmd/safe/main.go`
+- `cmd/safe/main_test.go`
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `docs/project/WORKBOARD.md`
+- `docs/project/INTERFACES.md`
+- `docs/project/HANDOFFS.md`
+- `.env.example`
+
+Outcome:
+
+- the control plane now validates one OAuth-style bearer token path instead of issuing identity through `/v1/dev/session`
+- CLI and web bootstrap through `GET /v1/session` and then request `/v1/access/account` with the same bearer token plus a client-local device ID
+- the dev-session and dev-storage-config endpoints are no longer part of the real remote-access flow
+
+Verification:
+
+- `go test ./...`
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- commit the W19 change, open the PR, and hand review over on issue `#50`
+
 ### 2026-04-06 - Engineer1 progress note (W18)
 
 Task:

@@ -11,10 +11,11 @@ import (
 	"github.com/ndelorme/safe/internal/auth"
 )
 
-func TestDevSessionEndpoint(t *testing.T) {
+func TestSessionEndpoint(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/dev/session", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodGet, "/v1/session", nil)
+	request.Header.Set("Authorization", "Bearer "+newTestOAuthToken(t, "acct-test-001"))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -23,41 +24,32 @@ func TestDevSessionEndpoint(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
 	}
 
-	var payload devSessionResponse
+	var payload sessionResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if payload.AccountID != "acct-test-001" || payload.DeviceID != "dev-test-001" || payload.Env != "test" {
+	if payload.AccountID != "acct-test-001" || payload.Env != "test" || payload.Bucket != "safe-test" {
 		t.Fatalf("unexpected session payload: %+v", payload)
 	}
 }
 
-func TestStorageConfigEndpoint(t *testing.T) {
+func TestSessionEndpointRejectsMissingBearerToken(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/dev/storage-config", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/session", nil)
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
-	}
-
-	var payload storageConfigResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	if payload.Bucket != "safe-test" || payload.Endpoint != "http://localstack:4566" || payload.Region != "us-east-1" {
-		t.Fatalf("unexpected storage payload: %+v", payload)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
 	}
 }
 
-func TestDevSessionMethodGuard(t *testing.T) {
+func TestSessionMethodGuard(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
-	request := httptest.NewRequest(http.MethodGet, "/v1/dev/session", nil)
+	request := httptest.NewRequest(http.MethodPost, "/v1/session", strings.NewReader(`{}`))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -70,6 +62,7 @@ func TestDevSessionMethodGuard(t *testing.T) {
 func TestAccountAccessEndpoint(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
 	request := httptest.NewRequest(http.MethodPost, "/v1/access/account", strings.NewReader(`{"accountId":"acct-test-001","deviceId":"dev-test-001"}`))
+	request.Header.Set("Authorization", "Bearer "+newTestOAuthToken(t, "acct-test-001"))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -93,6 +86,7 @@ func TestAccountAccessEndpoint(t *testing.T) {
 func TestAccountAccessEndpointRejectsMismatchedIdentity(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
 	request := httptest.NewRequest(http.MethodPost, "/v1/access/account", strings.NewReader(`{"accountId":"acct-other-001","deviceId":"dev-test-001"}`))
+	request.Header.Set("Authorization", "Bearer "+newTestOAuthToken(t, "acct-test-001"))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -105,6 +99,7 @@ func TestAccountAccessEndpointRejectsMismatchedIdentity(t *testing.T) {
 func TestAccountAccessEndpointAllowsExplicitList(t *testing.T) {
 	server := newServer(newTestServerConfig(t))
 	request := httptest.NewRequest(http.MethodPost, "/v1/access/account", strings.NewReader(`{"accountId":"acct-test-001","deviceId":"dev-test-001","allowedActions":["list","get"]}`))
+	request.Header.Set("Authorization", "Bearer "+newTestOAuthToken(t, "acct-test-001"))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -142,5 +137,46 @@ func newTestServerConfig(t *testing.T) serverConfig {
 		region:     "us-east-1",
 		accessTTL:  5 * time.Minute,
 		capability: capability,
+		oauth:      newTestOAuthVerifier(t),
 	}
+}
+
+func newTestOAuthVerifier(t *testing.T) *auth.OAuthVerifier {
+	t.Helper()
+
+	verifier, err := auth.NewOAuthVerifier(
+		"safe-test-issuer",
+		"safe-control-plane",
+		[]byte("0123456789abcdef0123456789abcdef"),
+	)
+	if err != nil {
+		t.Fatalf("new oauth verifier: %v", err)
+	}
+	verifier.SetNowForTest(func() time.Time {
+		return time.Date(2026, 4, 6, 8, 1, 0, 0, time.UTC)
+	})
+
+	return verifier
+}
+
+func newTestOAuthToken(t *testing.T, accountID string) string {
+	t.Helper()
+
+	token, err := auth.IssueTestOAuthToken(
+		"safe-test-issuer",
+		"safe-control-plane",
+		[]byte("0123456789abcdef0123456789abcdef"),
+		auth.OAuthIdentity{
+			Subject:   "user-test-001",
+			AccountID: accountID,
+			Env:       "test",
+			IssuedAt:  time.Date(2026, 4, 6, 8, 0, 0, 0, time.UTC).Unix(),
+			ExpiresAt: time.Date(2026, 4, 6, 8, 5, 0, 0, time.UTC).Unix(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("issue oauth token: %v", err)
+	}
+
+	return token
 }

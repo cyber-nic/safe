@@ -17,18 +17,12 @@ type statusResponse struct {
 	Status  string `json:"status"`
 }
 
-type devSessionResponse struct {
+type sessionResponse struct {
 	AccountID string `json:"accountId"`
-	DeviceID  string `json:"deviceId"`
 	Env       string `json:"env"`
-}
-
-type storageConfigResponse struct {
 	Bucket    string `json:"bucket"`
 	Endpoint  string `json:"endpoint"`
 	Region    string `json:"region"`
-	AccountID string `json:"accountId"`
-	DeviceID  string `json:"deviceId"`
 }
 
 type accountAccessRequest struct {
@@ -55,6 +49,7 @@ type serverConfig struct {
 	region     string
 	accessTTL  time.Duration
 	capability *auth.CapabilitySigner
+	oauth      *auth.OAuthVerifier
 }
 
 func main() {
@@ -65,16 +60,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	oauth, err := auth.NewOAuthVerifier(
+		getenvDefault("SAFE_OAUTH_ISSUER", "https://auth.safe.local"),
+		getenvDefault("SAFE_OAUTH_AUDIENCE", "safe-control-plane"),
+		[]byte(getenvDefault("SAFE_OAUTH_HS256_SECRET", "0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	cfg := serverConfig{
 		env:        getenvDefault("SAFE_ENV", "development"),
-		accountID:  getenvDefault("SAFE_DEV_ACCOUNT_ID", "acct-dev-001"),
-		deviceID:   getenvDefault("SAFE_DEV_DEVICE_ID", "dev-web-001"),
+		accountID:  getenvDefault("SAFE_OAUTH_ACCOUNT_ID", getenvDefault("SAFE_DEV_ACCOUNT_ID", "acct-dev-001")),
+		deviceID:   getenvDefault("SAFE_DEVICE_ID", getenvDefault("SAFE_DEV_DEVICE_ID", "dev-web-001")),
 		bucket:     getenvDefault("SAFE_S3_BUCKET", "safe-dev"),
 		endpoint:   getenvDefault("SAFE_S3_ENDPOINT", "http://localstack:4566"),
 		region:     getenvDefault("AWS_REGION", "us-east-1"),
 		accessTTL:  5 * time.Minute,
 		capability: capability,
+		oauth:      oauth,
 	}
 
 	addr := ":8080"
@@ -100,30 +104,24 @@ func newServer(cfg serverConfig) http.Handler {
 			Status:  "healthy",
 		})
 	})
-	mux.HandleFunc("/v1/dev/session", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, devSessionResponse{
-			AccountID: cfg.accountID,
-			DeviceID:  cfg.deviceID,
-			Env:       cfg.env,
-		})
-	})
-	mux.HandleFunc("/v1/dev/storage-config", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/session", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, storageConfigResponse{
+		identity, err := cfg.oauth.VerifyBearerToken(r.Header.Get("Authorization"))
+		if err != nil {
+			writeOAuthError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, sessionResponse{
+			AccountID: identity.AccountID,
+			Env:       cfg.env,
 			Bucket:    cfg.bucket,
 			Endpoint:  cfg.endpoint,
 			Region:    cfg.region,
-			AccountID: cfg.accountID,
-			DeviceID:  cfg.deviceID,
 		})
 	})
 	mux.HandleFunc("/v1/access/account", func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +135,12 @@ func newServer(cfg serverConfig) http.Handler {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		if request.AccountID != cfg.accountID || request.DeviceID != cfg.deviceID {
+		identity, err := cfg.oauth.VerifyBearerToken(r.Header.Get("Authorization"))
+		if err != nil {
+			writeOAuthError(w, err)
+			return
+		}
+		if request.AccountID != identity.AccountID {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -210,6 +213,29 @@ func writeAccessError(w http.ResponseWriter, err error) {
 		errors.Is(err, auth.ErrInvalidCapability("allowedActions")),
 		errors.Is(err, auth.ErrInvalidCapability("ttl")):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func writeOAuthError(w http.ResponseWriter, err error) {
+	switch {
+	case err == nil:
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	case errors.Is(err, auth.ErrMissingOAuthToken()),
+		errors.Is(err, auth.ErrExpiredOAuthToken()):
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+	case errors.Is(err, auth.ErrInvalidOAuthToken("authorization")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("token")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("signature")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("issuer")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("audience")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("subject")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("accountId")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("env")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("issuedAt")),
+		errors.Is(err, auth.ErrInvalidOAuthToken("expiresAt")):
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
