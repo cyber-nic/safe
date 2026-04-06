@@ -19,3 +19,35 @@ func TestItemObjectKey(t *testing.T) {
 		t.Fatalf("unexpected item object key\nwant: %s\ngot:  %s", want, got)
 	}
 }
+
+func TestDeviceListPrefix(t *testing.T) {
+	got := DeviceListPrefix("acct-dev-001")
+	want := "accounts/acct-dev-001/devices/"
+	if got != want {
+		t.Fatalf("unexpected device list prefix\nwant: %s\ngot:  %s", want, got)
+	}
+}
+
+func TestEnrollmentRequestKey(t *testing.T) {
+	got := EnrollmentRequestKey("acct-dev-001", "dev-new-001")
+	want := "accounts/acct-dev-001/enrollments/dev-new-001/request.json"
+	if got != want {
+		t.Fatalf("unexpected enrollment request key\nwant: %s\ngot:  %s", want, got)
+	}
+}
+
+func TestEnrollmentBundleKey(t *testing.T) {
+	got := EnrollmentBundleKey("acct-dev-001", "dev-new-001")
+	want := "accounts/acct-dev-001/enrollments/dev-new-001/bundle.json"
+	if got != want {
+		t.Fatalf("unexpected enrollment bundle key\nwant: %s\ngot:  %s", want, got)
+	}
+}
+
+func TestEnrollmentListPrefix(t *testing.T) {
+	got := EnrollmentListPrefix("acct-dev-001")
+	want := "accounts/acct-dev-001/enrollments/"
+	if got != want {
+		t.Fatalf("unexpected enrollment list prefix\nwant: %s\ngot:  %s", want, got)
+	}
+}
