@@ -96,9 +96,9 @@ Status:
 
 - W2 complete (`refs #4`)
 - W8 complete (`refs #19`)
-- W13 cross-boundary complete, Engineer1 review pending (`refs #35`)
-- W14 in progress (`refs #34`)
-- W15 queued (`refs #33`)
+- W13 cross-boundary complete (`refs #35`)
+- W14 complete (`refs #34`)
+- W15 in progress (`refs #33`)
 
 Current owner:
 
@@ -447,7 +447,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #34`)
+- completed (`refs #34`)
 
 Write scope:
 
@@ -476,7 +476,7 @@ Owner:
 
 Status:
 
-- planned (`refs #33`)
+- in progress (`refs #33`)
 
 Write scope:
 
