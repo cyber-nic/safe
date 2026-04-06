@@ -39,6 +39,36 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-06 - Engineer2 progress note (W15)
+
+Task:
+
+- `W15 - Implement account-path object-store sync and commit protocol`
+
+Status:
+
+- in progress; refs #33
+
+Files touched:
+
+- `internal/storage/cas.go` (new — ObjectStoreWithCAS interface, MemoryObjectStoreWithCAS, ErrCASConflict, ContentETag)
+- `internal/sync/writer.go` (new — SyncWriter, CommitSyncMutation with CAS head advancement)
+- `internal/sync/reader.go` (new — SyncReader, IncrementalSync)
+- `internal/sync/verify.go` (new — VerifyHeadFunc interface, MonotonicVerifyHead stub for W12 integration)
+- `internal/sync/sync_test.go` (new — 8 tests: single commit, two-runtime convergence, interrupt safety, stale head rejection, idempotent commit, CAS conflict, empty collection, delete convergence)
+- `docs/project/WORKBOARD.md`, `docs/project/HANDOFFS.md` (status updates)
+
+W12 integration note:
+
+- W15 ships with `VerifyHeadFunc` as an injectable interface (W12 integration point)
+- Default stub `MonotonicVerifyHead` passes freshness checks but does NOT verify Ed25519 signatures
+- When W12 defines the event signature envelope, inject the real verifier via `NewSyncWriter(store, w12VerifyHead)` — no W15 code changes needed
+
+Next action:
+
+- W12 signature verification integration once Engineer1 opens that branch
+- Engineer1 review of W15 before merge
+
 ### 2026-04-06 - Engineer2 cross-boundary note (W13)
 
 Task:
