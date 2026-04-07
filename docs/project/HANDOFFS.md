@@ -50,8 +50,74 @@ Current planning issues:
 - `#51` W20
 - `#52` W21
 - `#53` W22
+- `#59` W23
+- `#60` W24
 
 ## Entries
+
+### 2026-04-06 - Engineer1 completion note (W22)
+
+Task:
+
+- `W22 - Web sync and device management UX`
+
+Status:
+
+- completed; refs #53 — https://github.com/cyber-nic/safe/pull/61
+
+Files touched:
+
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `cmd/safe/main.go`
+- `cmd/safe/main_test.go`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the web vault now exposes sync push and pull actions with explicit success and failure feedback after unlock
+- the web app now shows enrolled devices, pending enrollment requests, and approval controls aligned with the existing single-user trust model
+- `cmd/safe` now exposes JSON-friendly `device list`, `device pending`, and `device approve <device-id>` commands so the web surface reuses the shipped Go sync and enrollment flow instead of reimplementing it
+
+Verification:
+
+- `go test ./cmd/safe/...`
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- close GitHub issue `#53`, move the project item to `Done`, and start the next Engineer1 follow-up slice outside M3
+
+### 2026-04-06 - Engineer1 progress note (W24)
+
+Task:
+
+- `W24 - Make the localhost demo runnable by a human in one session`
+
+Status:
+
+- in progress; refs #60
+
+Files touched:
+
+- `compose.yaml`
+- `Makefile`
+- `.env.example`
+- `README.md`
+- `docker/web/Dockerfile.dev`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the local compose stack is being expanded to include the web app so `make up` can boot the full browser-accessible demo instead of leaving the web server as a hidden manual step
+- the local developer workflow is being tightened around a `make token` helper so the existing HS256 dev-token path can be exercised without hand-assembling JWTs
+- the repo docs are being updated so the first-run walkthrough matches the actual browser, CLI, and sync smoke path
+
+Next action:
+
+- finish the compose and token-helper wiring, verify the walkthrough, then open the W24 PR on issue `#60`
 
 ### 2026-04-06 - Engineer1 progress note (W22)
 

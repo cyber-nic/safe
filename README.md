@@ -47,34 +47,48 @@ Useful progress already landed:
 - a local server-rendered web client that identifies, unlocks, saves one login secret, locks, and reopens against the same account-local runtime concepts
 - full Go test coverage for the current local-runtime path passes on `main`
 
-The repository still has important v1 gaps after M1:
+The repository still has important follow-up gaps after M3:
 
-- cryptographic key hierarchy and recovery flows are still missing
-- signed mutable metadata and rollback detection are still missing
-- object-store sync is still a starter model, not the intended v1 storage protocol
+- real third-party OAuth redirect integration is still missing; local demo flows still use the explicit dev-token path
+- the localhost demo is now runnable end to end, but it is still a developer smoke path rather than a polished product environment
+- broader multi-user sharing, revocation, and production deployment work remain out of scope for the shipped milestone
 
 ## Immediate Next Steps
 
-1. Move from the closed M1 loop into recovery implementation and rollback-rule hardening.
-2. Freeze the next milestone boundary before expanding surface area beyond the current local client and CLI paths.
-3. Keep browser-native adapter decisions explicit instead of backfilling them into the finished M1 scope.
-4. Continue signer and sync-hardening work only insofar as it supports the next real user-critical loop.
+1. Replace the HS256 dev-token login path with a real OAuth provider redirect flow.
+2. Keep the localhost demo path simple enough that a new developer can validate the product loop quickly.
+3. Continue tightening control-plane and sync hardening without reopening the shipped single-user milestone boundary.
+4. Keep browser-native adapter and multi-user scope explicit follow-up work instead of backfilling it into the current product slice.
 
 ## Local Development
 
-The initial local development stack is Compose-first:
+The local development stack is Compose-first:
 
 - `localstack` for the local AWS and S3-compatible endpoint
 - `control-plane` as the first Go service running in a dev container with Compose watch support
+- `web` as the server-rendered local client on port `3000`
 
 Quick start:
 
-1. Copy `.env.example` to `.env` if you need to override defaults or set `LOCALSTACK_AUTH_TOKEN`.
+1. Copy `.env.example` to `.env`.
 2. Optionally copy `compose.override.yaml.example` to `compose.override.yaml` for local-only stack naming overrides.
 3. Run `make up`.
-4. Run `make logs` to follow service output.
-5. Run `make watch` if you want Compose-managed restart behavior on Go file changes.
-6. Run `npm start --prefix apps/web` to launch the local M1 web client surface.
+4. Run `make token` and copy the printed JWT into `.env` as `SAFE_OAUTH_ACCESS_TOKEN`.
+5. Run `make up` again if you changed `.env` after the first boot so the web and control-plane containers pick up the token.
+6. Open `http://localhost:3000`, click `Sign In`, create a secret, and confirm the vault flow in the browser.
+7. Run `make cli ARGS="secret list"` to confirm the same account-local data from the CLI.
+8. Run `make cli ARGS="sync push"` and then open a second browser profile to exercise the sync path against the same localstack-backed control plane.
+
+The web service now starts inside Compose, so `npm start --prefix apps/web` is optional and mainly useful if you intentionally want to run the web client outside the container.
+
+The `make token` target uses the values already in `.env`:
+
+- `SAFE_OAUTH_HS256_SECRET`
+- `SAFE_OAUTH_ISSUER`
+- `SAFE_OAUTH_AUDIENCE`
+- `SAFE_OAUTH_ACCOUNT_ID`
+
+It prints a valid dev JWT for the current `.env`; it does not write back to `.env` automatically.
 
 When multiple engineers or agents run the stack on the same machine, each one needs a unique Compose namespace as well as unique host ports. Set the shared identity in your local `.env`:
 
@@ -111,10 +125,13 @@ Keep the port values in `.env`: Compose merges `ports:` arrays across override f
 Useful targets:
 
 - `make ps`
+- `make token`
 - `make shell-control-plane`
 - `make shell-localstack`
 - `make s3-ls`
 - `make test-go`
+- `make cli ARGS="secret list"`
+- `make cli ARGS="sync push"`
 - `make down`
 
 ## Engineer Coordination

@@ -1,0 +1,12 @@
+FROM node:24-bookworm-slim
+
+WORKDIR /workspace
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:${PATH}
+
+RUN corepack enable
+
+EXPOSE 3000
+
+CMD ["sh", "-lc", "CI=1 pnpm install --frozen-lockfile --force && pnpm --filter @safe/web start"]
