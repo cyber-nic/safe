@@ -1,6 +1,30 @@
 name: safe-${SAFE_STACK_NAME:-stack}
 
 services:
+  web:
+    container_name: safe-${SAFE_STACK_NAME:-stack}-web
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile.dev
+    command: ["sh", "-lc", "CI=1 pnpm install --frozen-lockfile --force && pnpm --filter @safe/web start"]
+    working_dir: /workspace
+    environment:
+      SAFE_WEB_PORT: 3000
+      SAFE_WEB_DATA_DIR: /workspace/.cache/safe-web-data
+      SAFE_CONTROL_PLANE_URL: http://control-plane:8080
+      SAFE_OAUTH_ACCESS_TOKEN: ${SAFE_OAUTH_ACCESS_TOKEN:-}
+      SAFE_OAUTH_ACCOUNT_ID: ${SAFE_OAUTH_ACCOUNT_ID:-acct-dev-001}
+      SAFE_DEVICE_ID: ${SAFE_DEVICE_ID:-dev-web-001}
+      SAFE_ENV: development
+    ports:
+      - "${SAFE_WEB_PORT:-3000}:3000"
+    volumes:
+      - .:/workspace
+      - pnpm-store:/pnpm/store
+    depends_on:
+      control-plane:
+        condition: service_started
+
   control-plane:
     container_name: safe-${SAFE_STACK_NAME:-stack}-control-plane
     build:
@@ -64,3 +88,5 @@ services:
 volumes:
   localstack-data:
     name: safe-${SAFE_STACK_NAME:-stack}-localstack-data
+  pnpm-store:
+    name: safe-${SAFE_STACK_NAME:-stack}-pnpm-store

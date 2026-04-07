@@ -44,8 +44,8 @@ Goal:
 Current status:
 
 - M1 and M2 are complete on `main`; the repo now has a trustworthy local loop plus a restart-safe two-device sync proof through the shipped clients (`refs #1`, `#22`, `#30`, `#37`)
-- the remaining critical gap is productization of that foundation into a real single-user web surface rather than more protocol-only slices (`refs #48`, `#49`)
-- W18 is the active planning slice that freezes the M3 boundary before W19-W22 implementation begins (`refs #49`)
+- M3 is now complete on `main`; the repo ships the planned single-user web-product slices for real identity bootstrap, onboarding, vault CRUD, and sync or device-management visibility (`refs #48`, `#49`, `#50`, `#51`, `#52`, `#53`)
+- follow-on work now moves beyond the frozen M3 boundary into real-provider OAuth and demoability improvements rather than reopening the shipped milestone scope (`refs #59`, `#60`)
 
 Non-goals for this milestone:
 
@@ -54,7 +54,7 @@ Non-goals for this milestone:
 - advanced audit UX, admin tooling, or organization features
 - broad polish outside the critical onboarding, vault, sync, and device-management loops
 
-Milestone kickoff status:
+Milestone completion status:
 
 - W18 defines the M3 boundary and acceptance checks before implementation starts (`refs #49`)
 - W19 replaces the dev-session identity shortcut with the real OAuth login path shared by CLI and web (`refs #50`)
@@ -684,7 +684,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #53`)
+- completed (`refs #53`)
 
 Write scope:
 
@@ -703,6 +703,64 @@ Dependencies:
 GitHub issue:
 
 - `#53`
+
+### W23 - Real OAuth provider integration
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- todo (`refs #59`)
+
+Write scope:
+
+- `cmd/control-plane/**`
+- `internal/auth/**`
+- `apps/web/**`
+
+Output:
+
+- a real provider-backed OAuth redirect flow plus control-plane verification that no longer depends on injected dev tokens for normal sign-in
+
+Dependencies:
+
+- M3 complete on `main`
+
+GitHub issue:
+
+- `#59`
+
+### W24 - Make the localhost demo runnable by a human in one session
+
+Owner:
+
+- Engineer1
+
+Status:
+
+- in progress (`refs #60`)
+
+Write scope:
+
+- `compose.yaml`
+- `Makefile`
+- `.env.example`
+- `README.md`
+- `docker/**` for a narrow web dev-container addition if needed
+
+Output:
+
+- `make up` launches the full local demo stack, `make token` prints a usable dev JWT, and the README documents the browser-plus-CLI smoke path against the same local environment
+
+Dependencies:
+
+- none; this slice intentionally rides the existing HS256 dev-token path instead of waiting on W23
+
+GitHub issue:
+
+- `#60`
 
 ## PR Template
 
