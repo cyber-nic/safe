@@ -578,9 +578,9 @@ Status:
 
 Owner:
 
-- Engineer1 (`refs #50`)
+- Engineer1 (`refs #50`, `#59`)
 
-Frozen for W19 (`refs #50`):
+Frozen for W19 (`refs #50`); extended for W23 (`refs #59`):
 
 Goals:
 
@@ -591,7 +591,7 @@ Goals:
 Session endpoint:
 
 - `GET /v1/session`
-- requires `Authorization: Bearer <oauth access token>`
+- requires `Authorization: Bearer <oauth token>`
 - returns:
   - `accountId`
   - `env`
@@ -602,8 +602,12 @@ Session endpoint:
 Rules:
 
 - the control plane must validate the bearer token before returning account-scoped session metadata
-- the bearer token must carry an authenticated `accountId`; `/v1/access/account` must reject requests whose `accountId` does not match the validated token
+- in provider-backed mode (`SAFE_OAUTH_DEV_MODE=false`), the bearer token is an OAuth ID token validated against the configured issuer, audience, and JWKS URL
+- in explicit dev mode (`SAFE_OAUTH_DEV_MODE=true`), the bearer token may remain the repo's HS256 test token format so local demo and CI flows do not depend on a live provider
+- provider-backed tokens do not need to carry a literal `accountId` claim; the control plane derives a stable account ID by hashing `<issuer>:<sub>` and uses that derived value for both `/v1/session` and `/v1/access/account`
+- `/v1/access/account` must reject requests whose `accountId` does not match the validated or derived identity from the bearer token
 - the control plane does not assign the device ID during W19; the client provides its local `deviceId` when requesting account access
+- the web client initiates provider-backed sign-in through `/auth/login` and `/auth/callback`; in dev mode it may keep the existing local bootstrap path instead of redirecting away from localhost
 - clients may keep local-only fallback behavior when no control plane is configured, but they must not call dev-session endpoints for the real remote-access path
 - the control plane remains stateless beyond bearer-token validation and capability issuance
 

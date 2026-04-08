@@ -45,7 +45,7 @@ Current status:
 
 - M1 and M2 are complete on `main`; the repo now has a trustworthy local loop plus a restart-safe two-device sync proof through the shipped clients (`refs #1`, `#22`, `#30`, `#37`)
 - M3 is now complete on `main`; the repo ships the planned single-user web-product slices for real identity bootstrap, onboarding, vault CRUD, and sync or device-management visibility (`refs #48`, `#49`, `#50`, `#51`, `#52`, `#53`)
-- follow-on work now moves beyond the frozen M3 boundary into real-provider OAuth and demoability improvements rather than reopening the shipped milestone scope (`refs #59`, `#60`)
+- follow-on work now moves beyond the frozen M3 boundary into real-provider OAuth and demoability improvements rather than reopening the shipped milestone scope; W24 is complete on `main`, and W23 is the active Engineer1 follow-up slice (`refs #59`, `#60`)
 
 Non-goals for this milestone:
 
@@ -712,7 +712,7 @@ Owner:
 
 Status:
 
-- todo (`refs #59`)
+- in progress (`refs #59`)
 
 Write scope:
 
@@ -740,7 +740,7 @@ Owner:
 
 Status:
 
-- in progress (`refs #60`)
+- completed on `main` via PR `#62` (`refs #60`)
 
 Write scope:
 

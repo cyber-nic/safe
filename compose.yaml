@@ -12,6 +12,13 @@ services:
       SAFE_WEB_PORT: 3000
       SAFE_WEB_DATA_DIR: /workspace/.cache/safe-web-data
       SAFE_CONTROL_PLANE_URL: http://control-plane:8080
+      SAFE_OAUTH_DEV_MODE: ${SAFE_OAUTH_DEV_MODE:-true}
+      SAFE_OAUTH_PROVIDER: ${SAFE_OAUTH_PROVIDER:-Google}
+      SAFE_OAUTH_CLIENT_ID: ${SAFE_OAUTH_CLIENT_ID:-}
+      SAFE_OAUTH_CLIENT_SECRET: ${SAFE_OAUTH_CLIENT_SECRET:-}
+      SAFE_OAUTH_REDIRECT_URL: ${SAFE_OAUTH_REDIRECT_URL:-http://localhost:3000/auth/callback}
+      SAFE_OAUTH_AUTHORIZE_URL: ${SAFE_OAUTH_AUTHORIZE_URL:-https://accounts.google.com/o/oauth2/v2/auth}
+      SAFE_OAUTH_TOKEN_URL: ${SAFE_OAUTH_TOKEN_URL:-https://oauth2.googleapis.com/token}
       SAFE_OAUTH_ACCESS_TOKEN: ${SAFE_OAUTH_ACCESS_TOKEN:-}
       SAFE_OAUTH_ACCOUNT_ID: ${SAFE_OAUTH_ACCOUNT_ID:-acct-dev-001}
       SAFE_DEVICE_ID: ${SAFE_DEVICE_ID:-dev-web-001}
@@ -38,6 +45,12 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       SAFE_S3_BUCKET: ${SAFE_S3_BUCKET:-safe-dev}
       SAFE_S3_ENDPOINT: http://localstack:4566
+      SAFE_OAUTH_DEV_MODE: ${SAFE_OAUTH_DEV_MODE:-true}
+      SAFE_OAUTH_CLIENT_ID: ${SAFE_OAUTH_CLIENT_ID:-}
+      SAFE_OAUTH_JWKS_URL: ${SAFE_OAUTH_JWKS_URL:-https://www.googleapis.com/oauth2/v3/certs}
+      SAFE_OAUTH_ISSUER: ${SAFE_OAUTH_ISSUER:-https://auth.safe.local}
+      SAFE_OAUTH_AUDIENCE: ${SAFE_OAUTH_AUDIENCE:-safe-control-plane}
+      SAFE_OAUTH_HS256_SECRET: ${SAFE_OAUTH_HS256_SECRET:-0123456789abcdef0123456789abcdef}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
     ports:

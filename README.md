@@ -49,16 +49,16 @@ Useful progress already landed:
 
 The repository still has important follow-up gaps after M3:
 
-- real third-party OAuth redirect integration is still missing; local demo flows still use the explicit dev-token path
-- the localhost demo is now runnable end to end, but it is still a developer smoke path rather than a polished product environment
+- the repo now supports a real provider-backed OAuth redirect path as well as an explicit localhost-only dev-token mode, but the production-facing setup still needs more deployment hardening than the local demo path
+- the localhost demo is runnable end to end, but it is still a developer smoke path rather than a polished product environment
 - broader multi-user sharing, revocation, and production deployment work remain out of scope for the shipped milestone
 
 ## Immediate Next Steps
 
-1. Replace the HS256 dev-token login path with a real OAuth provider redirect flow.
-2. Keep the localhost demo path simple enough that a new developer can validate the product loop quickly.
-3. Continue tightening control-plane and sync hardening without reopening the shipped single-user milestone boundary.
-4. Keep browser-native adapter and multi-user scope explicit follow-up work instead of backfilling it into the current product slice.
+1. Keep the real-provider OAuth setup documented and easy to configure without regressing the explicit localhost dev mode.
+2. Continue tightening control-plane and sync hardening without reopening the shipped single-user milestone boundary.
+3. Keep browser-native adapter and multi-user scope explicit follow-up work instead of backfilling it into the current product slice.
+4. Treat production deployment, observability, and provider-secret handling as follow-on hardening work rather than assuming the localhost flow is production-ready.
 
 ## Local Development
 
@@ -72,12 +72,13 @@ Quick start:
 
 1. Copy `.env.example` to `.env`.
 2. Optionally copy `compose.override.yaml.example` to `compose.override.yaml` for local-only stack naming overrides.
-3. Run `make up`.
-4. Run `make token` and copy the printed JWT into `.env` as `SAFE_OAUTH_ACCESS_TOKEN`.
-5. Run `make up` again if you changed `.env` after the first boot so the web and control-plane containers pick up the token.
-6. Open `http://localhost:3000`, click `Sign In`, create a secret, and confirm the vault flow in the browser.
-7. Run `make cli ARGS="secret list"` to confirm the same account-local data from the CLI.
-8. Run `make cli ARGS="sync push"` and then open a second browser profile to exercise the sync path against the same localstack-backed control plane.
+3. Leave `SAFE_OAUTH_DEV_MODE=true` for the localhost smoke path, or set it to `false` and fill in the real provider variables before booting the stack.
+4. Run `make up`.
+5. In explicit dev mode, run `make token` and copy the printed JWT into `.env` as `SAFE_OAUTH_ACCESS_TOKEN`.
+6. Run `make up` again if you changed `.env` after the first boot so the web and control-plane containers pick up the new auth settings.
+7. Open `http://localhost:3000`, click `Sign In`, create a secret, and confirm the vault flow in the browser.
+8. Run `make cli ARGS="secret list"` to confirm the same account-local data from the CLI.
+9. Run `make cli ARGS="sync push"` and then open a second browser profile to exercise the sync path against the same localstack-backed control plane.
 
 The web service now starts inside Compose, so `npm start --prefix apps/web` is optional and mainly useful if you intentionally want to run the web client outside the container.
 
@@ -89,6 +90,15 @@ The `make token` target uses the values already in `.env`:
 - `SAFE_OAUTH_ACCOUNT_ID`
 
 It prints a valid dev JWT for the current `.env`; it does not write back to `.env` automatically.
+
+For the real provider-backed path, set these before clicking `Sign In`:
+
+- `SAFE_OAUTH_DEV_MODE=false`
+- `SAFE_OAUTH_CLIENT_ID`
+- `SAFE_OAUTH_CLIENT_SECRET`
+- `SAFE_OAUTH_REDIRECT_URL`
+
+The repo defaults the provider endpoints to Google's standard OIDC URLs. If you need to override them, use `SAFE_OAUTH_AUTHORIZE_URL`, `SAFE_OAUTH_TOKEN_URL`, and `SAFE_OAUTH_JWKS_URL`. In provider mode the control plane validates the provider-signed ID token and derives the Safe account ID from `<issuer>:<sub>`.
 
 When multiple engineers or agents run the stack on the same machine, each one needs a unique Compose namespace as well as unique host ports. Set the shared identity in your local `.env`:
 
