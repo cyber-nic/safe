@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ndelorme/safe/internal/auth"
@@ -42,8 +43,6 @@ type accountAccessResponse struct {
 
 type serverConfig struct {
 	env        string
-	accountID  string
-	deviceID   string
 	bucket     string
 	endpoint   string
 	region     string
@@ -60,19 +59,39 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	oauth, err := auth.NewOAuthVerifier(
-		getenvDefault("SAFE_OAUTH_ISSUER", "https://auth.safe.local"),
-		getenvDefault("SAFE_OAUTH_AUDIENCE", "safe-control-plane"),
-		[]byte(getenvDefault("SAFE_OAUTH_HS256_SECRET", "0123456789abcdef0123456789abcdef")),
-	)
+	devMode := getenvBool("SAFE_OAUTH_DEV_MODE", false)
+	defaultIssuer := "https://accounts.google.com"
+	defaultAudience := getenvDefault("SAFE_OAUTH_CLIENT_ID", "")
+	defaultJWKSURL := "https://www.googleapis.com/oauth2/v3/certs"
+	if devMode {
+		defaultIssuer = "https://auth.safe.local"
+		defaultAudience = "safe-control-plane"
+		defaultJWKSURL = ""
+	}
+	oauthIssuer := getenvDefault("SAFE_OAUTH_ISSUER", defaultIssuer)
+	oauthAudience := getenvDefault("SAFE_OAUTH_AUDIENCE", defaultAudience)
+	if !devMode {
+		if oauthIssuer == "https://auth.safe.local" {
+			oauthIssuer = defaultIssuer
+		}
+		if oauthAudience == "safe-control-plane" && defaultAudience != "" {
+			oauthAudience = defaultAudience
+		}
+	}
+	oauth, err := auth.NewOAuthVerifier(auth.OAuthVerifierConfig{
+		Issuer:    oauthIssuer,
+		Audience:  oauthAudience,
+		Env:       getenvDefault("SAFE_ENV", "development"),
+		DevMode:   devMode,
+		SecretKey: []byte(getenvDefault("SAFE_OAUTH_HS256_SECRET", "0123456789abcdef0123456789abcdef")),
+		JWKSURL:   getenvDefault("SAFE_OAUTH_JWKS_URL", defaultJWKSURL),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	cfg := serverConfig{
 		env:        getenvDefault("SAFE_ENV", "development"),
-		accountID:  getenvDefault("SAFE_OAUTH_ACCOUNT_ID", getenvDefault("SAFE_DEV_ACCOUNT_ID", "acct-dev-001")),
-		deviceID:   getenvDefault("SAFE_DEVICE_ID", getenvDefault("SAFE_DEV_DEVICE_ID", "dev-web-001")),
 		bucket:     getenvDefault("SAFE_S3_BUCKET", "safe-dev"),
 		endpoint:   getenvDefault("SAFE_S3_ENDPOINT", "http://localstack:4566"),
 		region:     getenvDefault("AWS_REGION", "us-east-1"),
@@ -197,8 +216,20 @@ func getenvDefault(key, fallback string) string {
 	return value
 }
 
+func getenvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
 func (cfg serverConfig) deviceLookup(accountID, deviceID string) (bool, error) {
-	return accountID == cfg.accountID && deviceID == cfg.deviceID, nil
+	return accountID != "" && deviceID != "", nil
 }
 
 func writeAccessError(w http.ResponseWriter, err error) {

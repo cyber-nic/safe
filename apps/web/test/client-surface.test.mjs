@@ -532,6 +532,163 @@ test("web client requests remote account access during identify when control pla
   }
 });
 
+test("web client redirects through provider auth and completes oauth callback", async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "safe-web-"));
+  const previousEnv = {
+    SAFE_OAUTH_DEV_MODE: process.env.SAFE_OAUTH_DEV_MODE,
+    SAFE_OAUTH_PROVIDER: process.env.SAFE_OAUTH_PROVIDER,
+    SAFE_OAUTH_CLIENT_ID: process.env.SAFE_OAUTH_CLIENT_ID,
+    SAFE_OAUTH_CLIENT_SECRET: process.env.SAFE_OAUTH_CLIENT_SECRET,
+    SAFE_OAUTH_REDIRECT_URL: process.env.SAFE_OAUTH_REDIRECT_URL,
+    SAFE_OAUTH_AUTHORIZE_URL: process.env.SAFE_OAUTH_AUTHORIZE_URL,
+    SAFE_OAUTH_TOKEN_URL: process.env.SAFE_OAUTH_TOKEN_URL,
+    SAFE_WEB_CONTROL_PLANE_URL: process.env.SAFE_WEB_CONTROL_PLANE_URL,
+  };
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+
+  process.env.SAFE_OAUTH_DEV_MODE = "false";
+  process.env.SAFE_OAUTH_PROVIDER = "Google";
+  process.env.SAFE_OAUTH_CLIENT_ID = "client-test-123.apps.googleusercontent.com";
+  process.env.SAFE_OAUTH_CLIENT_SECRET = "secret-test-123";
+  process.env.SAFE_OAUTH_REDIRECT_URL = "http://localhost:3000/auth/callback";
+  process.env.SAFE_OAUTH_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+  process.env.SAFE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+  process.env.SAFE_WEB_CONTROL_PLANE_URL = "http://control-plane.test";
+  globalThis.fetch = async (input, init = {}) => {
+    const url = input instanceof URL ? input : new URL(input);
+    requests.push({
+      url: url.toString(),
+      method: init.method ?? "GET",
+      body: init.body ? String(init.body) : null,
+    });
+
+    if (url.toString() === "https://oauth2.googleapis.com/token") {
+      assert.equal(init.method, "POST");
+      assert.match(String(init.body), /grant_type=authorization_code/);
+      assert.match(String(init.body), /code=oauth-code-123/);
+      assert.match(
+        String(init.body),
+        /client_id=client-test-123.apps.googleusercontent.com/,
+      );
+      return new Response(
+        JSON.stringify({
+          id_token: "google-id-token",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    if (url.pathname === "/v1/session") {
+      assert.equal(init.headers.authorization, "Bearer google-id-token");
+      return new Response(
+        JSON.stringify({
+          accountId: "acct-oauth-001",
+          env: "test",
+          bucket: "safe-test",
+          endpoint: "http://localstack:4566",
+          region: "us-east-1",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    if (url.pathname === "/v1/access/account") {
+      assert.equal(init.headers.authorization, "Bearer google-id-token");
+      return new Response(
+        JSON.stringify({
+          bucket: "safe-test",
+          endpoint: "http://localstack:4566",
+          region: "us-east-1",
+          keyId: "dev-hmac-v1",
+          token: "signed-token",
+          capability: {
+            version: 1,
+            accountId: "acct-oauth-001",
+            deviceId: "dev-web-001",
+            bucket: "safe-test",
+            prefix: "accounts/acct-oauth-001/",
+            allowedActions: ["get", "put"],
+            issuedAt: "2026-04-08T08:00:00Z",
+            expiresAt: "2026-04-08T08:05:00Z",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected fetch ${url.toString()}`);
+  };
+
+  try {
+    const app = createWebClientServer({ dataDir });
+
+    let response = await invoke(app, {
+      method: "GET",
+      url: "/auth/login",
+    });
+    assert.equal(response.status, 303);
+    assert.match(
+      response.headers.location,
+      /^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/,
+    );
+    const redirectURL = new URL(response.headers.location);
+    assert.equal(redirectURL.searchParams.get("client_id"), process.env.SAFE_OAUTH_CLIENT_ID);
+    assert.equal(
+      redirectURL.searchParams.get("redirect_uri"),
+      process.env.SAFE_OAUTH_REDIRECT_URL,
+    );
+    assert.equal(redirectURL.searchParams.get("response_type"), "code");
+    assert.equal(redirectURL.searchParams.get("scope"), "openid email profile");
+    assert.equal(redirectURL.searchParams.get("code_challenge_method"), "S256");
+    assert.ok(redirectURL.searchParams.get("state"));
+    assert.ok(redirectURL.searchParams.get("code_challenge"));
+    const cookie = getSetCookie(response);
+    assert.ok(cookie);
+
+    response = await invoke(app, {
+      method: "GET",
+      url: `/auth/callback?code=oauth-code-123&state=${encodeURIComponent(
+        redirectURL.searchParams.get("state"),
+      )}`,
+      headers: { cookie },
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, "/unlock");
+
+    response = await invoke(app, {
+      url: "/unlock",
+      headers: { cookie },
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.text, /acct-oauth-001/);
+    assert.match(response.text, /Create local vault password/);
+
+    assert.equal(requests[0].url, "https://oauth2.googleapis.com/token");
+    assert.equal(requests[1].url, "http://control-plane.test/v1/session");
+    assert.equal(requests[2].url, "http://control-plane.test/v1/access/account");
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    globalThis.fetch = previousFetch;
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("web client surfaces sync actions, enrolled devices, and enrollment approval", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "safe-web-"));
   const identity = {

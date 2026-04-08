@@ -130,8 +130,6 @@ func newTestServerConfig(t *testing.T) serverConfig {
 
 	return serverConfig{
 		env:        "test",
-		accountID:  "acct-test-001",
-		deviceID:   "dev-test-001",
 		bucket:     "safe-test",
 		endpoint:   "http://localstack:4566",
 		region:     "us-east-1",
@@ -144,11 +142,13 @@ func newTestServerConfig(t *testing.T) serverConfig {
 func newTestOAuthVerifier(t *testing.T) *auth.OAuthVerifier {
 	t.Helper()
 
-	verifier, err := auth.NewOAuthVerifier(
-		"safe-test-issuer",
-		"safe-control-plane",
-		[]byte("0123456789abcdef0123456789abcdef"),
-	)
+	verifier, err := auth.NewOAuthVerifier(auth.OAuthVerifierConfig{
+		Issuer:    "safe-test-issuer",
+		Audience:  "safe-control-plane",
+		Env:       "test",
+		DevMode:   true,
+		SecretKey: []byte("0123456789abcdef0123456789abcdef"),
+	})
 	if err != nil {
 		t.Fatalf("new oauth verifier: %v", err)
 	}

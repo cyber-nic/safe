@@ -55,6 +55,80 @@ Current planning issues:
 
 ## Entries
 
+### 2026-04-08 - Engineer1 completion note (W24)
+
+Task:
+
+- `W24 - Make the localhost demo runnable by a human in one session`
+
+Status:
+
+- completed; refs #60 — https://github.com/cyber-nic/safe/pull/62
+
+Files touched:
+
+- `compose.yaml`
+- `Makefile`
+- `.env.example`
+- `README.md`
+- `docker/web/Dockerfile.dev`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- `make up` now boots localstack, the control plane, and the web app together for the documented localhost smoke path
+- `make token` now prints a usable HS256 dev JWT from `.env`, so the shared local demo path no longer depends on hand-built tokens
+- the README walkthrough now matches the actual compose-first browser-plus-CLI loop on `main`
+
+Verification:
+
+- `make COMPOSE_ENV_FILE=.env.example token`
+- `docker compose -f compose.yaml -f compose.override.yaml --env-file .env.example config`
+- shared-port compose boot plus `/healthz` and web-home checks during PR #62 validation
+
+Next action:
+
+- move issue `#60` and its project item to `Done`, then continue with W23 as the next Engineer1 slice
+
+### 2026-04-08 - Engineer1 progress note (W23)
+
+Task:
+
+- `W23 - Real OAuth provider integration`
+
+Status:
+
+- in progress; refs #59
+
+Files touched:
+
+- `internal/auth/oauth.go`
+- `internal/auth/oauth_test.go`
+- `cmd/control-plane/main.go`
+- `cmd/control-plane/main_test.go`
+- `apps/web/src/server.ts`
+- `apps/web/test/client-surface.test.mjs`
+- `docs/project/INTERFACES.md`
+- `docs/project/DECISIONS.md`
+- `docs/project/WORKBOARD.md`
+- `docs/project/HANDOFFS.md`
+
+Outcome:
+
+- the control plane now supports provider-signed JWT validation through issuer, audience, and JWKS configuration while keeping the HS256 token format behind an explicit dev-mode flag
+- the web app now supports a real authorization-code plus PKCE redirect flow through `/auth/login` and `/auth/callback`, then reuses the existing unlock and remote-access flow after the provider callback
+- the account-session contract now treats provider `sub` plus issuer as the source identity and derives the Safe `accountId` from that pair instead of requiring a custom `accountId` claim inside the real provider token
+
+Verification:
+
+- `go test ./internal/auth ./cmd/control-plane`
+- `pnpm --filter @safe/web test`
+
+Next action:
+
+- wire the remaining env and README updates, then open the W23 PR on issue `#59`
+
 ### 2026-04-06 - Engineer1 completion note (W22)
 
 Task:

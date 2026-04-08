@@ -518,6 +518,43 @@ Refs:
 - `#48`
 - `#49`
 
+### D16 - W23 uses provider-validated ID tokens with an explicit dev-mode fallback
+
+Status:
+
+- accepted
+
+Date:
+
+- 2026-04-08
+
+Owner:
+
+- Engineer1
+
+Decision:
+
+- the real follow-on OAuth path uses provider-signed ID tokens validated against issuer, audience, and JWKS configuration instead of the repo-local HS256 secret
+- the control plane derives the stable Safe `accountId` from `<issuer>:<sub>` so provider tokens do not need a custom `accountId` claim
+- the repo keeps the HS256 token format only behind `SAFE_OAUTH_DEV_MODE=true` so the localhost demo and CI can still run without a live third-party provider
+- the web app owns the authorization-code plus PKCE redirect flow through `/auth/login` and `/auth/callback`
+
+Rationale:
+
+- Google-style OIDC ID tokens are JWTs signed with rotating public keys, which fits the existing stateless control-plane session boundary better than introducing server-side session storage
+- deriving `accountId` from provider identity keeps the storage namespace stable without leaking raw provider subject values into local paths
+- preserving an explicit dev mode avoids breaking the W24 localhost workflow while still making the normal sign-in path a real provider redirect
+
+Downstream impact:
+
+- `internal/auth/**` now supports both HS256 dev verification and RS256 or ES256 JWKS verification under one verifier boundary
+- `cmd/control-plane/**` now reads issuer, audience, JWKS, client-id, and dev-mode configuration instead of assuming the repo-local HS256 token is the normal login path
+- `apps/web/**` now needs provider redirect configuration plus a callback route; `.env.example`, Compose wiring, and README guidance must expose the new env vars
+
+Refs:
+
+- `#59`
+
 ## Open Questions
 
 ### P3 - Web local runtime storage boundary

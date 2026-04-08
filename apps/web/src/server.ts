@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -33,11 +33,18 @@ import {
 type SessionState = {
   identity: ClientIdentity | null;
   remoteAccess: AccountAccessResponse | null;
+  oauthToken: string | null;
+  pendingOAuthLogin: PendingOAuthLogin | null;
   accountKey: Buffer | null;
   pendingOnboarding: PreparedFirstUse | null;
   pendingPassword: string | null;
   vaultPassword: string | null;
   flash: string | null;
+};
+
+type PendingOAuthLogin = {
+  state: string;
+  codeVerifier: string;
 };
 
 type ControlPlaneSession = {
@@ -71,6 +78,17 @@ type AccountAccessResponse = {
 type SafeCommandResult = {
   stdout: string;
   stderr: string;
+};
+
+type OAuthLoginConfig = {
+  provider: string;
+  devMode: boolean;
+  clientId: string;
+  clientSecret: string;
+  authorizeURL: string;
+  tokenURL: string;
+  redirectURL: string;
+  scopes: string;
 };
 
 type SafeCommandRunner = (
@@ -172,9 +190,48 @@ export function createWebClientServer(
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/identify") {
-      session.identity = await resolveIdentity();
-      session.remoteAccess = await resolveRemoteAccess(session.identity);
+    if (
+      ((request.method === "GET" || request.method === "POST") &&
+        url.pathname === "/auth/login") ||
+      (request.method === "POST" && url.pathname === "/identify")
+    ) {
+      const oauthConfig = readOAuthLoginConfig();
+
+      if (oauthConfig.devMode) {
+        session.oauthToken =
+          process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN ??
+          process.env.SAFE_OAUTH_ACCESS_TOKEN ??
+          null;
+        session.pendingOAuthLogin = null;
+        session.identity = await resolveIdentity();
+        session.remoteAccess = await resolveRemoteAccess(session.identity);
+      } else {
+        if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+          writeHTML(
+            response,
+            500,
+            renderPage({
+              title: "Safe OAuth",
+              body: `
+                <section class="panel stack">
+                  <p class="eyebrow">OAuth Config</p>
+                  <h1>Sign-in is not configured</h1>
+                  <p>Set <code>SAFE_OAUTH_CLIENT_ID</code> and <code>SAFE_OAUTH_CLIENT_SECRET</code> before using the provider-backed login flow.</p>
+                  <p><a class="link" href="/">Return home</a></p>
+                </section>
+              `,
+            }),
+          );
+          return;
+        }
+
+        const state = encodeBase64URL(randomBytes(24));
+        const codeVerifier = encodeBase64URL(randomBytes(32));
+        session.pendingOAuthLogin = { state, codeVerifier };
+        redirect(response, buildOAuthAuthorizeURL(oauthConfig, state, codeVerifier));
+        return;
+      }
+
       session.accountKey = null;
       session.pendingOnboarding = null;
       session.pendingPassword = null;
@@ -182,6 +239,117 @@ export function createWebClientServer(
       session.flash = null;
       redirect(response, "/unlock");
       return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/callback") {
+      const oauthConfig = readOAuthLoginConfig();
+      if (oauthConfig.devMode) {
+        redirect(response, "/unlock");
+        return;
+      }
+      if (!session.pendingOAuthLogin) {
+        redirect(response, "/");
+        return;
+      }
+
+      if (url.searchParams.get("state") !== session.pendingOAuthLogin.state) {
+        writeHTML(
+          response,
+          400,
+          renderPage({
+            title: "Safe OAuth",
+            body: `
+              <section class="panel stack">
+                <p class="eyebrow">OAuth Callback</p>
+                <h1>Sign-in could not be completed</h1>
+                <p>Safe rejected the OAuth callback because the state token did not match the active login attempt.</p>
+                <p><a class="link" href="/">Return home</a></p>
+              </section>
+            `,
+          }),
+        );
+        return;
+      }
+
+      const providerError = url.searchParams.get("error");
+      if (providerError) {
+        writeHTML(
+          response,
+          400,
+          renderPage({
+            title: "Safe OAuth",
+            body: `
+              <section class="panel stack">
+                <p class="eyebrow">OAuth Callback</p>
+                <h1>Provider sign-in failed</h1>
+                <p>${escapeHTML(providerError)}</p>
+                <p><a class="link" href="/">Return home</a></p>
+              </section>
+            `,
+          }),
+        );
+        return;
+      }
+
+      const code = url.searchParams.get("code")?.trim() ?? "";
+      if (code === "") {
+        writeHTML(
+          response,
+          400,
+          renderPage({
+            title: "Safe OAuth",
+            body: `
+              <section class="panel stack">
+                <p class="eyebrow">OAuth Callback</p>
+                <h1>Sign-in could not be completed</h1>
+                <p>The provider callback did not include an authorization code.</p>
+                <p><a class="link" href="/">Return home</a></p>
+              </section>
+            `,
+          }),
+        );
+        return;
+      }
+
+      try {
+        const oauthToken = await exchangeOAuthCode(oauthConfig, {
+          code,
+          codeVerifier: session.pendingOAuthLogin.codeVerifier,
+        });
+        session.pendingOAuthLogin = null;
+        session.oauthToken = oauthToken;
+        session.identity = await resolveIdentityFromOAuthToken(oauthToken);
+        session.remoteAccess = await resolveRemoteAccessFromOAuthToken(
+          session.identity,
+          oauthToken,
+        );
+        session.accountKey = null;
+        session.pendingOnboarding = null;
+        session.pendingPassword = null;
+        session.vaultPassword = null;
+        session.flash = null;
+        redirect(response, "/unlock");
+        return;
+      } catch (error) {
+        session.pendingOAuthLogin = null;
+        session.oauthToken = null;
+        writeHTML(
+          response,
+          502,
+          renderPage({
+            title: "Safe OAuth",
+            body: `
+              <section class="panel stack">
+                <p class="eyebrow">OAuth Callback</p>
+                <h1>Sign-in could not be completed</h1>
+                <p>${escapeHTML(error instanceof Error ? error.message : "OAuth token exchange failed.")}</p>
+                <p><a class="link" href="/">Return home</a></p>
+              </section>
+            `,
+          }),
+        );
+        return;
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/unlock") {
@@ -311,6 +479,9 @@ export function createWebClientServer(
 
     if (request.method === "POST" && url.pathname === "/logout") {
       session.identity = null;
+      session.remoteAccess = null;
+      session.oauthToken = null;
+      session.pendingOAuthLogin = null;
       session.accountKey = null;
       session.pendingOnboarding = null;
       session.pendingPassword = null;
@@ -698,6 +869,8 @@ export function createWebClientServer(
     const session = {
       identity: null,
       remoteAccess: null,
+      oauthToken: null,
+      pendingOAuthLogin: null,
       accountKey: null,
       pendingOnboarding: null,
       pendingPassword: null,
@@ -823,6 +996,10 @@ export function createServer(options: WebClientServerOptions = {}): http.Server 
 }
 
 function renderHomePage(): string {
+  const oauthConfig = readOAuthLoginConfig();
+  const buttonLabel = oauthConfig.devMode
+    ? "Sign in with OAuth"
+    : `Sign in with ${escapeHTML(oauthConfig.provider)}`;
   return renderPage({
     title: "Safe",
     body: `
@@ -834,8 +1011,8 @@ function renderHomePage(): string {
             This local web client resolves identity through the control plane's OAuth-backed session endpoint
             before unlocking the durable local runtime and requesting account-scoped remote access.
           </p>
-          <form method="post" action="/identify">
-            <button class="button button-primary" type="submit">Sign in with OAuth</button>
+          <form method="get" action="/auth/login">
+            <button class="button button-primary" type="submit">${buttonLabel}</button>
           </form>
         </div>
         <aside class="hero-panel stack">
@@ -1444,35 +1621,13 @@ function buildVaultLocation(input: {
 }
 
 async function defaultResolveIdentity(): Promise<ClientIdentity> {
-  const controlPlaneURL =
-    process.env.SAFE_WEB_CONTROL_PLANE_URL ??
-    process.env.SAFE_CONTROL_PLANE_URL;
-  const deviceId =
-    process.env.SAFE_WEB_DEVICE_ID ??
-    process.env.SAFE_DEVICE_ID ??
-    process.env.SAFE_DEV_DEVICE_ID ??
-    "dev-web-001";
   const oauthToken =
     process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN ??
     process.env.SAFE_OAUTH_ACCESS_TOKEN;
 
-  if (controlPlaneURL && oauthToken) {
+  if (oauthToken) {
     try {
-      const response = await fetch(new URL("/v1/session", controlPlaneURL), {
-        headers: {
-          authorization: `Bearer ${oauthToken}`,
-        },
-      });
-      if (response.ok) {
-        const payload = (await response.json()) as ControlPlaneSession;
-        if (payload.accountId && payload.env) {
-          return {
-            accountId: payload.accountId,
-            deviceId,
-            env: payload.env,
-          };
-        }
-      }
+      return await resolveIdentityFromOAuthToken(oauthToken);
     } catch {
       // Fall back to local defaults when the control plane is not running.
     }
@@ -1483,7 +1638,7 @@ async function defaultResolveIdentity(): Promise<ClientIdentity> {
       process.env.SAFE_OAUTH_ACCOUNT_ID ??
       process.env.SAFE_DEV_ACCOUNT_ID ??
       "acct-dev-001",
-    deviceId,
+    deviceId: defaultDeviceID(),
     env: process.env.SAFE_ENV ?? "development",
   };
 }
@@ -1491,48 +1646,198 @@ async function defaultResolveIdentity(): Promise<ClientIdentity> {
 async function defaultResolveRemoteAccess(
   identity: ClientIdentity,
 ): Promise<AccountAccessResponse | null> {
-  const controlPlaneURL =
-    process.env.SAFE_WEB_CONTROL_PLANE_URL ??
-    process.env.SAFE_CONTROL_PLANE_URL;
   const oauthToken =
     process.env.SAFE_WEB_OAUTH_ACCESS_TOKEN ??
     process.env.SAFE_OAUTH_ACCESS_TOKEN;
 
-  if (!controlPlaneURL || !oauthToken) {
+  if (!oauthToken) {
     return null;
   }
 
   try {
-    const response = await fetch(new URL("/v1/access/account", controlPlaneURL), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${oauthToken}`,
-      },
-      body: JSON.stringify({
-        accountId: identity.accountId,
-        deviceId: identity.deviceId,
-      }),
-    });
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json()) as AccountAccessResponse;
-    if (
-      payload.token &&
-      payload.capability?.prefix &&
-      Array.isArray(payload.capability.allowedActions) &&
-      payload.capability.allowedActions.length > 0 &&
-      payload.capability.expiresAt
-    ) {
-      return payload;
-    }
+    return await resolveRemoteAccessFromOAuthToken(identity, oauthToken);
   } catch {
     // Fall back to local-only mode when remote access is unavailable.
   }
 
   return null;
+}
+
+function defaultControlPlaneURL(): string | null {
+  return (
+    process.env.SAFE_WEB_CONTROL_PLANE_URL ??
+    process.env.SAFE_CONTROL_PLANE_URL ??
+    null
+  );
+}
+
+function defaultDeviceID(): string {
+  return (
+    process.env.SAFE_WEB_DEVICE_ID ??
+    process.env.SAFE_DEVICE_ID ??
+    process.env.SAFE_DEV_DEVICE_ID ??
+    "dev-web-001"
+  );
+}
+
+async function resolveIdentityFromOAuthToken(
+  oauthToken: string,
+): Promise<ClientIdentity> {
+  const controlPlaneURL = defaultControlPlaneURL();
+  if (!controlPlaneURL) {
+    throw new Error("SAFE_CONTROL_PLANE_URL is required for provider-backed login.");
+  }
+
+  const response = await fetch(new URL("/v1/session", controlPlaneURL), {
+    headers: {
+      authorization: `Bearer ${oauthToken}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`session request failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as ControlPlaneSession;
+  if (!payload.accountId || !payload.env) {
+    throw new Error("control plane session response was incomplete");
+  }
+
+  return {
+    accountId: payload.accountId,
+    deviceId: defaultDeviceID(),
+    env: payload.env,
+  };
+}
+
+async function resolveRemoteAccessFromOAuthToken(
+  identity: ClientIdentity,
+  oauthToken: string,
+): Promise<AccountAccessResponse | null> {
+  const controlPlaneURL = defaultControlPlaneURL();
+  if (!controlPlaneURL) {
+    return null;
+  }
+
+  const response = await fetch(new URL("/v1/access/account", controlPlaneURL), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      authorization: `Bearer ${oauthToken}`,
+    },
+    body: JSON.stringify({
+      accountId: identity.accountId,
+      deviceId: identity.deviceId,
+    }),
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as AccountAccessResponse;
+  if (
+    payload.token &&
+    payload.capability?.prefix &&
+    Array.isArray(payload.capability.allowedActions) &&
+    payload.capability.allowedActions.length > 0 &&
+    payload.capability.expiresAt
+  ) {
+    return payload;
+  }
+
+  return null;
+}
+
+function readOAuthLoginConfig(): OAuthLoginConfig {
+  const port =
+    process.env.SAFE_WEB_PORT ??
+    process.env.PORT ??
+    "3000";
+  const provider = process.env.SAFE_OAUTH_PROVIDER ?? "Google";
+  const explicitDevMode = process.env.SAFE_OAUTH_DEV_MODE;
+  const devMode =
+    explicitDevMode === undefined
+      ? !(process.env.SAFE_OAUTH_CLIENT_ID && process.env.SAFE_OAUTH_CLIENT_SECRET)
+      : isTruthy(explicitDevMode);
+  return {
+    provider,
+    devMode,
+    clientId: process.env.SAFE_OAUTH_CLIENT_ID ?? "",
+    clientSecret: process.env.SAFE_OAUTH_CLIENT_SECRET ?? "",
+    authorizeURL:
+      process.env.SAFE_OAUTH_AUTHORIZE_URL ??
+      "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenURL:
+      process.env.SAFE_OAUTH_TOKEN_URL ??
+      "https://oauth2.googleapis.com/token",
+    redirectURL:
+      process.env.SAFE_OAUTH_REDIRECT_URL ??
+      `http://localhost:${port}/auth/callback`,
+    scopes:
+      process.env.SAFE_OAUTH_SCOPES ??
+      "openid email profile",
+  };
+}
+
+function buildOAuthAuthorizeURL(
+  config: OAuthLoginConfig,
+  state: string,
+  codeVerifier: string,
+): string {
+  const url = new URL(config.authorizeURL);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", config.redirectURL);
+  url.searchParams.set("scope", config.scopes);
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("code_challenge", pkceChallenge(codeVerifier));
+  return url.toString();
+}
+
+async function exchangeOAuthCode(
+  config: OAuthLoginConfig,
+  input: {
+    code: string;
+    codeVerifier: string;
+  },
+): Promise<string> {
+  const response = await fetch(config.tokenURL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: input.code,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      redirect_uri: config.redirectURL,
+      code_verifier: input.codeVerifier,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`token exchange failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    id_token?: string;
+  };
+  if (!payload.id_token) {
+    throw new Error("token exchange did not return an id_token");
+  }
+  return payload.id_token;
+}
+
+function pkceChallenge(codeVerifier: string): string {
+  return encodeBase64URL(createHash("sha256").update(codeVerifier).digest());
+}
+
+function encodeBase64URL(value: Uint8Array | Buffer): string {
+  return Buffer.from(value).toString("base64url");
+}
+
+function isTruthy(value: string | undefined): boolean {
+  return /^(1|true|yes|on)$/i.test(value ?? "");
 }
 
 async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
@@ -1827,6 +2132,9 @@ function buildSafeCommandEnv(
 
   if (session.identity) {
     env.SAFE_DEVICE_ID = session.identity.deviceId;
+  }
+  if (session.oauthToken) {
+    env.SAFE_OAUTH_ACCESS_TOKEN = session.oauthToken;
   }
 
   if (!env.SAFE_CONTROL_PLANE_URL && process.env.SAFE_WEB_CONTROL_PLANE_URL) {
